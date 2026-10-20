@@ -37,6 +37,9 @@ pub const MAX_FLOWS: usize = 50_000;
 /// Magic host served by the proxy itself: phones open it to download the root CA.
 pub const CERT_HOST: &str = "sniffo.cert";
 
+/// How long stop() waits for in-flight requests before closing the listener for good.
+pub const STOP_GRACE: Duration = Duration::from_secs(1);
+
 /// A forgotten breakpoint lets the message through unmodified after this long.
 pub const BREAKPOINT_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -458,11 +461,16 @@ pub struct ProxyHandle {
 }
 
 impl ProxyHandle {
+    /// Stops listening at once; open connections get a short grace period. Browsers keep
+    /// keep-alive connections and CONNECT tunnels open indefinitely, so a fully graceful
+    /// shutdown could hang; those connections end on their own once clients notice.
     pub async fn stop(mut self) {
         if let Some(tx) = self.shutdown.take() {
             let _ = tx.send(());
         }
-        let _ = (&mut self.task).await;
+        if tokio::time::timeout(STOP_GRACE, &mut self.task).await.is_err() {
+            self.task.abort();
+        }
     }
 }
 

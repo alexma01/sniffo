@@ -72,6 +72,7 @@ export default function App() {
   const [searchBodies, setSearchBodies] = useState(false);
   const [follow, setFollow] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [showDevices, setShowDevices] = useState(false);
   const [compose, setCompose] = useState<Req | null | undefined>(undefined);
   const [diffBase, setDiffBase] = useState<number | null>(null);
@@ -230,9 +231,10 @@ export default function App() {
           </button>
         )}
         {status?.running ? (
-          <button onClick={() => api.stop().finally(refresh)}>Stop</button>
+          // Restoring the OS proxy settings takes a few seconds (networksetup per network service).
+          <button disabled={busy} onClick={() => { setBusy(true); api.stop().finally(() => refresh().finally(() => setBusy(false))); }}>{busy ? "Stopping…" : "Stop"}</button>
         ) : (
-          <button onClick={start}>Start</button>
+          <button disabled={busy} onClick={() => { setBusy(true); start().finally(() => setBusy(false)); }}>{busy ? "Starting…" : "Start"}</button>
         )}
         <label className="check" title="Route this machine's HTTP/HTTPS traffic through Sniffo">
           <input

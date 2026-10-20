@@ -137,3 +137,22 @@ async fn compose_goes_through_proxy_and_har_roundtrips() {
     assert_eq!((back.path.as_str(), back.status), ("/composed", Some(200)));
     s.proxy.stop().await;
 }
+
+#[tokio::test]
+async fn stop_is_quick_with_open_tunnels() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let up = upstream_http().await;
+    let s = start(vec![]).await;
+    let addr = s.proxy.addr;
+    // A browser-style CONNECT tunnel that never closes.
+    let mut tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
+    tcp.write_all(format!("CONNECT {up} HTTP/1.1\r\nHost: {up}\r\n\r\n").as_bytes()).await.unwrap();
+    let mut buf = [0u8; 64];
+    let _ = tcp.read(&mut buf).await.unwrap();
+
+    let t = std::time::Instant::now();
+    s.proxy.stop().await;
+    assert!(t.elapsed() < std::time::Duration::from_secs(2), "stop took {:?}", t.elapsed());
+    tokio::net::TcpListener::bind(addr).await.expect("port is free again");
+    drop(tcp);
+}
