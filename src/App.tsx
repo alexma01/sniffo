@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, BreakpointHit, FlowEvent, ScriptLog, FlowSummary, formatBytes, ProxyStatus, Rule, Rules, SslProxying } from "./api";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { BreakpointEditor } from "./BreakpointEditor";
@@ -69,6 +69,7 @@ export default function App() {
   const [diff, setDiff] = useState<[number, number] | null>(null);
   const [fileMenu, setFileMenu] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const filterRef = useRef<HTMLInputElement>(null);
 
   const notify = (text: string) => { setToast(text); setTimeout(() => setToast(null), 3000); };
   const fail = (e: unknown) => setError(String(e));
@@ -140,7 +141,36 @@ export default function App() {
   useEffect(() => {
     const close = () => { setMenu(null); setFileMenu(false); };
     const onKey = (e: KeyboardEvent) => {
-      if ((e.key === "Backspace" || e.key === "Delete") && selected != null && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) remove([selected]);
+      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement;
+      const mod = e.metaKey || e.ctrlKey;
+      if (e.key === "Escape") {
+        setShowSettings(false); setShowDevices(false); setCompose(undefined); setDiff(null); setRulesDraft(undefined); setMenu(null);
+        return;
+      }
+      if (!mod) {
+        if ((e.key === "Backspace" || e.key === "Delete") && selected != null && !typing) remove([selected]);
+        return;
+      }
+      const k = e.key.toLowerCase();
+      // Proxyman-style shortcuts; plain copy/paste/select-all stay native.
+      const actions: Record<string, () => void> = {
+        k: () => { api.clear(); setSelected(null); },
+        f: () => filterRef.current?.focus(),
+        n: () => setCompose(null),
+        r: () => { if (selected != null) api.repeat(selected).then((st) => notify(`Repeated — ${st}`), fail); },
+        e: () => { if (selected != null) requestOf(selected).then(setCompose); },
+        s: () => exportHar(),
+        o: () => importHar(true),
+        ",": () => setShowSettings(true),
+        l: () => setRulesDraft(null),
+      };
+      if (e.shiftKey && k === "c" && selected != null) {
+        e.preventDefault();
+        requestOf(selected).then((r) => copy(toCurl(r), "as cURL"));
+      } else if (!e.shiftKey && actions[k] && !(typing && k !== "f" && k !== "s" && k !== "o")) {
+        e.preventDefault();
+        actions[k]();
+      }
     };
     window.addEventListener("click", close);
     window.addEventListener("keydown", onKey);
@@ -174,28 +204,29 @@ export default function App() {
         {status && !status.ca_trusted && (
           <button className="warn" onClick={() => setShowSettings(true)}>Certificate not trusted</button>
         )}
-        <button onClick={() => { api.clear(); setSelected(null); }} title="Remove all unpinned flows">Clear</button>
+        <button onClick={() => { api.clear(); setSelected(null); }} title="Remove all unpinned flows (⌘K)">Clear</button>
         <span className="spacer" />
-        <button onClick={() => setCompose(null)}>Compose</button>
+        <button onClick={() => setCompose(null)} title="Compose a request (⌘N) · Edit & repeat selected (⌘E) · Repeat (⌘R) · Copy as cURL (⌘⇧C)">Compose</button>
         <div className="dropdown">
           <button onClick={(e) => { e.stopPropagation(); setFileMenu(!fileMenu); }}>File ▾</button>
           {fileMenu && (
             <div className="menu right" onClick={() => setFileMenu(false)}>
-              <div onClick={() => importHar(true)}>Open session…</div>
-              <div onClick={() => exportHar()}>Save session…</div>
+              <div onClick={() => importHar(true)}>Open session…  ⌘O</div>
+              <div onClick={() => exportHar()}>Save session…  ⌘S</div>
               <hr />
               <div onClick={() => importHar(false)}>Import HAR…</div>
               <div onClick={() => exportHar(visible.map((f) => f.id))}>Export visible as HAR…</div>
             </div>
           )}
         </div>
-        <button onClick={() => setRulesDraft(null)}>Rules</button>
-        <button onClick={() => setShowSettings(true)}>Settings</button>
+        <button onClick={() => setRulesDraft(null)} title="Rules (⌘L)">Rules</button>
+        <button onClick={() => setShowSettings(true)} title="Settings (⌘,)">Settings</button>
       </header>
       <div className="filterbar">
         <input
+          ref={filterRef}
           className={`filter ${typeof predicate === "string" ? "invalid" : ""}`}
-          placeholder={searchBodies ? "Search URL, headers and bodies" : filter.regex ? "Regex on URL, method, status" : "Filter: URL, method, status"}
+          placeholder={searchBodies ? "Search URL, headers and bodies" : filter.regex ? "Regex on URL, method, status" : "Filter: URL, method, status  (⌘F)"}
           title={typeof predicate === "string" ? predicate : undefined}
           value={filter.text}
           onChange={(e) => set({ text: e.target.value })}
