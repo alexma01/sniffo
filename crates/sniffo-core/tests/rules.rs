@@ -6,7 +6,7 @@ use sniffo_core::{Action, AllowList, Decision, FlowEvent, FlowState, Matcher, Ru
 use std::time::{Duration, Instant};
 
 fn rules(url: &str, action: Action) -> Rules {
-    Rules { rules: vec![Rule { id: "r".into(), name: "rule".into(), enabled: true, matcher: Matcher::new(url), action }], allow_list: AllowList::default() }
+    Rules { rules: vec![Rule { id: "r".into(), name: "rule".into(), enabled: true, matcher: Matcher::new(url), action }], ..Default::default() }
 }
 
 #[tokio::test]
@@ -122,7 +122,7 @@ async fn throttle_adds_latency_and_limits_download() {
 async fn allow_list_limits_recording() {
     let up = upstream_http().await;
     let s = start(vec![]).await;
-    s.engine.set_rules(Rules { rules: vec![], allow_list: AllowList { enabled: true, patterns: vec!["*/keep*".into()] } });
+    s.engine.set_rules(Rules { rules: vec![], allow_list: AllowList { enabled: true, patterns: vec!["*/keep*".into()] }, ..Default::default() });
     let c = client(&s, None);
     c.get(format!("http://{up}/skip")).send().await.unwrap().text().await.unwrap();
     c.get(format!("http://{up}/keep")).send().await.unwrap().text().await.unwrap();
@@ -170,4 +170,40 @@ async fn script_errors_pass_traffic_through() {
         if let FlowEvent::Log(l) = events.recv().await.unwrap() { break l; }
     };
     assert!(log.error && log.message.contains("nope"));
+}
+
+#[tokio::test]
+async fn map_local_directory_serves_files_and_blocks_traversal() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("js")).unwrap();
+    std::fs::write(dir.path().join("js/app.js"), "console.log(1)").unwrap();
+    std::fs::write(dir.path().join("index.html"), "<h1>home</h1>").unwrap();
+    std::fs::write(dir.path().parent().unwrap().join("secret.txt"), "nope").ok();
+    let s = start(vec![]).await;
+    s.engine.set_rules(rules("http://cdn.invalid/assets/*", Action::MapLocalDir { dir: dir.path().display().to_string() }));
+    let c = client(&s, None);
+
+    let res = c.get("http://cdn.invalid/assets/js/app.js?v=3").send().await.unwrap();
+    assert_eq!(res.headers()["content-type"], "application/javascript");
+    assert_eq!(res.text().await.unwrap(), "console.log(1)");
+    assert_eq!(c.get("http://cdn.invalid/assets/").send().await.unwrap().text().await.unwrap(), "<h1>home</h1>");
+    assert_eq!(c.get("http://cdn.invalid/assets/missing.css").send().await.unwrap().status(), 404);
+    // reqwest normalizes "..", so send the raw request line a hostile client could send.
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut tcp = tokio::net::TcpStream::connect(s.proxy.addr).await.unwrap();
+    tcp.write_all(b"GET http://cdn.invalid/assets/../secret.txt HTTP/1.1\r\nHost: cdn.invalid\r\nConnection: close\r\n\r\n").await.unwrap();
+    let mut out = String::new();
+    tcp.read_to_string(&mut out).await.unwrap();
+    assert!(out.starts_with("HTTP/1.1 403"), "{out}");
+}
+
+#[tokio::test]
+async fn no_caching_strips_cache_headers() {
+    let up = upstream_http().await;
+    let s = start(vec![]).await;
+    s.engine.set_rules(Rules { no_caching: true, ..Default::default() });
+    let res = client(&s, None).get(format!("http://{up}/c")).header("if-none-match", "\"abc\"").send().await.unwrap();
+    assert_eq!(res.headers()["cache-control"], "no-store");
+    let f = s.engine.flow(1).unwrap();
+    assert!(!f.request.headers.iter().any(|(k, _)| k == "if-none-match"), "conditional header removed before forwarding");
 }

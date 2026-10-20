@@ -406,6 +406,7 @@ impl Engine {
                 scripts: Arc::default(),
                 script_request: serde_json::Value::Null,
                 reverse,
+                no_caching: false,
             })
             .with_graceful_shutdown(async { let _ = rx.await; })
             .build()
@@ -453,6 +454,7 @@ struct Capture {
     script_request: serde_json::Value,
     /// Reverse-proxy target for this listener.
     reverse: Option<Arc<Uri>>,
+    no_caching: bool,
     /// Client-app lookup running alongside the upstream request (see `handle_response`).
     lookup: Option<Arc<Mutex<Option<JoinHandle<()>>>>>,
 }
@@ -534,6 +536,50 @@ fn map_remote(uri: &Uri, plan: &Plan) -> Option<Uri> {
     let query = uri.query().map(|q| format!("?{q}")).unwrap_or_default();
     let port = port.map(|p| format!(":{p}")).unwrap_or_default();
     format!("{scheme}://{host}{port}{path}{query}").parse().ok()
+}
+
+/// Map Local Directory: the URL path after `prefix` is a file under `dir`.
+async fn serve_dir(prefix: &str, dir: &str, url: &str) -> (StatusCode, HeaderMap, Bytes) {
+    let mut h = HeaderMap::new();
+    let rel = url.split(['?', '#']).next().unwrap_or("").strip_prefix(prefix).unwrap_or("");
+    let rel = crate::flow::percent_decode(rel, false);
+    // Never let a URL escape the mapped folder.
+    if rel.split(['/', '\\']).any(|seg| seg == "..") {
+        return (StatusCode::FORBIDDEN, h, Bytes::from_static(b"path traversal rejected"));
+    }
+    let mut path = std::path::Path::new(dir).join(rel.trim_start_matches('/'));
+    if path.is_dir() {
+        path = path.join("index.html");
+    }
+    match tokio::fs::read(&path).await {
+        Ok(bytes) => {
+            h.insert("content-type", HeaderValue::from_static(mime_for(&path)));
+            (StatusCode::OK, h, bytes.into())
+        }
+        Err(_) => (StatusCode::NOT_FOUND, h, Bytes::from(format!("Map Local Directory: {} not found", path.display()))),
+    }
+}
+
+fn mime_for(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase().as_str() {
+        "html" | "htm" => "text/html; charset=utf-8",
+        "js" | "mjs" => "application/javascript",
+        "css" => "text/css",
+        "json" => "application/json",
+        "xml" => "application/xml",
+        "txt" => "text/plain; charset=utf-8",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "ico" => "image/x-icon",
+        "woff2" => "font/woff2",
+        "woff" => "font/woff",
+        "mp4" => "video/mp4",
+        "wasm" => "application/wasm",
+        _ => "application/octet-stream",
+    }
 }
 
 async fn throttle_bytes(len: usize, bps: Option<u64>) {
@@ -633,8 +679,17 @@ impl HttpHandler for Capture {
         if !plan.record {
             return Request::from_parts(parts, Body::from(body)).into();
         }
+        self.no_caching = plan.no_caching;
+        if plan.no_caching {
+            for h in ["if-none-match", "if-modified-since"] {
+                parts.headers.remove(h);
+            }
+            parts.headers.insert("cache-control", HeaderValue::from_static("no-cache"));
+            parts.headers.insert("pragma", HeaderValue::from_static("no-cache"));
+        }
         let id = self.record(ctx, &parts, &body, plan.tags.clone());
         self.break_response = plan.break_response;
+
         self.download_bps = plan.download_bps;
 
         if plan.block {
@@ -730,6 +785,13 @@ impl HttpHandler for Capture {
             return self.local_response(id, status, h, bytes, error).into();
         }
 
+        if let Some((prefix, dir)) = &plan.map_dir {
+            let (status, mut h, bytes) = serve_dir(prefix, dir, &parts.uri.to_string()).await;
+            h.insert("content-length", HeaderValue::from(bytes.len()));
+            throttle_bytes(bytes.len(), plan.download_bps).await;
+            return self.local_response(id, status, h, bytes, None).into();
+        }
+
         if let Some(uri) = map_remote(&parts.uri, &plan) {
             parts.uri = uri;
         }
@@ -779,6 +841,12 @@ impl HttpHandler for Capture {
             return self.local_response(id, StatusCode::from_u16(msg.status).unwrap_or(parts.status), headers, body, None);
         }
 
+        if self.no_caching {
+            for h in ["etag", "last-modified", "expires"] {
+                parts.headers.remove(h);
+            }
+            parts.headers.insert("cache-control", HeaderValue::from_static("no-store"));
+        }
         let headers = headers_from(&parts.headers);
         let bodyless = self.is_head || parts.status.is_informational() || matches!(parts.status.as_u16(), 204 | 304);
         let expected = if bodyless {

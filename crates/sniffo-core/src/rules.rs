@@ -50,6 +50,8 @@ pub enum Action {
         #[serde(default)]
         file: Option<String>,
     },
+    /// Serve files from a local folder: the URL part after the pattern's `*` is the file path.
+    MapLocalDir { dir: String },
     /// Rewrite parts of the destination URL; `None` keeps the original part.
     MapRemote {
         scheme: Option<String>,
@@ -106,6 +108,9 @@ pub struct Rules {
     /// When enabled, only matching URLs are recorded (others still pass through).
     #[serde(default)]
     pub allow_list: AllowList,
+    /// Strip conditional/caching headers so every request hits the server.
+    #[serde(default)]
+    pub no_caching: bool,
 }
 
 /// What the proxy should do with one request, merged from all matching rules.
@@ -123,12 +128,15 @@ pub struct Plan {
     pub upload_bps: Option<u64>,
     /// (rule name, code), run in rule order.
     pub scripts: Vec<(String, String)>,
+    /// (URL prefix, local folder) for Map Local Directory.
+    pub map_dir: Option<(String, String)>,
+    pub no_caching: bool,
 }
 
 impl Rules {
     pub fn plan(&self, method: &str, url: &str) -> Plan {
         let al = &self.allow_list;
-        let mut p = Plan { record: !al.enabled || al.patterns.iter().any(|pat| wildcard(pat, url)), ..Default::default() };
+        let mut p = Plan { record: !al.enabled || al.patterns.iter().any(|pat| wildcard(pat, url)), no_caching: self.no_caching, ..Default::default() };
         for r in self.rules.iter().filter(|r| r.enabled && r.matcher.matches(method, url)) {
             p.tags.push(r.name.clone());
             match &r.action {
@@ -136,6 +144,10 @@ impl Rules {
                 // First Map Local wins: later ones can't answer the same request twice.
                 Action::MapLocal { status, headers, body, file } => {
                     p.map_local.get_or_insert_with(|| (*status, headers.clone(), body.clone(), file.clone()));
+                }
+                Action::MapLocalDir { dir } => {
+                    let prefix = r.matcher.url.split('*').next().unwrap_or("").to_owned();
+                    p.map_dir.get_or_insert((prefix, dir.clone()));
                 }
                 Action::MapRemote { scheme, host, port, path } => p.map_remote.push((scheme.clone(), host.clone(), *port, path.clone())),
                 Action::Breakpoint { request, response } => {
@@ -175,6 +187,7 @@ mod tests {
                 Rule { enabled: false, ..rule("off", "*", Action::Block) },
             ],
             allow_list: AllowList::default(),
+            no_caching: false,
         };
         let p = rules.plan("GET", "https://api.x.com/v1/users");
         assert_eq!(p.tags, ["mock", "slow"]);
@@ -192,7 +205,7 @@ mod tests {
         m.compiled = OnceLock::new();
         assert!(!m.matches("POST", "("), "invalid regex never matches");
 
-        let rules = Rules { rules: vec![], allow_list: AllowList { enabled: true, patterns: vec!["*api.x.com*".into()] } };
+        let rules = Rules { rules: vec![], allow_list: AllowList { enabled: true, patterns: vec!["*api.x.com*".into()] }, no_caching: false };
         assert!(rules.plan("GET", "https://api.x.com/").record);
         assert!(!rules.plan("GET", "https://other.com/").record);
     }

@@ -163,7 +163,7 @@ impl Flow {
 pub fn graphql_operation(url: &str, request: &Message) -> Option<String> {
     let (query, name) = if request.body.is_empty() {
         let q = url.split_once('?')?.1;
-        let param = |k: &str| q.split('&').find_map(|p| p.strip_prefix(k)?.strip_prefix('=')).map(percent_decode);
+        let param = |k: &str| q.split('&').find_map(|p| p.strip_prefix(k)?.strip_prefix('=')).map(|v| percent_decode(v, true));
         (param("query")?, param("operationName"))
     } else {
         let v: serde_json::Value = serde_json::from_slice(&request.decoded_body()).ok()?;
@@ -190,13 +190,14 @@ pub fn graphql_operation(url: &str, request: &Message) -> Option<String> {
     })
 }
 
-fn percent_decode(s: &str) -> String {
+/// %XX decoding; `plus_as_space` for query strings (form encoding), not for paths.
+pub(crate) fn percent_decode(s: &str, plus_as_space: bool) -> String {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
         match b[i] {
-            b'+' => out.push(b' '),
+            b'+' if plus_as_space => out.push(b' '),
             b'%' if i + 2 < b.len() => {
                 if let Ok(v) = u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or(""), 16) {
                     out.push(v);

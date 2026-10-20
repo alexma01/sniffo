@@ -1,5 +1,6 @@
+import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
-import { api, NetworkOptions, ProxyStatus, ReverseProxy, SslProxying } from "./api";
+import { api, NetworkOptions, ProtoSchemas, ProxyStatus, ReverseProxy, SslProxying } from "./api";
 
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
 
@@ -14,11 +15,14 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
   const [dns, setDns] = useState("");
   const [reverse, setReverse] = useState<ReverseProxy[]>([]);
   const [reverseErrors, setReverseErrors] = useState<(string | null)[]>([]);
+  const [proto, setProto] = useState<ProtoSchemas | null>(null);
+  const setProtoFiles = (files: string[]) => api.setProtoFiles(files).then((p) => { setProto(p); setMsg(null); }, (e) => setMsg(String(e)));
 
   useEffect(() => {
     api.getSsl().then((s) => { setSsl(s); setInclude(s.include.join("\n")); setExclude(s.exclude.join("\n")); });
     api.getNetwork().then((n) => { setNet(n); setDns(n.dns.map(([h, ip]) => `${ip} ${h}`).join("\n")); });
     api.getReverse().then(setReverse);
+    api.getProtoSchemas().then(setProto);
   }, []);
 
   const save = async () => {
@@ -113,6 +117,25 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
               </label>
             </>
           )}
+        </section>
+
+        <section>
+          <h4>Protobuf schemas</h4>
+          <p className="muted">Decode protobuf/gRPC bodies with your message types (<code>.proto</code> files, or <code>.desc</code>/<code>.pb</code> descriptor sets).</p>
+          {proto?.files.map((f) => (
+            <div key={f} className="row">
+              <code className="grow ellipsis" title={f}>{f}</code>
+              <button onClick={() => setProtoFiles(proto.files.filter((x) => x !== f))}>✕</button>
+            </div>
+          ))}
+          <div className="row">
+            <button onClick={async () => {
+              const picked = await open({ multiple: true, filters: [{ name: "Protobuf", extensions: ["proto", "desc", "pb"] }] });
+              const list = Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
+              if (list.length) setProtoFiles([...new Set([...(proto?.files ?? []), ...list])]);
+            }}>Add schema files…</button>
+            {proto && proto.files.length > 0 && <span className="muted">{proto.messages.length} message types</span>}
+          </div>
         </section>
 
         <section>
