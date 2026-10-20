@@ -129,3 +129,45 @@ async fn allow_list_limits_recording() {
     let paths: Vec<_> = s.engine.summaries().into_iter().map(|f| f.path).collect();
     assert_eq!(paths, ["/keep"]);
 }
+
+#[tokio::test]
+async fn script_rewrites_request_and_response_and_logs() {
+    let up = upstream_http().await;
+    let s = start(vec![]).await;
+    let code = r#"
+        function onRequest(context, request) {
+          request.url = request.url.replace("/original", "/scripted");
+          console.log("rewrote", context.flowId);
+          return request;
+        }
+        function onResponse(context, request, response) {
+          response.status = 202;
+          response.body.fromScript = request.url.endsWith("/scripted");
+          response.headers["x-script"] = "yes";
+          return response;
+        }"#;
+    s.engine.set_rules(rules("*", Action::Script { code: code.into() }));
+    let mut events = s.engine.subscribe();
+    let res = client(&s, None).get(format!("http://{up}/original")).send().await.unwrap();
+    assert_eq!(res.status(), 202);
+    assert_eq!(res.headers()["x-script"], "yes");
+    assert_eq!(res.text().await.unwrap(), r#"{"fromScript":true,"path":"/scripted"}"#);
+    let log = loop {
+        if let FlowEvent::Log(l) = events.recv().await.unwrap() { break l; }
+    };
+    assert_eq!((log.message.as_str(), log.error), ("rewrote 1", false));
+}
+
+#[tokio::test]
+async fn script_errors_pass_traffic_through() {
+    let up = upstream_http().await;
+    let s = start(vec![]).await;
+    s.engine.set_rules(rules("*", Action::Script { code: "function onRequest() { throw new Error('nope') }".into() }));
+    let mut events = s.engine.subscribe();
+    let res = client(&s, None).get(format!("http://{up}/ok")).send().await.unwrap();
+    assert_eq!(res.status(), 200);
+    let log = loop {
+        if let FlowEvent::Log(l) = events.recv().await.unwrap() { break l; }
+    };
+    assert!(log.error && log.message.contains("nope"));
+}

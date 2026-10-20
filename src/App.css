@@ -202,3 +202,10 @@ details summary { cursor: pointer; color: var(--accent); }
 .ws-kind { width: 50px; color: var(--muted); }
 .ws-size { width: 60px; text-align: right; }
 .ws-data { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+
+.code-editor { font: 12px/1.5 ui-monospace, Menlo, monospace; tab-size: 2; white-space: pre; }
+.console { height: 180px; display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--bg); }
+.console-head { display: flex; align-items: center; gap: 6px; padding: 3px 10px; background: var(--bg-2); border-bottom: 1px solid var(--border); }
+.console-body { flex: 1; overflow: auto; padding: 4px 10px; font: 12px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+button.linkish { background: none; border: none; padding: 0; font-size: 12px; color: var(--accent); }
+button.linkish.err { color: var(--err); }

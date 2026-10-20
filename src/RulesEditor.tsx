@@ -7,7 +7,24 @@ export const ACTION_LABELS: Record<Action["type"], string> = {
   map_remote: "Map Remote",
   block: "Block",
   throttle: "Throttle",
+  script: "Script",
 };
+
+export const SCRIPT_TEMPLATE = `// Runs for every matching request. Return the (modified) object, or nothing to leave it unchanged.
+// request  = { method, url, headers, body }   response = { status, headers, body }
+// Headers use lowercase names; JSON bodies are already parsed. \`sharedState\` persists across calls.
+
+function onRequest(context, request) {
+  // request.headers["authorization"] = "Bearer " + sharedState.token;
+  return request;
+}
+
+function onResponse(context, request, response) {
+  // response.body.debug = true;
+  console.log(request.method, request.url, "->", response.status);
+  return response;
+}
+`;
 
 export const THROTTLE_PRESETS: Record<string, [number, number, number]> = {
   "3G": [300, 96, 32],
@@ -23,6 +40,7 @@ export function defaultAction(type: Action["type"]): Action {
     case "map_remote": return { type, scheme: null, host: "localhost", port: 3000, path: null };
     case "block": return { type };
     case "throttle": return { type, latency_ms: 300, download_kbps: 96, upload_kbps: 32 };
+    case "script": return { type, code: SCRIPT_TEMPLATE };
   }
 }
 
@@ -68,6 +86,24 @@ function ActionForm({ action, onChange }: { action: Action; onChange: (a: Action
       );
     case "block":
       return <p className="muted">Matching requests get a 403 without reaching the server.</p>;
+    case "script":
+      return (
+        <textarea
+          className="code-editor"
+          rows={18}
+          spellCheck={false}
+          value={action.code}
+          onChange={(e) => onChange({ ...action, code: e.target.value })}
+          onKeyDown={(e) => {
+            // Tab inserts spaces instead of leaving the editor.
+            if (e.key !== "Tab") return;
+            e.preventDefault();
+            const t = e.currentTarget, { selectionStart: a, selectionEnd: b } = t;
+            onChange({ ...action, code: action.code.slice(0, a) + "  " + action.code.slice(b) });
+            requestAnimationFrame(() => t.setSelectionRange(a + 2, a + 2));
+          }}
+        />
+      );
     case "throttle":
       return (
         <div className="form">
