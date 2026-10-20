@@ -55,6 +55,7 @@ mockIPC((cmd, args) => {
       { id: "Medium_Phone", name: "Medium Phone", platform: "android_avd", state: "Shutdown", os: "Android emulator", emulator: true },
     ];
     case "device_command": return "done (mock)";
+    case "repeat_flow": case "compose_request": return 200;
     case "get_ssl_proxying": return { enabled: true, include: ["*"], exclude: [] };
     default: return null;
   }

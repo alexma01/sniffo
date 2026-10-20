@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, BreakpointHit, FlowEvent, FlowSummary, formatBytes, ProxyStatus, Rule, Rules, SslProxying } from "./api";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { BreakpointEditor } from "./BreakpointEditor";
+import { Compose } from "./Compose";
+import { Diff } from "./Diff";
+import { Req, toCurl, toFetch, toPython } from "./snippets";
 import { Devices } from "./Devices";
 import { defaultAction, newRule, RulesEditor } from "./RulesEditor";
 import { clientLabel, compile, emptyFilter, Filter, STATUSES, toggle, TYPES } from "./filters";
@@ -37,6 +41,14 @@ function useFlows() {
 
 interface Menu { id: number; x: number; y: number }
 
+async function requestOf(id: number): Promise<Req> {
+  const flow = await api.getFlow(id);
+  const body = new TextDecoder().decode(await api.getBody(id, false));
+  return { method: flow?.method ?? "GET", url: flow?.url ?? "", headers: flow?.request.headers ?? [], body };
+}
+
+const HAR = [{ name: "HAR / Sniffo session", extensions: ["har"] }];
+
 export default function App() {
   const { flows, hits, doneHit } = useFlows();
   const [rulesDraft, setRulesDraft] = useState<Rule | null | undefined>(undefined);
@@ -48,6 +60,23 @@ export default function App() {
   const [follow, setFollow] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showDevices, setShowDevices] = useState(false);
+  const [compose, setCompose] = useState<Req | null | undefined>(undefined);
+  const [diffBase, setDiffBase] = useState<number | null>(null);
+  const [diff, setDiff] = useState<[number, number] | null>(null);
+  const [fileMenu, setFileMenu] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const notify = (text: string) => { setToast(text); setTimeout(() => setToast(null), 3000); };
+  const fail = (e: unknown) => setError(String(e));
+  const exportHar = async (ids: number[] = []) => {
+    const path = await save({ filters: HAR, defaultPath: ids.length === 1 ? `flow-${ids[0]}.har` : "sniffo-session.har" });
+    if (path) api.exportHar(path, ids).then((n) => notify(`Saved ${n} flows to ${path}`), fail);
+  };
+  const importHar = async (replace: boolean) => {
+    const path = await open({ filters: HAR, multiple: false, directory: false });
+    if (typeof path === "string") api.importHar(path, replace).then((n) => notify(`Loaded ${n} flows`), fail);
+  };
+  const copy = (text: string, what: string) => navigator.clipboard.writeText(text).then(() => notify(`Copied ${what}`));
   const [menu, setMenu] = useState<Menu | null>(null);
 
   const [rules, setRules] = useState<Rules | null>(null);
@@ -105,7 +134,7 @@ export default function App() {
   const remove = (ids: number[]) => { api.remove(ids); if (selected != null && ids.includes(selected)) setSelected(null); };
 
   useEffect(() => {
-    const close = () => setMenu(null);
+    const close = () => { setMenu(null); setFileMenu(false); };
     const onKey = (e: KeyboardEvent) => {
       if ((e.key === "Backspace" || e.key === "Delete") && selected != null && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) remove([selected]);
     };
@@ -119,8 +148,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="toolbar">
-        <span className={`dot ${status?.running ? "on" : "off"}`} />
-        <span>{status?.running ? `Listening on ${status.address}` : "Proxy stopped"}</span>
+        <span className={`dot ${status?.running ? "on" : "off"}`} title={status?.running ? `Listening on ${status.address}` : "Proxy stopped"} />
         {status?.running && (
           <button className="lan" onClick={() => setShowDevices(true)} title="Use this address on phones and tablets">
             {status.allow_lan && status.lan[0] ? `📱 ${status.lan[0].ip}:${status.port}` : "📱 Devices"}
@@ -144,6 +172,19 @@ export default function App() {
         )}
         <button onClick={() => { api.clear(); setSelected(null); }} title="Remove all unpinned flows">Clear</button>
         <span className="spacer" />
+        <button onClick={() => setCompose(null)}>Compose</button>
+        <div className="dropdown">
+          <button onClick={(e) => { e.stopPropagation(); setFileMenu(!fileMenu); }}>File ▾</button>
+          {fileMenu && (
+            <div className="menu right" onClick={() => setFileMenu(false)}>
+              <div onClick={() => importHar(true)}>Open session…</div>
+              <div onClick={() => exportHar()}>Save session…</div>
+              <hr />
+              <div onClick={() => importHar(false)}>Import HAR…</div>
+              <div onClick={() => exportHar(visible.map((f) => f.id))}>Export visible as HAR…</div>
+            </div>
+          )}
+        </div>
         <button onClick={() => setRulesDraft(null)}>Rules</button>
         <button onClick={() => setShowSettings(true)}>Settings</button>
       </header>
@@ -170,6 +211,9 @@ export default function App() {
       </div>
       {rulesDraft !== undefined && <RulesEditor draft={rulesDraft} onClose={() => { setRulesDraft(undefined); refresh(); }} />}
       {hits.length > 0 && <BreakpointEditor hits={hits} onDone={doneHit} />}
+      {compose !== undefined && <Compose initial={compose ?? undefined} onClose={() => setCompose(undefined)} />}
+      {diff && <Diff left={diff[0]} right={diff[1]} onClose={() => setDiff(null)} />}
+      {toast && <div className="toast">{toast}</div>}
       {showDevices && <Devices status={status} onClose={() => setShowDevices(false)} onChanged={refresh} />}
       {showSettings && <Settings status={status} onClose={() => setShowSettings(false)} onChanged={refresh} />}
       {error && <div className="banner">{error}</div>}
@@ -231,8 +275,19 @@ export default function App() {
       </footer>
       {menu && menuFlow && (
         <div className="menu" style={{ left: menu.x, top: menu.y }}>
+          <div onClick={() => api.repeat(menuFlow.id).then((s) => notify(`Repeated — ${s}`), fail)}>Repeat</div>
+          <div onClick={() => requestOf(menuFlow.id).then(setCompose)}>Edit &amp; Repeat…</div>
+          <hr />
           <div onClick={() => api.pin(menuFlow.id, !menuFlow.pinned)}>{menuFlow.pinned ? "Unpin" : "Pin"}</div>
-          <div onClick={() => navigator.clipboard.writeText(menuFlow.url)}>Copy URL</div>
+          <div onClick={() => copy(menuFlow.url, "URL")}>Copy URL</div>
+          <div onClick={() => requestOf(menuFlow.id).then((r) => copy(toCurl(r), "as cURL"))}>Copy as cURL</div>
+          <div onClick={() => requestOf(menuFlow.id).then((r) => copy(toFetch(r), "as fetch"))}>Copy as fetch</div>
+          <div onClick={() => requestOf(menuFlow.id).then((r) => copy(toPython(r), "as Python"))}>Copy as Python requests</div>
+          <div onClick={() => exportHar([menuFlow.id])}>Export as HAR…</div>
+          <hr />
+          {diffBase != null && diffBase !== menuFlow.id
+            ? <div onClick={() => { setDiff([diffBase, menuFlow.id]); setDiffBase(null); }}>Compare with #{diffBase}</div>
+            : <div onClick={() => { setDiffBase(menuFlow.id); notify(`#${menuFlow.id} marked — right-click another flow to compare`); }}>Mark for diff</div>}
           <div onClick={() => set({ host: menuFlow.host, pinnedOnly: false })}>Show only {menuFlow.host}</div>
           <hr />
           <div onClick={() => setRulesDraft(newRule(menuFlow.url.split("?")[0] + "*", defaultAction("breakpoint")))}>Breakpoint…</div>

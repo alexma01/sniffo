@@ -26,5 +26,6 @@ sniffo-core = { version = "0.1.0", path = "../crates/sniffo-core" }
 tokio = { version = "1.54.0", features = ["net", "time", "sync", "macros"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tauri-plugin-dialog = "2"
 
 

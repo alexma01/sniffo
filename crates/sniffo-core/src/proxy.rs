@@ -223,6 +223,23 @@ impl Engine {
         self.inner.update(id, |f| f.pinned = pinned);
     }
 
+    /// Full copies of every flow (for export).
+    pub fn all_flows(&self) -> Vec<Flow> {
+        self.inner.flows.read().unwrap().values().cloned().collect()
+    }
+
+    /// Adds flows (e.g. from a HAR/session file) with fresh ids.
+    pub fn import(&self, flows: Vec<Flow>) -> usize {
+        let n = flows.len();
+        for mut f in flows {
+            f.id = self.inner.next_id.fetch_add(1, Ordering::Relaxed);
+            let summary = f.summary();
+            self.inner.flows.write().unwrap().insert(f.id, f);
+            let _ = self.inner.events.send(FlowEvent::Upsert(summary));
+        }
+        n
+    }
+
     /// Ids of flows whose URL, headers or text bodies contain `query` (case-insensitive).
     pub fn search(&self, query: &str) -> Vec<FlowId> {
         let q = query.to_lowercase();

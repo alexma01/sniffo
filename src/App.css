@@ -44,7 +44,7 @@ input { font: inherit; color: inherit; }
 
 .app { display: flex; flex-direction: column; height: 100%; }
 .toolbar {
-  display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px; white-space: nowrap;
   border-bottom: 1px solid var(--border); background: var(--bg-2);
 }
 .dot { width: 8px; height: 8px; border-radius: 50%; }
@@ -183,3 +183,12 @@ button.lan { font-variant-numeric: tabular-nums; font-weight: 600; }
 .dev-log { margin-top: 10px; font: 12px/1.5 ui-monospace, Menlo, monospace; max-height: 140px; overflow: auto; }
 .small { font-size: 11px; }
 .warn { color: var(--warn); }
+
+.dropdown { position: relative; }
+.menu.right { position: absolute; right: 0; top: 26px; }
+.toast { position: fixed; bottom: 36px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 6px 14px; border-radius: 8px; z-index: 30; max-width: 80vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal.tall { height: 86vh; display: flex; flex-direction: column; }
+.modal.tall .diff { flex: 1; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+.diff .add { background: color-mix(in srgb, var(--ok) 18%, transparent); display: block; }
+.diff .del { background: color-mix(in srgb, var(--err) 18%, transparent); display: block; }
+details summary { cursor: pointer; color: var(--accent); }

@@ -235,6 +235,36 @@ fn ios_sim(udid: &str, cmd: &Command, ctx: &Context) -> Result<String, String> {
     }
 }
 
+/// Overlays the system CA directory with a tmpfs copy that includes our CA, and on Android 14+
+/// bind-mounts it over the conscrypt APEX store inside zygote and every app's mount namespace.
+/// Needs root (adb root); no -writable-system or reboot, but it does not survive a reboot.
+const SYSTEM_CA_SCRIPT: &str = r#"
+set -e
+S=/system/etc/security/cacerts
+A=/apex/com.android.conscrypt/cacerts
+T=/data/local/tmp/sniffo-cacerts
+rm -rf $T && mkdir -p -m 700 $T
+cp $S/* $T/
+if [ -d $A ]; then cp $A/* $T/; fi
+cp /data/local/tmp/sniffo-ca.pem $T/{HASH}.0
+mount -t tmpfs tmpfs $S
+cp $T/* $S/
+chown root:root $S/*
+chmod 644 $S/*
+chcon u:object_r:system_file:s0 $S/*
+if [ -d $A ]; then
+  mount --bind $S $A
+  for Z in $(pidof zygote zygote64); do
+    nsenter --mount=/proc/$Z/ns/mnt -- mount --bind $S $A
+    for P in $(ps -o PID= -P $Z); do
+      nsenter --mount=/proc/$P/ns/mnt -- mount --bind $S $A 2>/dev/null || true
+    done
+  done
+fi
+rm -rf $T
+echo SNIFFO_OK
+"#;
+
 /// Android trusts `subject_hash_old` named files in /system/etc/security/cacerts.
 fn subject_hash_old(pem: &Path) -> Result<String, String> {
     run(Path::new("openssl"), &["x509", "-inform", "PEM", "-subject_hash_old", "-noout", "-in", &pem.to_string_lossy()])
@@ -269,19 +299,18 @@ fn android(serial: &str, emulator: bool, cmd: &Command, ctx: &Context) -> Result
                 return Err("System CA install is only supported on emulators".into());
             }
             let hash = subject_hash_old(ctx.ca_pem)?;
-            adb(&["root"]).map_err(|e| format!("adb root failed (use a Google APIs image, not Google Play): {e}"))?;
+            // `adb root` exits 0 even on production (Google Play) images, so check the uid.
+            let _ = adb(&["root"]);
             let _ = adb(&["wait-for-device"]);
-            let sdk: u32 = adb(&["shell", "getprop", "ro.build.version.sdk"]).ok().and_then(|v| v.trim().parse().ok()).unwrap_or(0);
-            if sdk >= 34 {
-                // ponytail: Android 14+ reads CAs from the conscrypt APEX; needs a tmpfs overlay + zygote nsenter. Use the user CA path there.
-                return Err("Android 14+ emulators: use “Install CA” (user) and a network_security_config".into());
+            if adb(&["shell", "id", "-u"]).map(|u| u.trim() != "0").unwrap_or(true) {
+                return Err("This emulator runs a Google Play image, which can't be rooted. Create an AVD with a “Google APIs” system image to trust the CA system-wide, or use “Install CA (user)”.".into());
             }
-            adb(&["remount"]).map_err(|e| format!("remount failed; start the emulator with -writable-system: {e}"))?;
-            let target = format!("/system/etc/security/cacerts/{hash}.0");
-            adb(&["push", &ctx.ca_pem.to_string_lossy(), &target])?;
-            adb(&["shell", "chmod", "644", &target])?;
-            adb(&["reboot"])?;
-            Ok("CA installed as system certificate; emulator rebooting".into())
+            adb(&["push", &ctx.ca_pem.to_string_lossy(), "/data/local/tmp/sniffo-ca.pem"])?;
+            let out = adb(&["shell", &SYSTEM_CA_SCRIPT.replace("{HASH}", &hash)])?;
+            if !out.contains("SNIFFO_OK") {
+                return Err(format!("system CA install failed: {}", out.trim()));
+            }
+            Ok("CA trusted system-wide (all apps) until the emulator restarts".into())
         }
         Command::Restart => adb(&["reboot"]).map(|_| "Rebooting device".into()),
         Command::Boot => Err("Device already running".into()),

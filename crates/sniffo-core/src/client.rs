@@ -82,6 +82,10 @@ fn parse_lsof(out: &str, proxy_port: u16, own_pid: u32) -> Vec<(u16, String)> {
 
 /// "Google Chrome Helper (Renderer)" -> "Google Chrome": helpers belong to their app.
 fn app_name(process: &str) -> String {
+    if process == "adb" {
+        // Traffic tunnelled with `adb reverse` from an emulator or USB phone.
+        return "Android (adb)".into();
+    }
     process.split(" Helper").next().unwrap_or(process).trim().to_owned()
 }
 

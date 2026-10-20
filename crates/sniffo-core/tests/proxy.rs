@@ -116,3 +116,24 @@ async fn resolves_local_client_app() {
     }
     panic!("client app never resolved");
 }
+
+#[tokio::test]
+async fn compose_goes_through_proxy_and_har_roundtrips() {
+    let up = upstream_http().await;
+    let s = start(vec![]).await;
+    let status = sniffo_core::compose::send(s.proxy.addr, &s.ca.cert_pem, "PUT", &format!("http://{up}/composed"), &vec![("x-test".into(), "1".into()), ("host".into(), "ignored".into())], "payload".into())
+        .await
+        .unwrap();
+    assert_eq!(status, 200);
+    let f = settled(&s.engine, 1).await;
+    assert_eq!((f.method.as_str(), f.path.as_str()), ("PUT", "/composed"));
+    assert_eq!(&f.request.body[..], b"payload");
+    assert!(f.request.headers.iter().any(|(k, v)| k == "x-test" && v == "1"));
+
+    let har = sniffo_core::har::export(&s.engine.all_flows()).to_string();
+    s.engine.clear();
+    assert_eq!(s.engine.import(sniffo_core::har::import(&har).unwrap()), 1);
+    let back = &s.engine.summaries()[0];
+    assert_eq!((back.path.as_str(), back.status), ("/composed", Some(200)));
+    s.proxy.stop().await;
+}
