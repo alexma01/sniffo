@@ -14,7 +14,9 @@
       {
         "title": "Sniffo",
         "width": 1280,
-        "height": 800
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 560
       }
     ],
     "security": {
@@ -30,6 +32,21 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "Alessandro Marra",
+    "category": "DeveloperTool",
+    "shortDescription": "Free HTTP/HTTPS debugging proxy",
+    "longDescription": "Sniffo captures, inspects and rewrites HTTP, HTTPS and WebSocket traffic from your computer, simulators, emulators and phones.",
+    "copyright": "\u00a9 2026 Alessandro Marra",
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libnss3-tools"
+        ]
+      }
+    }
   }
 }
