@@ -14,10 +14,19 @@ const samples: [string, string, number, string, string][] = [
   ["PUT", "https://api.example.com/v1/items/9", 500, "text/plain", "boom"],
   ["POST", "https://api.example.com/demo.UserService/Get", 200, "application/grpc", String.fromCharCode(0, 0, 0, 0, 7, 8, 7, 18, 3, 97, 100, 97)],
   ["GET", "https://www.example.org/", 304, "text/html", ""],
+  // Tunnels: SSL Proxying not enabled for these hosts (no status, no response).
+  ["CONNECT", "https://plugins.jetbrains.com:443", 0, "", ""],
+  ["CONNECT", "https://www.google.com:443", 0, "", ""],
 ];
 
 const flows: Flow[] = samples.map(([method, url, status, ct, body], i) => {
   const u = new URL(url);
+  if (method === "CONNECT") return {
+    id: i + 1, client_addr: "127.0.0.1:52000", started_ms: Date.now() - (6 - i) * 1000, ttfb_ms: null, duration_ms: null,
+    method, url, scheme: "https", host: u.hostname, path: "", http_version: "HTTP/1.1",
+    request: { headers: [["host", u.host], ["user-agent", "JetBrains Rider/2026.2"]], body_size: 0 },
+    status: null, response: null, state: "complete", error: null, ws_messages: [], graphql: null,
+  };
   return {
     id: i + 1, client_addr: "127.0.0.1:52000", started_ms: Date.now() - (6 - i) * 1000, ttfb_ms: 40 + i * 10, duration_ms: 60 + i * 15,
     method, url, scheme: "https", host: u.host, path: u.pathname + u.search, http_version: "HTTP/1.1",
@@ -35,12 +44,13 @@ const flows: Flow[] = samples.map(([method, url, status, ct, body], i) => {
 });
 const bodies = new Map(samples.map((s, i) => [i + 1, enc.encode(s[4])]));
 const pinned = new Set<number>();
+let ssl = { enabled: true, include: ["api.example.com", "www.example.org", "stream.example.com"], exclude: [] as string[] };
 let rules: unknown = { rules: [], allow_list: { enabled: false, patterns: [] }, no_caching: false };
 
 const summary = (f: Flow): FlowSummary => ({
   id: f.id, started_ms: f.started_ms, ttfb_ms: f.ttfb_ms, duration_ms: f.duration_ms, method: f.method, url: f.url, host: f.host, path: f.path,
   scheme: f.scheme, http_version: f.id % 2 ? "HTTP/2.0" : "HTTP/1.1", client_ip: f.id === 6 ? "192.168.1.40" : "127.0.0.1",
-  client_app: f.id === 6 ? null : f.id % 3 ? "Google Chrome" : "curl", request_type: null,
+  client_app: f.method === "CONNECT" ? "Rider" : f.id === 6 ? null : f.id % 3 ? "Google Chrome" : "curl", request_type: null,
   status: f.status, state: f.state, content_type: f.response?.headers[0][1] ?? null, request_size: f.request.body_size,
   response_size: f.response?.body_size ?? null, error: f.error, pinned: pinned.has(f.id), tags: f.id === 2 ? ["Map Local /login"] : [], ws_count: f.ws_messages.length, graphql: f.graphql,
 });
@@ -81,7 +91,8 @@ mockIPC((cmd, args) => {
       emit("flows", [{ type: "upsert", data: summary(f) }]);
       return;
     }
-    case "get_ssl_proxying": return { enabled: true, include: ["*"], exclude: [] };
+    case "get_ssl_proxying": return ssl;
+    case "set_ssl_proxying": ssl = a.ssl; return;
     default: return null;
   }
 }, { shouldMockEvents: true });

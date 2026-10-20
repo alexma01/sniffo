@@ -9,7 +9,7 @@ import { Devices } from "./Devices";
 import { defaultAction, newRule, RulesEditor } from "./RulesEditor";
 import { clientLabel, compile, emptyFilter, Filter, STATUSES, toggle, TYPES } from "./filters";
 import { FlowDetail } from "./FlowDetail";
-import { FlowList } from "./FlowList";
+import { FlowList, isTunnel } from "./FlowList";
 import { Settings } from "./Settings";
 import "./App.css";
 
@@ -123,6 +123,17 @@ export default function App() {
     api.getRules().then(setRules);
     api.getSsl().then(setSsl);
     return api.status().then(setStatus);
+  };
+  /** Proxyman-style per-host toggle: enable adds the host to Include; disable removes it, excluding it if a wildcard still matches. */
+  const sslForHost = (host: string, on: boolean) => {
+    if (!ssl) return;
+    const other = (l: string[]) => l.filter((h) => h.toLowerCase() !== host.toLowerCase());
+    const glob = (p: string) => new RegExp(`^${p.split("*").map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`, "i");
+    const include = on ? [...other(ssl.include), host] : other(ssl.include);
+    const exclude = on || !include.some((p) => glob(p).test(host)) ? other(ssl.exclude) : [...other(ssl.exclude), host];
+    api.setSsl({ ...ssl, include, exclude })
+      .then(() => notify(on ? `SSL Proxying enabled for ${host}${ssl.enabled ? " — retry the request to see it decrypted" : " (SSL Proxying is off in Settings)"}` : `SSL Proxying disabled for ${host}`), fail)
+      .finally(refresh);
   };
   const start = () => api.start().then(() => setError(null), (e) => setError(String(e))).finally(refresh);
   /** First start of this app run: also take over the system proxy if the user wants that (default, like Proxyman). */
@@ -384,8 +395,15 @@ export default function App() {
       </footer>
       {menu && menuFlow && (
         <div className="menu" style={{ left: menu.x, top: menu.y }}>
-          <div onClick={() => api.repeat(menuFlow.id).then((s) => notify(`Repeated — ${s}`), fail)}>Repeat</div>
-          <div onClick={() => requestOf(menuFlow.id).then(setCompose)}>Edit &amp; Repeat…</div>
+          {isTunnel(menuFlow) ? (
+            <div onClick={() => sslForHost(menuFlow.host, true)}>Enable SSL Proxying for {menuFlow.host}</div>
+          ) : (
+            <>
+              <div onClick={() => api.repeat(menuFlow.id).then((s) => notify(`Repeated — ${s}`), fail)}>Repeat</div>
+              <div onClick={() => requestOf(menuFlow.id).then(setCompose)}>Edit &amp; Repeat…</div>
+              {(menuFlow.scheme === "https" || menuFlow.scheme === "wss") && <div onClick={() => sslForHost(menuFlow.host, false)}>Disable SSL Proxying for {menuFlow.host}</div>}
+            </>
+          )}
           <hr />
           <div onClick={() => api.pin(menuFlow.id, !menuFlow.pinned)}>{menuFlow.pinned ? "Unpin" : "Pin"}</div>
           <div className="swatches" onClick={(e) => e.stopPropagation()}>
@@ -395,6 +413,7 @@ export default function App() {
             <span title="No highlight" className="none" onClick={() => { highlight(menuFlow.id, null); setMenu(null); }}>✕</span>
           </div>
           <div onClick={() => copy(menuFlow.url, "URL")}>Copy URL</div>
+          {!isTunnel(menuFlow) && <>
           <div onClick={() => requestOf(menuFlow.id).then((r) => copy(toCurl(r), "as cURL"))}>Copy as cURL</div>
           <div onClick={() => requestOf(menuFlow.id).then((r) => copy(toFetch(r), "as fetch"))}>Copy as fetch</div>
           <div onClick={() => requestOf(menuFlow.id).then((r) => copy(toPython(r), "as Python"))}>Copy as Python requests</div>
@@ -403,7 +422,9 @@ export default function App() {
           {diffBase != null && diffBase !== menuFlow.id
             ? <div onClick={() => { setDiff([diffBase, menuFlow.id]); setDiffBase(null); }}>Compare with #{diffBase}</div>
             : <div onClick={() => { setDiffBase(menuFlow.id); notify(`#${menuFlow.id} marked — right-click another flow to compare`); }}>Mark for diff</div>}
+          </>}
           <div onClick={() => set({ host: menuFlow.host, pinnedOnly: false })}>Show only {menuFlow.host}</div>
+          {!isTunnel(menuFlow) && <>
           <hr />
           <div onClick={() => setRulesDraft(newRule(menuFlow.url.split("?")[0] + "*", defaultAction("breakpoint")))}>Breakpoint…</div>
           <div onClick={async () => {
@@ -416,6 +437,7 @@ export default function App() {
           <div onClick={() => setRulesDraft(newRule(menuFlow.url.split("?")[0] + "*", defaultAction("script")))}>Script…</div>
           <div onClick={() => setRulesDraft(newRule(`*://${menuFlow.host}/*`, defaultAction("throttle")))}>Throttle host…</div>
           <div onClick={() => setRulesDraft(newRule(`*://${menuFlow.host}/*`, defaultAction("block")))}>Block host…</div>
+          </>}
           <hr />
           <div className="danger" onClick={() => remove([menuFlow.id])}>Delete</div>
         </div>

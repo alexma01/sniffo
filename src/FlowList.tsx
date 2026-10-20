@@ -4,8 +4,12 @@ import { FlowSummary, formatBytes } from "./api";
 
 const ROW = 24;
 
+/** HTTPS tunnel passed through without decryption (SSL Proxying not enabled for its host). */
+export const isTunnel = (f: FlowSummary) => f.method === "CONNECT";
+
 function statusClass(f: FlowSummary) {
   if (f.state === "failed") return "s-err";
+  if (isTunnel(f)) return "s-pending";
   if (f.status == null) return "s-pending";
   if (f.status >= 500) return "s-err";
   if (f.status >= 400) return "s-warn";
@@ -25,8 +29,8 @@ export const COLUMNS: Column[] = [
   { id: "id", label: "#", width: 52, cell: (f) => (f.pinned ? "📌" : f.id) },
   { id: "time", label: "Time", width: 96, cell: (f) => time(f.started_ms) },
   { id: "client", label: "Client", width: 130, cell: (f) => f.client_app ?? f.client_ip, title: (f) => `${f.client_app ?? ""} ${f.client_ip}` },
-  { id: "method", label: "Method", width: 62, cell: (f) => <b>{f.method}</b> },
-  { id: "status", label: "Code", width: 46, cell: (f) => (f.state === "failed" ? "ERR" : f.state === "paused" ? "⏸" : f.status ?? "…") },
+  { id: "method", label: "Method", width: 72, cell: (f) => <b>{f.method}</b> },
+  { id: "status", label: "Code", width: 46, cell: (f) => (f.state === "failed" ? "ERR" : f.state === "paused" ? "⏸" : isTunnel(f) ? "" : f.status ?? "…") },
   { id: "tls", label: "🔒", width: 22, cell: (f) => (f.scheme === "https" || f.scheme === "wss" ? "🔒" : ""), title: (f) => f.scheme },
   { id: "host", label: "Host", width: 190, cell: (f) => f.host },
   {
@@ -34,6 +38,7 @@ export const COLUMNS: Column[] = [
     cell: (f) => (
       <>
         {f.state === "paused" && <span className="badge warn">⏸ paused</span>}
+        {isTunnel(f) && <span className="badge muted" title="Right-click → Enable SSL Proxying to decrypt this host">SSL Proxying not enabled</span>}
         {f.ws_count > 0 && <span className="badge">WS {f.ws_count}</span>}
         {f.graphql && <span className="badge gql">{f.graphql}</span>}
         {f.tags.map((t) => <span key={t} className="badge">{t}</span>)}

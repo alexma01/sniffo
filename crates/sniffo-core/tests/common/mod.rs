@@ -2,7 +2,7 @@
 use hudsucker::rcgen::{CertificateParams, KeyPair};
 use hyper::{Request, Response, body::Incoming, service::service_fn};
 use hyper_util::rt::TokioIo;
-use sniffo_core::{Engine, FlowState, RootCa, StartOptions};
+use sniffo_core::{Engine, FlowState, RootCa, SslProxying, StartOptions};
 use std::{convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::net::TcpListener;
 use tokio_rustls::{TlsAcceptor, rustls::{ServerConfig, pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer}}};
@@ -59,7 +59,19 @@ pub struct Setup {
     pub ca: RootCa,
 }
 
+/// Proxy that decrypts every host (the app default decrypts none).
 pub async fn start(extra_roots: Vec<String>) -> Setup {
+    let s = start_default(extra_roots).await;
+    s.engine.set_ssl_proxying(decrypt_all());
+    s
+}
+
+pub fn decrypt_all() -> SslProxying {
+    SslProxying { include: vec!["*".into()], ..Default::default() }
+}
+
+/// Proxy with the out-of-the-box SSL Proxying settings.
+pub async fn start_default(extra_roots: Vec<String>) -> Setup {
     let _ = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider().install_default();
     let ca = RootCa::generate().unwrap();
     let engine = Engine::default();
