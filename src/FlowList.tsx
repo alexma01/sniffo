@@ -71,9 +71,13 @@ export function FlowList(props: {
               >
                 <span className="c-id">{f.pinned ? "📌" : f.id}</span>
                 <span className="c-method">{f.method}</span>
-                <span className="c-status">{f.state === "failed" ? "ERR" : f.status ?? "…"}</span>
+                <span className="c-status">{f.state === "failed" ? "ERR" : f.state === "paused" ? "⏸" : f.status ?? "…"}</span>
                 <span className="c-host" title={f.host}>{f.host}</span>
-                <span className="c-path" title={f.error ?? f.url}>{f.path}</span>
+                <span className="c-path" title={f.error ?? f.url}>
+                  {f.state === "paused" && <span className="badge warn">⏸ paused</span>}
+                  {f.tags.map((t) => <span key={t} className="badge">{t}</span>)}
+                  {f.path}
+                </span>
                 <span className="c-type">{f.content_type?.split(";")[0] ?? ""}</span>
                 <span className="c-size">{formatBytes(f.response_size)}</span>
                 <span className="c-time">{f.duration_ms != null ? `${f.duration_ms} ms` : ""}</span>

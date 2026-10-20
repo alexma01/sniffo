@@ -79,3 +79,19 @@ async fn search_pin_and_clear() {
     assert_eq!(left, vec![2], "pinned flows survive clear");
     s.proxy.stop().await;
 }
+
+#[tokio::test]
+async fn serves_certificate_page_to_devices() {
+    let s = start(vec![]).await;
+    let c = client(&s, None);
+    let page = c.get("http://sniffo.cert/").send().await.unwrap().text().await.unwrap();
+    assert!(page.contains("/sniffo-ca.pem"));
+    let pem = c.get("http://sniffo.cert/sniffo-ca.pem").send().await.unwrap().text().await.unwrap();
+    assert_eq!(pem, s.ca.cert_pem);
+    let der = c.get("http://sniffo.cert/sniffo-ca.crt").send().await.unwrap().bytes().await.unwrap();
+    assert_eq!(der.to_vec(), s.ca.cert_der());
+    // Opening http://<proxy-ip>:<port>/ directly (no proxy configured yet) shows the same page.
+    let direct = reqwest::get(format!("http://{}/", s.proxy.addr)).await.unwrap().text().await.unwrap();
+    assert!(direct.contains("Sniffo root certificate"));
+    assert!(s.engine.summaries().is_empty(), "cert page is not recorded");
+}

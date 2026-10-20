@@ -258,3 +258,48 @@ pub fn trust_ca(cert_path: &Path) -> io::Result<()> {
 pub fn ca_trusted(cert_path: &Path) -> bool {
     imp::ca_trusted(cert_path)
 }
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct LanAddress {
+    pub interface: String,
+    pub ip: String,
+}
+
+/// IPv4 addresses phones on the same network can reach, physical interfaces first.
+pub fn lan_addresses() -> Vec<LanAddress> {
+    let mut list: Vec<_> = local_ip_address::list_afinet_netifas()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(interface, ip)| match ip {
+            std::net::IpAddr::V4(v4) if !v4.is_loopback() && !v4.is_link_local() && !v4.is_unspecified() => {
+                Some(LanAddress { interface, ip: v4.to_string() })
+            }
+            _ => None,
+        })
+        .collect();
+    list.sort_by_key(|a| lan_rank(&a.interface, &a.ip));
+    list.dedup();
+    list
+}
+
+/// Lower is better: Wi-Fi/Ethernet with a private address before VPN/tunnel interfaces.
+fn lan_rank(interface: &str, ip: &str) -> u8 {
+    let i = interface.to_ascii_lowercase();
+    let tunnel = ["utun", "tun", "tap", "tailscale", "wg", "ppp", "ipsec", "vpn", "docker", "br-", "veth", "vmnet", "bridge"].iter().any(|t| i.contains(t));
+    let private = ip.starts_with("192.168.") || ip.starts_with("10.") || (ip.starts_with("172.") && ip.split('.').nth(1).and_then(|o| o.parse::<u8>().ok()).is_some_and(|o| (16..32).contains(&o)));
+    match (tunnel, private) {
+        (false, true) => 0,
+        (false, false) => 1,
+        (true, _) => 2,
+    }
+}
+
+#[cfg(test)]
+mod lan_tests {
+    #[test]
+    fn ranks_wifi_before_vpn() {
+        assert!(super::lan_rank("en0", "192.168.1.12") < super::lan_rank("utun3", "10.8.0.2"));
+        assert!(super::lan_rank("Wi-Fi", "172.20.1.4") < super::lan_rank("Wi-Fi", "100.64.0.1"));
+        assert!(super::lan_addresses().iter().all(|a| a.ip != "127.0.0.1"));
+    }
+}

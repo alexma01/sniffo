@@ -1,6 +1,7 @@
 use serde::Serialize;
-use sniffo_core::{Engine, Flow, FlowEvent, FlowSummary, ProxyHandle, RootCa, SslProxying, StartOptions, system};
-use std::{path::PathBuf, time::Duration};
+use serde::Deserialize;
+use sniffo_core::{BreakpointHit, Decision, Engine, Flow, FlowEvent, FlowSummary, ProxyHandle, RootCa, Rules, SslProxying, StartOptions, system};
+use std::{path::PathBuf, sync::atomic::{AtomicBool, Ordering}, time::Duration};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, ipc::Response};
 use tokio::{net::TcpListener, sync::Mutex};
 
@@ -11,13 +12,42 @@ struct AppState {
     ca: RootCa,
     ca_path: PathBuf,
     snapshot_path: PathBuf,
+    settings_path: PathBuf,
+    allow_lan: AtomicBool,
     proxy: Mutex<Option<ProxyHandle>>,
+}
+
+/// Persisted user configuration.
+#[derive(Serialize, Deserialize, Default)]
+struct Saved {
+    /// Listen on all interfaces so phones/tablets on the LAN can use the proxy.
+    #[serde(default = "yes")]
+    allow_lan: bool,
+    #[serde(default)]
+    ssl: SslProxying,
+    #[serde(default)]
+    rules: Rules,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl AppState {
+    fn save(&self) -> Result<(), String> {
+        let saved = Saved { allow_lan: self.allow_lan.load(Ordering::Relaxed), ssl: self.engine.ssl_proxying(), rules: self.engine.rules() };
+        let json = serde_json::to_vec_pretty(&saved).map_err(|e| e.to_string())?;
+        std::fs::write(&self.settings_path, json).map_err(|e| e.to_string())
+    }
 }
 
 #[derive(Serialize)]
 struct ProxyStatus {
     running: bool,
     address: Option<String>,
+    port: Option<u16>,
+    allow_lan: bool,
+    lan: Vec<system::LanAddress>,
     ca_path: String,
     ca_trusted: bool,
     system_proxy: bool,
@@ -28,7 +58,10 @@ async fn proxy_status(state: State<'_, AppState>) -> Result<ProxyStatus, String>
     let proxy = state.proxy.lock().await;
     Ok(ProxyStatus {
         running: proxy.is_some(),
-        address: proxy.as_ref().map(|p| p.addr.to_string()),
+        address: proxy.as_ref().map(|p| format!("127.0.0.1:{}", p.addr.port())),
+        port: proxy.as_ref().map(|p| p.addr.port()),
+        allow_lan: state.allow_lan.load(Ordering::Relaxed),
+        lan: system::lan_addresses(),
         ca_path: state.ca_path.display().to_string(),
         ca_trusted: system::ca_trusted(&state.ca_path),
         system_proxy: system::system_proxy_enabled(&state.snapshot_path),
@@ -41,8 +74,9 @@ async fn start_proxy(state: State<'_, AppState>, port: Option<u16>) -> Result<St
     if let Some(p) = proxy.take() {
         p.stop().await;
     }
-    // Loopback only; LAN access for devices is an explicit opt-in (open proxies get abused).
-    let listener = TcpListener::bind(("127.0.0.1", port.unwrap_or(DEFAULT_PORT)))
+    // All interfaces when LAN devices are allowed (like Proxyman); otherwise loopback only.
+    let host = if state.allow_lan.load(Ordering::Relaxed) { "0.0.0.0" } else { "127.0.0.1" };
+    let listener = TcpListener::bind((host, port.unwrap_or(DEFAULT_PORT)))
         .await
         .map_err(|e| format!("cannot listen on port {}: {e}", port.unwrap_or(DEFAULT_PORT)))?;
     let handle = state.engine.start(listener, &state.ca, StartOptions::default()).await?;
@@ -66,8 +100,8 @@ async fn set_system_proxy(state: State<'_, AppState>, enabled: bool) -> Result<(
     if !enabled {
         return system::disable_system_proxy(&state.snapshot_path).map_err(|e| e.to_string());
     }
-    let addr = state.proxy.lock().await.as_ref().map(|p| p.addr).ok_or("start the proxy first")?;
-    system::enable_system_proxy(&addr.ip().to_string(), addr.port(), &state.snapshot_path).map_err(|e| e.to_string())
+    let port = state.proxy.lock().await.as_ref().map(|p| p.addr.port()).ok_or("start the proxy first")?;
+    system::enable_system_proxy("127.0.0.1", port, &state.snapshot_path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -79,6 +113,17 @@ async fn trust_ca(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 fn reveal_ca(state: State<'_, AppState>) -> Result<(), String> {
     tauri_plugin_opener::reveal_item_in_dir(&state.ca_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn set_allow_lan(state: State<'_, AppState>, allow: bool) -> Result<(), String> {
+    state.allow_lan.store(allow, Ordering::Relaxed);
+    state.save()?;
+    let port = state.proxy.lock().await.as_ref().map(|p| p.addr.port());
+    if port.is_some() {
+        start_proxy(state, port).await?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -125,8 +170,30 @@ fn get_ssl_proxying(state: State<'_, AppState>) -> SslProxying {
 }
 
 #[tauri::command]
-fn set_ssl_proxying(state: State<'_, AppState>, ssl: SslProxying) {
+fn set_ssl_proxying(state: State<'_, AppState>, ssl: SslProxying) -> Result<(), String> {
     state.engine.set_ssl_proxying(ssl);
+    state.save()
+}
+
+#[tauri::command]
+fn get_rules(state: State<'_, AppState>) -> Rules {
+    state.engine.rules()
+}
+
+#[tauri::command]
+fn set_rules(state: State<'_, AppState>, rules: Rules) -> Result<(), String> {
+    state.engine.set_rules(rules);
+    state.save()
+}
+
+#[tauri::command]
+fn list_breakpoints(state: State<'_, AppState>) -> Vec<BreakpointHit> {
+    state.engine.breakpoints()
+}
+
+#[tauri::command]
+fn resume_breakpoint(state: State<'_, AppState>, id: u64, decision: Decision) -> bool {
+    state.engine.resume(id, decision)
 }
 
 /// Forwards engine events to the UI in batches so heavy traffic doesn't flood IPC.
@@ -167,13 +234,25 @@ pub fn run() {
                 }
             }
             let engine = Engine::default();
+            let settings_path = dir.join("settings.json");
+            let mut allow_lan = true;
+            if let Ok(data) = std::fs::read(&settings_path) {
+                match serde_json::from_slice::<Saved>(&data) {
+                    Ok(saved) => {
+                        allow_lan = saved.allow_lan;
+                        engine.set_ssl_proxying(saved.ssl);
+                        engine.set_rules(saved.rules);
+                    }
+                    Err(e) => tracing::error!("ignoring unreadable {}: {e}", settings_path.display()),
+                }
+            }
             forward_events(app.handle().clone(), &engine);
-            app.manage(AppState { engine, ca, ca_path: dir.join("sniffo-ca.pem"), snapshot_path, proxy: Mutex::new(None) });
+            app.manage(AppState { engine, ca, ca_path: dir.join("sniffo-ca.pem"), snapshot_path, settings_path, allow_lan: AtomicBool::new(allow_lan), proxy: Mutex::new(None) });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            proxy_status, start_proxy, stop_proxy, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
-            get_ssl_proxying, set_ssl_proxying
+            proxy_status, start_proxy, stop_proxy, set_allow_lan, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
+            get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, list_breakpoints, resume_breakpoint
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

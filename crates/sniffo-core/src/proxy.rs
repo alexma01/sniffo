@@ -31,6 +31,9 @@ use tokio::{net::TcpListener, sync::{broadcast, oneshot}, task::JoinHandle, time
 pub const MAX_STORED_BODY: usize = 32 * 1024 * 1024;
 /// Oldest unpinned flows are evicted past this count to bound memory.
 pub const MAX_FLOWS: usize = 50_000;
+/// Magic host served by the proxy itself: phones open it to download the root CA.
+pub const CERT_HOST: &str = "sniffo.cert";
+
 /// A forgotten breakpoint lets the message through unmodified after this long.
 pub const BREAKPOINT_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -284,7 +287,7 @@ impl Engine {
             .with_ca(authority)
             .with_http_connector(https)
             .with_websocket_connector(Connector::Rustls(Arc::new(tls)))
-            .with_http_handler(Capture { engine: self.inner.clone(), id: None, is_head: false, break_response: false, download_bps: None })
+            .with_http_handler(Capture { engine: self.inner.clone(), id: None, is_head: false, break_response: false, download_bps: None, ca: Arc::new(ca.clone()) })
             .with_graceful_shutdown(async { let _ = rx.await; })
             .build()
             .map_err(|e| e.to_string())?;
@@ -320,6 +323,35 @@ struct Capture {
     is_head: bool,
     break_response: bool,
     download_bps: Option<u64>,
+    ca: Arc<RootCa>,
+}
+
+const CERT_PAGE: &str = r#"<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sniffo certificate</title>
+<style>body{font:17px -apple-system,Roboto,sans-serif;max-width:560px;margin:24px auto;padding:0 16px;line-height:1.5}
+a.b{display:block;text-align:center;background:#0a66ff;color:#fff;padding:12px;border-radius:10px;text-decoration:none;margin:12px 0}</style>
+<h2>Sniffo root certificate</h2>
+<a class="b" href="/sniffo-ca.pem">Download for iOS / macOS</a>
+<a class="b" href="/sniffo-ca.crt">Download for Android</a>
+<h3>iPhone / iPad</h3><ol><li>Open this page in <b>Safari</b> and tap the iOS download, then <i>Allow</i>.</li>
+<li>Settings → General → VPN &amp; Device Management → <i>Sniffo Root CA</i> → Install.</li>
+<li>Settings → General → About → Certificate Trust Settings → enable <i>Sniffo Root CA</i>.</li></ol>
+<h3>Android</h3><ol><li>Tap the Android download.</li><li>Settings → Security → Encryption &amp; credentials → Install a certificate → <i>CA certificate</i>.</li>
+<li>Apps must trust user CAs (<code>network_security_config</code>) to be decrypted; browsers like Chrome do.</li></ol>"#;
+
+/// Serves the certificate page when a device opens http://sniffo.cert or hits the proxy port directly.
+fn cert_response(path: &str, ca: &RootCa) -> Response<Body> {
+    let (ct, body): (&str, Body) = match path {
+        "/sniffo-ca.pem" => ("application/x-x509-ca-cert", Body::from(ca.cert_pem.clone())),
+        "/sniffo-ca.crt" => ("application/x-x509-ca-cert", Body::from(ca.cert_der())),
+        _ => ("text/html; charset=utf-8", Body::from(CERT_PAGE)),
+    };
+    let mut res = Response::new(body);
+    res.headers_mut().insert("content-type", HeaderValue::from_static(ct));
+    if path.ends_with(".crt") || path.ends_with(".pem") {
+        res.headers_mut().insert("content-disposition", HeaderValue::from_str(&format!("attachment; filename=\"{}\"", &path[1..])).expect("ascii"));
+    }
+    res
 }
 
 fn error_response(status: StatusCode, msg: String) -> Response<Body> {
@@ -444,6 +476,9 @@ impl HttpHandler for Capture {
             Ok(b) => b.to_bytes(),
             Err(e) => return error_response(StatusCode::BAD_REQUEST, format!("failed to read request body: {e}")).into(),
         };
+        if parts.uri.authority().is_none() || parts.uri.host() == Some(CERT_HOST) {
+            return cert_response(parts.uri.path(), &self.ca).into();
+        }
         self.is_head = parts.method == Method::HEAD;
         let rules = self.engine.rules.read().unwrap().clone();
         let plan = rules.plan(parts.method.as_str(), &parts.uri.to_string());
