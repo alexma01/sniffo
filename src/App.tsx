@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, BreakpointHit, FlowEvent, FlowSummary, formatBytes, ProxyStatus, Rule, Rules, SslProxying } from "./api";
+import { api, BreakpointHit, FlowEvent, ScriptLog, FlowSummary, formatBytes, ProxyStatus, Rule, Rules, SslProxying } from "./api";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { BreakpointEditor } from "./BreakpointEditor";
 import { Compose } from "./Compose";
@@ -16,6 +16,7 @@ import "./App.css";
 function useFlows() {
   const [flows, setFlows] = useState<Map<number, FlowSummary>>(new Map());
   const [hits, setHits] = useState<BreakpointHit[]>([]);
+  const [logs, setLogs] = useState<ScriptLog[]>([]);
   useEffect(() => {
     api.listBreakpoints().then(setHits);
     const reload = () => api.listFlows().then((list) => setFlows(new Map(list.map((f) => [f.id, f]))));
@@ -23,6 +24,8 @@ function useFlows() {
     const apply = (events: FlowEvent[]) => {
       const newHits = events.flatMap((e) => (e.type === "breakpoint" ? [e.data] : []));
       if (newHits.length) setHits((h) => [...h, ...newHits]);
+      const newLogs = events.flatMap((e) => (e.type === "log" ? [e.data] : []));
+      if (newLogs.length) setLogs((l) => [...l, ...newLogs].slice(-1000));
       setFlows((prev) => {
         let next = new Map(prev);
         for (const e of events) {
@@ -36,7 +39,7 @@ function useFlows() {
     const un = [api.onFlows(apply), api.onResync(reload)];
     return () => { un.forEach((p) => p.then((f) => f())); };
   }, []);
-  return { flows, hits, doneHit: (id: number) => setHits((h) => h.filter((x) => x.id !== id)) };
+  return { flows, hits, logs, clearLogs: () => setLogs([]), doneHit: (id: number) => setHits((h) => h.filter((x) => x.id !== id)) };
 }
 
 interface Menu { id: number; x: number; y: number }
@@ -50,7 +53,8 @@ async function requestOf(id: number): Promise<Req> {
 const HAR = [{ name: "HAR / Sniffo session", extensions: ["har"] }];
 
 export default function App() {
-  const { flows, hits, doneHit } = useFlows();
+  const { flows, hits, logs, clearLogs, doneHit } = useFlows();
+  const [showConsole, setShowConsole] = useState(false);
   const [rulesDraft, setRulesDraft] = useState<Rule | null | undefined>(undefined);
   const [status, setStatus] = useState<ProxyStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -257,6 +261,25 @@ export default function App() {
           )}
         </div>
       </div>
+      {showConsole && (
+        <div className="console">
+          <div className="console-head">
+            <strong>Script console</strong>
+            <span className="spacer" />
+            <button onClick={clearLogs}>Clear</button>
+            <button onClick={() => setShowConsole(false)}>✕</button>
+          </div>
+          <div className="console-body">
+            {!logs.length && <div className="muted">console.log output and script errors appear here.</div>}
+            {logs.map((l, i) => (
+              <div key={i} className={l.error ? "err" : ""}>
+                <span className="muted">{new Date(l.time_ms).toLocaleTimeString([], { hour12: false })} [{l.rule}] </span>
+                <a href="#" onClick={(e) => { e.preventDefault(); setSelected(l.id); }}>#{l.id}</a> {l.message}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <footer className="statusbar">
         <span className="item"><span className={`dot ${status?.running ? "on" : "off"}`} />{status?.running ? `Proxy ${status.address}` : "Proxy stopped"}</span>
         {status?.running && status.allow_lan && status.lan[0] && (
@@ -269,6 +292,7 @@ export default function App() {
         {rules?.allow_list.enabled && <span className="item warn">Allow list on</span>}
         <span className="spacer" />
         {stats.paused > 0 && <span className="item warn">⏸ {stats.paused} paused</span>}
+        <button className={`linkish ${logs.some((l) => l.error) ? "err" : ""}`} onClick={() => setShowConsole(!showConsole)}>Console ({logs.length})</button>
         <span className="item"><span className="label">Errors</span> {stats.errors}</span>
         <span className="item"><span className="label">↑</span> {formatBytes(stats.up)} <span className="label">↓</span> {formatBytes(stats.down)}</span>
         <span className="item">{visible.length} / {flows.size} flows</span>
@@ -298,6 +322,7 @@ export default function App() {
             setRulesDraft(newRule(menuFlow.url.split("?")[0] + "*", { type: "map_local", status: flow?.status ?? 200, headers, body, file: null }));
           }}>Map Local…</div>
           <div onClick={() => setRulesDraft(newRule(`${menuFlow.url.split("://")[0]}://${menuFlow.host}/*`, defaultAction("map_remote")))}>Map Remote…</div>
+          <div onClick={() => setRulesDraft(newRule(menuFlow.url.split("?")[0] + "*", defaultAction("script")))}>Script…</div>
           <div onClick={() => setRulesDraft(newRule(`*://${menuFlow.host}/*`, defaultAction("throttle")))}>Throttle host…</div>
           <div onClick={() => setRulesDraft(newRule(`*://${menuFlow.host}/*`, defaultAction("block")))}>Block host…</div>
           <hr />

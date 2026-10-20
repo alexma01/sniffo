@@ -77,7 +77,10 @@ export type FlowEvent =
   | { type: "upsert"; data: FlowSummary }
   | { type: "removed"; data: number[] }
   | { type: "cleared" }
-  | { type: "breakpoint"; data: BreakpointHit };
+  | { type: "breakpoint"; data: BreakpointHit }
+  | { type: "log"; data: ScriptLog };
+
+export interface ScriptLog { id: number; rule: string; message: string; error: boolean; time_ms: number }
 
 export interface Matcher { url: string; regex: boolean; methods: string[] }
 
@@ -86,7 +89,8 @@ export type Action =
   | { type: "map_remote"; scheme: string | null; host: string | null; port: number | null; path: string | null }
   | { type: "block" }
   | { type: "breakpoint"; request: boolean; response: boolean }
-  | { type: "throttle"; latency_ms: number; download_kbps: number; upload_kbps: number };
+  | { type: "throttle"; latency_ms: number; download_kbps: number; upload_kbps: number }
+  | { type: "script"; code: string };
 
 export interface Rule { id: string; name: string; enabled: boolean; matcher: Matcher; action: Action }
 export interface Rules { rules: Rule[]; allow_list: { enabled: boolean; patterns: string[] } }

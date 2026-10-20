@@ -66,6 +66,8 @@ pub enum Action {
         #[serde(default)]
         response: bool,
     },
+    /// JavaScript `onRequest` / `onResponse` (see `script` module).
+    Script { code: String },
     /// Simulated network conditions.
     Throttle {
         #[serde(default)]
@@ -119,6 +121,8 @@ pub struct Plan {
     pub latency_ms: u64,
     pub download_bps: Option<u64>,
     pub upload_bps: Option<u64>,
+    /// (rule name, code), run in rule order.
+    pub scripts: Vec<(String, String)>,
 }
 
 impl Rules {
@@ -138,6 +142,7 @@ impl Rules {
                     p.break_request |= request;
                     p.break_response |= response;
                 }
+                Action::Script { code } => p.scripts.push((r.name.clone(), code.clone())),
                 Action::Throttle { latency_ms, download_kbps, upload_kbps } => {
                     p.latency_ms = p.latency_ms.max(*latency_ms);
                     let bps = |k: u64| (k > 0).then_some(k * 1024);

@@ -15,6 +15,7 @@ hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "
 local-ip-address = "0.6.13"
 regex = "1.13.1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2"] }
+rquickjs = "0.14"
 rustls-native-certs = "0.8.5"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

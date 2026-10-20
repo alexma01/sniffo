@@ -92,6 +92,17 @@ pub enum FlowEvent {
     Removed(Vec<FlowId>),
     Cleared,
     Breakpoint(BreakpointHit),
+    /// Output of a script rule: console.log lines and errors.
+    Log(ScriptLog),
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ScriptLog {
+    pub id: FlowId,
+    pub rule: String,
+    pub message: String,
+    pub error: bool,
+    pub time_ms: u64,
 }
 
 /// Editable view of a request or response held at a breakpoint.
@@ -129,6 +140,8 @@ struct Inner {
     apps: ClientApps,
     /// (client address, ws/wss URI) -> flow of the upgrade request, to attach frames to it.
     websockets: Mutex<HashMap<(SocketAddr, String), FlowId>>,
+    /// `sharedState` visible to every script.
+    shared_state: Mutex<serde_json::Value>,
 }
 
 /// Frames are kept per connection up to this count; older ones are dropped.
@@ -161,6 +174,34 @@ impl Inner {
             _ => Decision::Continue(message),
         }
     }
+
+    /// Runs script rules in order; each gets the previous one's output. Returns the final value.
+    async fn run_scripts(self: &Arc<Self>, id: FlowId, scripts: &[(String, String)], function: &'static str, context: serde_json::Value, mut args: Vec<serde_json::Value>) -> Option<serde_json::Value> {
+        let mut changed = None;
+        for (rule, code) in scripts {
+            let (engine, code, call_args) = (self.clone(), code.clone(), serde_json::Value::Array([vec![context.clone()], args.clone()].concat()));
+            let out = tokio::task::spawn_blocking(move || {
+                let mut shared = engine.shared_state.lock().unwrap().clone();
+                let out = crate::script::run(&code, function, &call_args, &mut shared);
+                *engine.shared_state.lock().unwrap() = shared;
+                out
+            })
+            .await
+            .unwrap_or_default();
+            let log = |message: String, error: bool| {
+                let _ = self.events.send(FlowEvent::Log(ScriptLog { id, rule: rule.clone(), message, error, time_ms: now_ms() }));
+            };
+            out.logs.into_iter().for_each(|l| log(l, false));
+            if let Some(e) = out.error {
+                log(format!("{function}: {e}"), true);
+            }
+            if let Some(v) = out.value {
+                *args.last_mut().expect("message argument") = v.clone();
+                changed = Some(v);
+            }
+        }
+        changed
+    }
 }
 
 /// Shared handle to captured traffic and settings; cheap to clone.
@@ -181,6 +222,7 @@ impl Default for Engine {
                 paused: Mutex::default(),
                 apps: ClientApps::default(),
                 websockets: Mutex::default(),
+                shared_state: Mutex::new(serde_json::json!({})),
             }),
         }
     }
@@ -315,7 +357,7 @@ impl Engine {
             .with_http_connector(https)
             .with_websocket_connector(Connector::Rustls(Arc::new(tls)))
             .with_websocket_handler(Frames { engine: self.inner.clone() })
-            .with_http_handler(Capture { engine: self.inner.clone(), id: None, is_head: false, break_response: false, download_bps: None, ca: Arc::new(ca.clone()), proxy_port: addr.port(), lookup: None })
+            .with_http_handler(Capture { engine: self.inner.clone(), id: None, is_head: false, break_response: false, download_bps: None, ca: Arc::new(ca.clone()), proxy_port: addr.port(), lookup: None, scripts: Arc::default(), script_request: serde_json::Value::Null })
             .with_graceful_shutdown(async { let _ = rx.await; })
             .build()
             .map_err(|e| e.to_string())?;
@@ -353,6 +395,9 @@ struct Capture {
     download_bps: Option<u64>,
     ca: Arc<RootCa>,
     proxy_port: u16,
+    /// Script rules for this request, plus the request as scripts last saw it (for onResponse).
+    scripts: Arc<Vec<(String, String)>>,
+    script_request: serde_json::Value,
     /// Client-app lookup running alongside the upstream request (see `handle_response`).
     lookup: Option<Arc<Mutex<Option<JoinHandle<()>>>>>,
 }
@@ -579,6 +624,31 @@ impl HttpHandler for Capture {
             }
         }
 
+        if !plan.scripts.is_empty() {
+            use crate::script::{body_from_js, body_to_js, headers_from_js, headers_to_js};
+            let headers = headers_from(&parts.headers);
+            let request = serde_json::json!({
+                "method": parts.method.as_str(), "url": parts.uri.to_string(),
+                "headers": headers_to_js(&headers), "body": body_to_js(editable_body(&headers, &body).as_deref()),
+            });
+            let context = serde_json::json!({ "flowId": id, "url": parts.uri.to_string() });
+            let result = self.engine.run_scripts(id, &plan.scripts, "onRequest", context, vec![request.clone()]).await;
+            self.script_request = result.clone().unwrap_or(request);
+            if let Some(r) = result {
+                if let Some(m) = r["method"].as_str().and_then(|m| Method::from_bytes(m.as_bytes()).ok()) { parts.method = m; }
+                if let Some(u) = r["url"].as_str().and_then(|u| u.parse().ok()) { parts.uri = u; }
+                if let Some(h) = headers_from_js(&r["headers"]) { parts.headers = header_map(&h); }
+                body = apply_body(&mut parts.headers, body, body_from_js(&r["body"]));
+                let (method, url, headers, recorded) = (parts.method.to_string(), parts.uri.to_string(), headers_from(&parts.headers), body.clone());
+                self.engine.update(id, |f| {
+                    f.method = method;
+                    f.url = url;
+                    f.request = Message { headers, body_size: recorded.len(), body: truncate(&recorded) };
+                });
+            }
+            self.scripts = Arc::new(plan.scripts.clone());
+        }
+
         tokio::time::sleep(Duration::from_millis(plan.latency_ms)).await;
         throttle_bytes(body.len(), plan.upload_bps).await;
 
@@ -612,23 +682,38 @@ impl HttpHandler for Capture {
         }
         let (mut parts, body) = res.into_parts();
 
-        if self.break_response {
+        if self.break_response || !self.scripts.is_empty() {
             // Editing needs the whole body, so this path buffers instead of streaming.
             let raw = match body.collect().await {
                 Ok(b) => b.to_bytes(),
                 Err(e) => return self.local_response(id, StatusCode::BAD_GATEWAY, HeaderMap::new(), Bytes::new(), Some(format!("reading response: {e}"))),
             };
             let headers = headers_from(&parts.headers);
-            let editable = Editable { method: String::new(), url: String::new(), status: parts.status.as_u16(), body: editable_body(&headers, &raw), headers };
-            return match self.engine.pause(id, true, editable).await {
-                Decision::Abort => self.local_response(id, StatusCode::BAD_GATEWAY, HeaderMap::new(), Bytes::new(), Some("aborted at breakpoint".into())),
-                Decision::Continue(e) => {
-                    let mut headers = header_map(&e.headers);
-                    let body = apply_body(&mut headers, raw, e.body);
-                    throttle_bytes(body.len(), self.download_bps).await;
-                    self.local_response(id, StatusCode::from_u16(e.status).unwrap_or(parts.status), headers, body, None)
+            let mut msg = Editable { method: String::new(), url: String::new(), status: parts.status.as_u16(), body: editable_body(&headers, &raw), headers };
+            let mut edited = false;
+            if !self.scripts.is_empty() {
+                use crate::script::{body_from_js, body_to_js, headers_from_js, headers_to_js};
+                let response = serde_json::json!({ "status": msg.status, "headers": headers_to_js(&msg.headers), "body": body_to_js(msg.body.as_deref()) });
+                let context = serde_json::json!({ "flowId": id, "url": self.script_request["url"] });
+                let scripts = self.scripts.clone();
+                if let Some(r) = self.engine.run_scripts(id, &scripts, "onResponse", context, vec![self.script_request.clone(), response]).await {
+                    msg.status = r["status"].as_u64().map(|s| s as u16).unwrap_or(msg.status);
+                    msg.headers = headers_from_js(&r["headers"]).unwrap_or(msg.headers);
+                    // Only replace the body when the script produced one; binary bodies stay untouched.
+                    msg.body = body_from_js(&r["body"]);
+                    edited = true;
                 }
-            };
+            }
+            if self.break_response {
+                match self.engine.pause(id, true, msg.clone()).await {
+                    Decision::Abort => return self.local_response(id, StatusCode::BAD_GATEWAY, HeaderMap::new(), Bytes::new(), Some("aborted at breakpoint".into())),
+                    Decision::Continue(e) => { msg = e; edited = true; }
+                }
+            }
+            let (mut headers, body_text) = if edited { (header_map(&msg.headers), msg.body) } else { (parts.headers.clone(), None) };
+            let body = apply_body(&mut headers, raw, body_text);
+            throttle_bytes(body.len(), self.download_bps).await;
+            return self.local_response(id, StatusCode::from_u16(msg.status).unwrap_or(parts.status), headers, body, None);
         }
 
         let headers = headers_from(&parts.headers);
