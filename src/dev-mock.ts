@@ -9,6 +9,7 @@ const samples: [string, string, number, string, string][] = [
   ["GET", "https://api.example.com/v1/users?page=2&sort=name", 200, "application/json", JSON.stringify({ users: [{ id: 1, name: "Ada", tags: ["admin"] }, { id: 2, name: "Linus", active: true }], total: 2 })],
   ["POST", "https://api.example.com/v1/login", 401, "application/json", '{"error":"invalid credentials"}'],
   ["GET", "wss://stream.example.com/live", 101, "", ""],
+  ["POST", "https://api.example.com/graphql", 200, "application/json", '{"data":{"user":{"name":"Ada"}}}'],
   ["GET", "https://www.example.org/feed.xml", 200, "application/xml", "<rss><channel><title>Feed</title><item><title>One</title></item></channel></rss>"],
   ["PUT", "https://api.example.com/v1/items/9", 500, "text/plain", "boom"],
   ["GET", "https://www.example.org/", 304, "text/html", ""],
@@ -27,6 +28,7 @@ const flows: Flow[] = samples.map(([method, url, status, ct, body], i) => {
       { outgoing: false, time_ms: 1042, kind: "text", size: 25, data: '{"event":"tick","v":42}' },
       { outgoing: false, time_ms: 2100, kind: "binary", size: 3, data: "AQID" },
     ] : [],
+    graphql: url.endsWith("/graphql") ? "query GetUser" : null,
   };
 });
 const bodies = new Map(samples.map((s, i) => [i + 1, enc.encode(s[4])]));
@@ -38,7 +40,7 @@ const summary = (f: Flow): FlowSummary => ({
   scheme: f.scheme, http_version: f.id % 2 ? "HTTP/2.0" : "HTTP/1.1", client_ip: f.id === 6 ? "192.168.1.40" : "127.0.0.1",
   client_app: f.id === 6 ? null : f.id % 3 ? "Google Chrome" : "curl", request_type: null,
   status: f.status, state: f.state, content_type: f.response?.headers[0][1] ?? null, request_size: f.request.body_size,
-  response_size: f.response?.body_size ?? null, error: f.error, pinned: pinned.has(f.id), tags: f.id === 2 ? ["Map Local /login"] : [], ws_count: f.ws_messages.length,
+  response_size: f.response?.body_size ?? null, error: f.error, pinned: pinned.has(f.id), tags: f.id === 2 ? ["Map Local /login"] : [], ws_count: f.ws_messages.length, graphql: f.graphql,
 });
 
 mockIPC((cmd, args) => {
@@ -47,7 +49,9 @@ mockIPC((cmd, args) => {
     case "proxy_status": return { running: true, address: "127.0.0.1:9191", port: 9191, allow_lan: true, lan: [{ interface: "en0", ip: "192.168.1.12" }, { interface: "utun4", ip: "10.8.0.2" }], ca_path: "~/sniffo-ca.pem", ca_trusted: false, system_proxy: false };
     case "list_flows": return flows.map(summary);
     case "get_flow": return flows.find((f) => f.id === a.id) ?? null;
-    case "get_body": return a.response ? (bodies.get(a.id) ?? new Uint8Array()).buffer : enc.encode("user=ada&remember=1").buffer;
+    case "get_body": return a.response ? (bodies.get(a.id) ?? new Uint8Array()).buffer
+      : flows.find((f) => f.id === a.id)?.graphql ? enc.encode('{"query":"query GetUser($id: ID!) {\\n  user(id: $id) { name }\\n}","variables":{"id":7}}').buffer
+      : enc.encode("user=ada&remember=1").buffer;
     case "search_flows": return flows.filter((f) => new TextDecoder().decode(bodies.get(f.id)).toLowerCase().includes(String(a.query).toLowerCase())).map((f) => f.id);
     case "pin_flow": a.pinned ? pinned.add(a.id) : pinned.delete(a.id); emit("flows", [{ type: "upsert", data: summary(flows.find((f) => f.id === a.id)!) }]); return;
     case "get_rules": return rules;

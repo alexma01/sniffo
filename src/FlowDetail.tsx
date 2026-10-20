@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, Flow, FlowSummary, formatBytes, header, Headers, WsMessage } from "./api";
 import { JsonTree } from "./JsonTree";
+import { decode, grpcFrames, toPlain } from "./protobuf";
 
-type Tab = "headers" | "query" | "cookies" | "body" | "raw" | "timing" | "messages";
+type Tab = "headers" | "query" | "cookies" | "body" | "raw" | "timing" | "messages" | "graphql";
 
 function isText(bytes: Uint8Array) {
   const n = Math.min(bytes.length, 4096);
@@ -61,8 +62,51 @@ function parseMultipart(bytes: Uint8Array, contentType: string): Part[] | null {
   return parts;
 }
 
+/** One tree per protobuf message (gRPC bodies carry several); null when it doesn't decode. */
+function protobufView(bytes: Uint8Array, grpc: boolean) {
+  try {
+    const messages = grpc ? grpcFrames(bytes) : [{ compressed: false, data: bytes }];
+    return (
+      <div>
+        {messages.map((m, i) => (
+          <div key={i} className="part">
+            {grpc && <div className="muted pad-s">gRPC message {i + 1}{m.compressed ? " (compressed — showing raw)" : ""} · {formatBytes(m.data.length)}</div>}
+            {m.compressed ? <pre className="code">{hexdump(m.data)}</pre> : <JsonTree value={toPlain(decode(m.data))} />}
+          </div>
+        ))}
+      </div>
+    );
+  } catch {
+    return null;
+  }
+}
+
+function GraphQL({ flow, bytes }: { flow: Flow; bytes: Uint8Array | null }) {
+  const op = useMemo(() => {
+    try {
+      if (bytes?.length) {
+        const v = JSON.parse(new TextDecoder().decode(bytes));
+        return Array.isArray(v) ? v[0] : v;
+      }
+      const q = new URL(flow.url).searchParams;
+      return { query: q.get("query"), operationName: q.get("operationName"), variables: JSON.parse(q.get("variables") ?? "null") };
+    } catch {
+      return null;
+    }
+  }, [bytes, flow.url]);
+  if (!op) return <div className="muted pad">Not a GraphQL request</div>;
+  return (
+    <div>
+      <div className="pad-s"><span className="badge gql">{flow.graphql}</span></div>
+      <pre className="code">{String(op.query ?? "").trim()}</pre>
+      {op.variables != null && (<><div className="muted pad-s">Variables</div><JsonTree value={op.variables} /></>)}
+    </div>
+  );
+}
+
 function BodyView({ bytes, contentType }: { bytes: Uint8Array | null; contentType?: string }) {
   const [mode, setMode] = useState<"tree" | "pretty">("tree");
+  const [forceProto, setForceProto] = useState(false);
   const ct = (contentType ?? "").toLowerCase();
   const url = useMemo(() => {
     if (!bytes || !ct.startsWith("image/")) return null;
@@ -89,7 +133,19 @@ function BodyView({ bytes, contentType }: { bytes: Uint8Array | null; contentTyp
       );
     }
   }
-  if (!isText(bytes)) return <pre className="code">{hexdump(bytes)}</pre>;
+  if (ct.includes("protobuf") || ct.startsWith("application/grpc") || forceProto) {
+    const view = protobufView(bytes, ct.startsWith("application/grpc"));
+    if (view) return view;
+  }
+  if (!isText(bytes)) {
+    return (
+      <div>
+        <div className="seg"><button onClick={() => setForceProto(true)}>Decode as Protobuf</button></div>
+        {forceProto && <p className="err pad-s">Not a valid protobuf message</p>}
+        <pre className="code">{hexdump(bytes)}</pre>
+      </div>
+    );
+  }
   const text = new TextDecoder().decode(bytes);
 
   if (ct.includes("x-www-form-urlencoded")) {
@@ -196,8 +252,12 @@ function Pane(props: { title: string; flow: Flow; response: boolean }) {
   const ws = flow.status === 101 || flow.ws_messages.length > 0;
   const tabs: Tab[] = response
     ? ws ? ["messages", "headers", "timing"] : ["headers", "cookies", "body", "raw", "timing"]
-    : ["headers", "query", "cookies", "body", "raw"];
-  useEffect(() => { if (ws && response) setTab("messages"); }, [flow.id]);
+    : flow.graphql ? ["graphql", "headers", "query", "body", "raw"] : ["headers", "query", "cookies", "body", "raw"];
+  useEffect(() => {
+    if (ws && response) setTab("messages");
+    else if (flow.graphql && !response) setTab("graphql");
+    else if (!tabs.includes(tab)) setTab("body");
+  }, [flow.id]);
   const firstLine = response ? `${flow.http_version} ${flow.status ?? ""}` : `${flow.method} ${flow.path} ${flow.http_version}`;
 
   return (
@@ -215,6 +275,8 @@ function Pane(props: { title: string; flow: Flow; response: boolean }) {
           <Timing flow={flow} />
         ) : tab === "messages" ? (
           <Messages messages={flow.ws_messages} />
+        ) : tab === "graphql" ? (
+          <GraphQL flow={flow} bytes={bytes} />
         ) : !msg ? (
           <div className="muted pad">{flow.error ?? "Waiting for response…"}</div>
         ) : tab === "headers" ? (

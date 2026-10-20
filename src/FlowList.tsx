@@ -35,6 +35,7 @@ export const COLUMNS: Column[] = [
       <>
         {f.state === "paused" && <span className="badge warn">⏸ paused</span>}
         {f.ws_count > 0 && <span className="badge">WS {f.ws_count}</span>}
+        {f.graphql && <span className="badge gql">{f.graphql}</span>}
         {f.tags.map((t) => <span key={t} className="badge">{t}</span>)}
         {f.path}
       </>
