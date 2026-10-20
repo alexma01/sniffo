@@ -86,7 +86,7 @@ export function FlowList(props: {
   const { flows, selected, onSelect, onContextMenu, follow, colors } = props;
   const [widths, setWidths] = useState<Record<string, number>>(() => load("sniffo.columnWidths", {}));
   const parent = useRef<HTMLDivElement>(null);
-  const v = useVirtualizer({ count: flows.length, getScrollElement: () => parent.current, estimateSize: () => ROW, overscan: 20 });
+  const v = useVirtualizer({ count: flows.length, getScrollElement: () => parent.current, estimateSize: () => ROW, overscan: 20, scrollMargin: ROW, scrollPaddingStart: ROW });
   const [hidden, setHidden] = useState(loadHidden);
   const [picker, setPicker] = useState<{ x: number; y: number } | null>(null);
   const cols = COLUMNS.filter((c) => !hidden.has(c.id));
@@ -118,6 +118,12 @@ export function FlowList(props: {
     return w === "flex" ? { flex: 1, minWidth: 120 } : { width: w, flex: "none" as const, textAlign: c.align };
   };
 
+  // Row padding (20) + 8px gap between cells + every fixed column + the flexible path column's minimum.
+  const minWidth = 20 + 8 * (cols.length - 1) + cols.reduce((sum, c) => {
+    const w: number | "flex" = c.id in widths ? widths[c.id] : c.width;
+    return sum + (w === "flex" ? 120 : w);
+  }, 0);
+
   /** Drag the right edge of a header cell to resize that column. */
   const startResize = (c: Column, e: React.MouseEvent) => {
     e.preventDefault();
@@ -140,14 +146,7 @@ export function FlowList(props: {
 
   return (
     <div className="flow-list">
-      <div className="flow-row head" onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setPicker({ x: e.clientX, y: e.clientY }); }} title="Right-click to choose columns">
-        {cols.map((c) => (
-          <span key={c.id} style={style(c)} className="th">
-            {c.label}
-            <span className="resizer" onMouseDown={(e) => startResize(c, e)} onDoubleClick={() => { const { [c.id]: _, ...rest } = widths; setWidths(rest); save("sniffo.columnWidths", rest); }} title="Drag to resize, double-click to reset" />
-          </span>
-        ))}
-      </div>
+      {/* One scroller for both axes: the sticky header scrolls sideways with the rows. */}
       <div
         className="flow-scroll"
         ref={parent}
@@ -157,14 +156,23 @@ export function FlowList(props: {
           if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
         }}
       >
-        <div style={{ height: v.getTotalSize(), position: "relative" }}>
+        {/* The header occupies the first ROW px of the scroller: hence scrollMargin/scrollPaddingStart above. */}
+        <div className="flow-row head" style={{ minWidth }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setPicker({ x: e.clientX, y: e.clientY }); }} title="Right-click to choose columns">
+          {cols.map((c) => (
+            <span key={c.id} style={style(c)} className="th">
+              {c.label}
+              <span className="resizer" onMouseDown={(e) => startResize(c, e)} onDoubleClick={() => { const { [c.id]: _, ...rest } = widths; setWidths(rest); save("sniffo.columnWidths", rest); }} title="Drag to resize, double-click to reset" />
+            </span>
+          ))}
+        </div>
+        <div style={{ height: v.getTotalSize(), position: "relative", minWidth }}>
           {v.getVirtualItems().map((row) => {
             const f = flows[row.index];
             return (
               <div
                 key={f.id}
                 className={`flow-row ${f.id === selected ? "selected" : ""} ${statusClass(f)}`}
-                style={{ position: "absolute", top: 0, transform: `translateY(${row.start}px)`, height: ROW, width: "100%", ...(colors.has(f.id) && f.id !== selected ? { background: colors.get(f.id) } : {}) }}
+                style={{ position: "absolute", top: 0, transform: `translateY(${row.start - ROW}px)`, height: ROW, width: "100%", ...(colors.has(f.id) && f.id !== selected ? { background: colors.get(f.id) } : {}) }}
                 onClick={() => onSelect(f.id)}
                 onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(f.id, e.clientX, e.clientY); }}
               >
