@@ -1,12 +1,12 @@
 import QRCode from "qrcode";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, Device, DeviceCommand, ProxyStatus } from "./api";
 
 const ICON: Record<Device["platform"], string> = { ios_simulator: "📱", ios_device: "📱", android: "🤖", android_avd: "🤖" };
 const KIND: Record<Device["platform"], string> = { ios_simulator: "iOS Simulator", ios_device: "iPhone / iPad", android: "Android", android_avd: "Android emulator (off)" };
 const ORDER: Device["platform"][] = ["ios_simulator", "android", "ios_device", "android_avd"];
 
-const running = (d: Device) => d.state === "Booted" || d.state === "device";
+const running = (d: Device) => d.state === "Booted" || d.state === "device" || d.state.startsWith("connected");
 
 /** Actions available for a device in its current state. */
 function actions(d: Device): [string, DeviceCommand, string?][] {
@@ -107,15 +107,21 @@ function Connected({ onWifi, port }: { onWifi: () => void; port: number }) {
   const [log, setLog] = useState<{ ok: boolean; text: string }[]>([]);
   const [url, setUrl] = useState("https://");
 
-  const reload = () => api.listDevices().then((list) => {
-    list.sort((a, b) => ORDER.indexOf(a.platform) - ORDER.indexOf(b.platform) || Number(running(b)) - Number(running(a)));
-    setDevices(list);
-    setSelected((s) => s ?? list.find(running)?.id ?? list[0]?.id ?? null);
-  });
+  const scanning = useRef(false);
+  // A scan takes ~1.5 s (simctl + devicectl + adb); poll often but never overlap scans.
+  const reload = () => {
+    if (scanning.current) return;
+    scanning.current = true;
+    api.listDevices().then((list) => {
+      list.sort((a, b) => ORDER.indexOf(a.platform) - ORDER.indexOf(b.platform) || Number(running(b)) - Number(running(a)));
+      setDevices(list);
+      setSelected((s) => s ?? list.find(running)?.id ?? list[0]?.id ?? null);
+    }).finally(() => { scanning.current = false; });
+  };
 
   useEffect(() => {
     reload();
-    const t = setInterval(reload, 5000);
+    const t = setInterval(reload, 3000);
     return () => clearInterval(t);
   }, []);
 
@@ -145,9 +151,9 @@ function Connected({ onWifi, port }: { onWifi: () => void; port: number }) {
             <span>{ICON[d.platform]}</span>
             <div className="grow">
               <div className="ellipsis"><b>{d.name}</b></div>
-              <div className="muted small">{KIND[d.platform]} · {d.os || d.state}</div>
+              <div className="muted small">{KIND[d.platform]} · {d.os}{d.platform === "ios_device" || d.platform === "android" ? ` · ${d.state}` : ""}</div>
             </div>
-            <span className={`dot ${running(d) || d.state === "connected" ? "on" : "off"}`} title={d.state} />
+            <span className={`dot ${running(d) ? "on" : "off"}`} title={d.state} />
           </div>
         ))}
       </div>
@@ -157,7 +163,11 @@ function Connected({ onWifi, port }: { onWifi: () => void; port: number }) {
             <h4>{ICON[device.platform]} {device.name}</h4>
             <p className="muted">{KIND[device.platform]} · {device.os} · {device.state} · <code className="small">{device.id}</code></p>
             {device.platform === "ios_device" ? (
-              <p>Physical iPhones can't be configured remotely (Apple doesn't allow it). <a href="#" onClick={(e) => { e.preventDefault(); onWifi(); }}>Use the Wi-Fi setup with QR code</a>.</p>
+              <p>
+                {running(device) ? "Connected. " : "Not connected — plug it in with USB and unlock it. "}
+                iOS doesn't let a computer change an iPhone's proxy or certificates, even over USB, so the setup is done on the phone:{" "}
+                <a href="#" onClick={(e) => { e.preventDefault(); onWifi(); }}>Wi-Fi proxy + certificate via QR code</a>.
+              </p>
             ) : device.platform === "android" && device.state === "unauthorized" ? (
               <p className="warn">Accept the “Allow USB debugging” prompt on the device.</p>
             ) : (
