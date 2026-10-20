@@ -166,7 +166,13 @@ fn parse_devicectl(json: &str) -> Vec<Device> {
             id: s(&d["identifier"]),
             name: s(&d["deviceProperties"]["name"]),
             platform: Platform::IosDevice,
-            state: s(&d["connectionProperties"]["tunnelState"]),
+            // tunnelState stays "disconnected" until Xcode opens a debug tunnel; the transport
+            // says whether the phone is actually plugged in (wired) or reachable (localNetwork).
+            state: match d["connectionProperties"]["transportType"].as_str() {
+                Some("wired") => "connected (USB)".into(),
+                Some("localNetwork") => "connected (Wi-Fi)".into(),
+                _ => "offline".into(),
+            },
             os: format!("{} {}", s(&d["hardwareProperties"]["platform"]), s(&d["deviceProperties"]["osVersionNumber"])),
             emulator: false,
         })
@@ -344,10 +350,12 @@ mod tests {
 
     #[test]
     fn parses_devicectl() {
-        let json = r#"{"result":{"devices":[{"identifier":"X","deviceProperties":{"name":"Ale's iPhone","osVersionNumber":"27.0"},"hardwareProperties":{"platform":"iOS","reality":"physical"},"connectionProperties":{"tunnelState":"disconnected"}},
+        let json = r#"{"result":{"devices":[{"identifier":"X","deviceProperties":{"name":"Ale's iPhone","osVersionNumber":"27.0"},"hardwareProperties":{"platform":"iOS","reality":"physical"},"connectionProperties":{"tunnelState":"disconnected","transportType":"wired"}},
+            {"identifier":"Y","deviceProperties":{"name":"Old iPhone"},"hardwareProperties":{"platform":"iOS","reality":"physical"},"connectionProperties":{"tunnelState":"unavailable"}},
             {"identifier":"S","deviceProperties":{"name":"iPhone 18 Pro"},"hardwareProperties":{"platform":"iOS","reality":"simulated"}}]}}"#;
         let d = parse_devicectl(json);
-        assert_eq!(d.len(), 1, "simulators skipped");
+        assert_eq!(d.len(), 2, "simulators skipped");
+        assert_eq!((d[0].state.as_str(), d[1].state.as_str()), ("connected (USB)", "offline"), "plugged in even without a debug tunnel");
         assert_eq!((d[0].name.as_str(), d[0].os.as_str(), d[0].platform.clone()), ("Ale's iPhone", "iOS 27.0", Platform::IosDevice));
     }
 }
