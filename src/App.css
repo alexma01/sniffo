@@ -212,3 +212,5 @@ button.linkish.err { color: var(--err); }
 .row.tight { gap: 4px; margin: 0; }
 .row.tight .input { width: 50%; }
 .modal textarea { width: 100%; }
+.badge.gql { background: color-mix(in srgb, var(--redirect) 20%, transparent); color: var(--redirect); }
+.pad-s { padding: 4px 10px; }

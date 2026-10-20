@@ -1,6 +1,6 @@
 import { FlowSummary } from "./api";
 
-export const TYPES = ["JSON", "XML", "HTML", "JS", "CSS", "Image", "Media", "Font", "Form", "Other"] as const;
+export const TYPES = ["JSON", "GraphQL", "XML", "HTML", "JS", "CSS", "Image", "Media", "Font", "Form", "Other"] as const;
 export type ContentKind = (typeof TYPES)[number];
 export const STATUSES = ["1xx", "2xx", "3xx", "4xx", "5xx", "Error"] as const;
 export type StatusKind = (typeof STATUSES)[number];
@@ -58,7 +58,7 @@ export function compile(f: Filter): ((x: FlowSummary) => boolean) | string {
     (!f.host || x.host === f.host) &&
     (!f.client || clientLabel(x) === f.client) &&
     (!f.pinnedOnly || x.pinned) &&
-    (!f.types.size || f.types.has(contentKind(x.content_type))) &&
+    (!f.types.size || f.types.has(contentKind(x.content_type)) || (f.types.has("GraphQL") && !!x.graphql)) &&
     (!f.statuses.size || f.statuses.has(statusKind(x)!)) &&
     textMatch(x);
 }

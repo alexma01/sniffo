@@ -113,7 +113,7 @@ pub fn import(data: &str) -> Result<Vec<Flow>, String> {
                 Message { headers: without_encoding(headers_from(&res["headers"])), body_size: res["content"]["size"].as_u64().map(|s| s as usize).unwrap_or(body.len()), body }
             });
             let wait = e["timings"]["wait"].as_f64().filter(|w| *w >= 0.0).map(|w| w as u64);
-            Some(Flow {
+            let flow = Flow {
                 id: 0,
                 client_addr: e["_client"].as_str().unwrap_or("imported").to_owned(),
                 client_app: None,
@@ -143,7 +143,9 @@ pub fn import(data: &str) -> Result<Vec<Flow>, String> {
                         data,
                     }
                 }).collect(),
-            })
+                graphql: None,
+            };
+            Some(Flow { graphql: crate::flow::graphql_operation(&flow.url, &flow.request), ..flow })
         })
         .collect())
 }

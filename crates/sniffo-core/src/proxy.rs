@@ -561,6 +561,7 @@ impl Capture {
             tags,
             ..Default::default()
         };
+        let flow = Flow { graphql: crate::flow::graphql_operation(&flow.url, &flow.request), ..flow };
         if ctx.client_addr.ip().is_loopback() {
             let (engine, proxy_port, client_port) = (self.engine.clone(), self.proxy_port, ctx.client_addr.port());
             let task = tokio::spawn(async move {

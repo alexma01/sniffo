@@ -27,6 +27,7 @@ export interface FlowSummary {
   pinned: boolean;
   tags: string[];
   ws_count: number;
+  graphql: string | null;
 }
 
 export interface WsMessage { outgoing: boolean; time_ms: number; kind: string; size: number; data: string }
@@ -54,6 +55,7 @@ export interface Flow {
   state: FlowState;
   error: string | null;
   ws_messages: WsMessage[];
+  graphql: string | null;
 }
 
 export interface SslProxying {

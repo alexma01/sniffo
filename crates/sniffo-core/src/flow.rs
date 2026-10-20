@@ -75,6 +75,8 @@ pub struct Flow {
     pub tags: Vec<String>,
     /// Frames of a WebSocket connection (empty for plain HTTP).
     pub ws_messages: Vec<WsMessage>,
+    /// "query GetUser" / "mutation Login" when the request is GraphQL.
+    pub graphql: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -114,6 +116,7 @@ pub struct FlowSummary {
     pub pinned: bool,
     pub tags: Vec<String>,
     pub ws_count: usize,
+    pub graphql: Option<String>,
 }
 
 impl Flow {
@@ -141,6 +144,7 @@ impl Flow {
             pinned: self.pinned,
             tags: self.tags.clone(),
             ws_count: self.ws_messages.len(),
+            graphql: self.graphql.clone(),
         }
     }
 
@@ -155,6 +159,59 @@ impl Flow {
     }
 }
 
+/// Detects a GraphQL request (POST JSON body or GET ?query=) and names its operation.
+pub fn graphql_operation(url: &str, request: &Message) -> Option<String> {
+    let (query, name) = if request.body.is_empty() {
+        let q = url.split_once('?')?.1;
+        let param = |k: &str| q.split('&').find_map(|p| p.strip_prefix(k)?.strip_prefix('=')).map(percent_decode);
+        (param("query")?, param("operationName"))
+    } else {
+        let v: serde_json::Value = serde_json::from_slice(&request.decoded_body()).ok()?;
+        // Batched requests are arrays; label by the first operation.
+        let op = if v.is_array() { &v[0] } else { &v };
+        (op["query"].as_str()?.to_owned(), op["operationName"].as_str().map(str::to_owned))
+    };
+    let trimmed = query.trim_start();
+    let kind = match ["mutation", "subscription", "query"].into_iter().find(|k| trimmed.starts_with(k)) {
+        Some(k) => k,
+        // Shorthand `{ field }` is an anonymous query.
+        None if trimmed.starts_with('{') => "query",
+        None => return None,
+    };
+    // Name from operationName, else from "query Name(...) {".
+    let name = name.filter(|n| !n.is_empty()).or_else(|| {
+        let rest = trimmed.strip_prefix(kind)?.trim_start();
+        let n: String = rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+        (!n.is_empty()).then_some(n)
+    });
+    Some(match name {
+        Some(n) => format!("{kind} {n}"),
+        None => kind.to_owned(),
+    })
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'+' => out.push(b' '),
+            b'%' if i + 2 < b.len() => {
+                if let Ok(v) = u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or(""), 16) {
+                    out.push(v);
+                    i += 3;
+                    continue;
+                }
+                out.push(b'%');
+            }
+            c => out.push(c),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 pub fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
@@ -167,6 +224,17 @@ pub fn headers_from(map: &hudsucker::hyper::HeaderMap) -> Headers {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn detects_graphql_operations() {
+        let post = |body: &str| Message { headers: vec![], body: body.to_owned().into(), body_size: body.len() };
+        assert_eq!(graphql_operation("https://x/graphql", &post(r#"{"query":"query GetUser($id: ID!) { user(id: $id) { name } }","variables":{"id":1}}"#)).as_deref(), Some("query GetUser"));
+        assert_eq!(graphql_operation("https://x/graphql", &post(r#"{"query":"mutation { login }","operationName":"Login"}"#)).as_deref(), Some("mutation Login"));
+        assert_eq!(graphql_operation("https://x/graphql", &post(r#"[{"query":"{ me { id } }"}]"#)).as_deref(), Some("query"));
+        assert_eq!(graphql_operation("https://x/graphql?query=query%20Feed%20%7B%20items%20%7D", &Message::default()).as_deref(), Some("query Feed"));
+        assert_eq!(graphql_operation("https://x/api", &post(r#"{"name":"not graphql"}"#)), None);
+        assert_eq!(graphql_operation("https://x/api", &post(r#"{"query":"select * from t"}"#)), None);
+    }
 
     #[test]
     fn decodes_gzip_and_brotli() {
