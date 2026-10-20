@@ -38,7 +38,7 @@ export const COLUMNS: Column[] = [
     cell: (f) => (
       <>
         {f.state === "paused" && <span className="badge warn">⏸ paused</span>}
-        {isTunnel(f) && <span className="badge muted" title="Right-click → Enable SSL Proxying to decrypt this host">SSL Proxying not enabled</span>}
+        {isTunnel(f) && <button className="badge ssl-off" data-ssl-host={f.host} title={`Decrypt ${f.host}: Sniffo re-signs it with its own CA (the device must trust the Sniffo Root CA)`}>🔒 Enable SSL Proxying</button>}
         {f.ws_count > 0 && <span className="badge">WS {f.ws_count}</span>}
         {f.graphql && <span className="badge gql">{f.graphql}</span>}
         {f.tags.map((t) => <span key={t} className="badge">{t}</span>)}
@@ -87,8 +87,10 @@ export function FlowList(props: {
   follow: boolean;
   /** Row highlight colours set from the context menu. */
   colors: Map<number, string>;
+  /** Called by the inline "Enable SSL Proxying" badge on tunnel rows. */
+  onEnableSsl: (host: string) => void;
 }) {
-  const { flows, selected, onSelect, onContextMenu, follow, colors } = props;
+  const { flows, selected, onSelect, onContextMenu, follow, colors, onEnableSsl } = props;
   const [widths, setWidths] = useState<Record<string, number>>(() => load("sniffo.columnWidths", {}));
   const parent = useRef<HTMLDivElement>(null);
   const v = useVirtualizer({ count: flows.length, getScrollElement: () => parent.current, estimateSize: () => ROW, overscan: 20, scrollMargin: ROW, scrollPaddingStart: ROW });
@@ -178,7 +180,11 @@ export function FlowList(props: {
                 key={f.id}
                 className={`flow-row ${f.id === selected ? "selected" : ""} ${statusClass(f)}`}
                 style={{ position: "absolute", top: 0, transform: `translateY(${row.start - ROW}px)`, height: ROW, width: "100%", ...(colors.has(f.id) && f.id !== selected ? { background: colors.get(f.id) } : {}) }}
-                onClick={() => onSelect(f.id)}
+                onClick={(e) => {
+                  const host = (e.target as HTMLElement).closest<HTMLElement>("[data-ssl-host]")?.dataset.sslHost;
+                  if (host) { e.stopPropagation(); onEnableSsl(host); return; }
+                  onSelect(f.id);
+                }}
                 onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(f.id, e.clientX, e.clientY); }}
               >
                 {cols.map((c) => <span key={c.id} className={`c-${c.id}`} style={style(c)} title={c.title?.(f)}>{c.cell(f)}</span>)}

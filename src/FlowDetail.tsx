@@ -360,19 +360,38 @@ function Pane(props: { title: string; flow: Flow; response: boolean }) {
   );
 }
 
+/** "*.example.com" for "api.example.com"; null when there is no parent domain worth wildcarding. */
+export function parentWildcard(host: string): string | null {
+  const parts = host.split(".");
+  return parts.length > 2 && !/^\d+$/.test(parts[parts.length - 1]) ? `*.${parts.slice(1).join(".")}` : null;
+}
+
 /** Refetches whenever the summary object changes (each upsert event replaces it). */
-export function FlowDetail({ summary }: { summary: FlowSummary }) {
+export function FlowDetail({ summary, onSsl, onPin }: { summary: FlowSummary; onSsl: (host: string, on: boolean) => void; onPin: (id: number, pinned: boolean) => void }) {
   const [flow, setFlow] = useState<Flow | null>(null);
   useEffect(() => { api.getFlow(summary.id).then(setFlow); }, [summary]);
   if (!flow) return <div className="detail muted pad">Flow not found</div>;
   return (
     <div className="detail">
       <div className="detail-url" title={flow.url}>
-        <span className="method">{flow.method}</span> {flow.url}
+        <button className={`pin ${summary.pinned ? "on" : ""}`} onClick={() => onPin(flow.id, !summary.pinned)} title={summary.pinned ? "Unpin (pinned flows survive Clear)" : "Pin: keep this flow when clearing, list it under Pinned"}>📌</button>
+        <span className="method">{flow.method}</span> <span className="ellipsis grow">{flow.url}</span>
+        {flow.method !== "CONNECT" && (flow.scheme === "https" || flow.scheme === "wss") && (
+          <button className="linkish" onClick={() => onSsl(flow.host, false)} title="Stop decrypting this host (new connections will be tunnelled)">🔓 Decrypted · disable</button>
+        )}
       </div>
       {flow.method === "CONNECT" && (
-        <div className="muted pad-s">
-          Encrypted tunnel passed through untouched: SSL Proxying is not enabled for {flow.host}. Right-click the row → Enable SSL Proxying, then retry the request.
+        <div className="ssl-banner">
+          <div className="ssl-banner-title">🔒 Encrypted — SSL Proxying is not enabled for <b>{flow.host}</b></div>
+          <p>Sniffo is passing this HTTPS connection through untouched, so requests and responses are hidden. Enable SSL Proxying to see them; then repeat the action in the app.</p>
+          <div className="row">
+            <button className="primary" onClick={() => onSsl(flow.host, true)}>Enable for {flow.host}</button>
+            {parentWildcard(flow.host) && <button onClick={() => onSsl(parentWildcard(flow.host)!, true)}>Enable for {parentWildcard(flow.host)}</button>}
+          </div>
+          <p className="muted small">
+            The client must trust the Sniffo Root CA — on iPhone: <i>Settings → General → About → Certificate Trust Settings</i> (see Devices). Apps that pin their certificates can't be decrypted by any proxy.
+            Behind a corporate VPN that inspects TLS (e.g. Cato), tunnelled HTTPS from phones fails until it's decrypted here.
+          </p>
         </div>
       )}
       <div className="detail-panes">

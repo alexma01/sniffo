@@ -11,6 +11,7 @@ import { clientLabel, compile, emptyFilter, Filter, STATUSES, toggle, TYPES } fr
 import { FlowDetail } from "./FlowDetail";
 import { FlowList, isTunnel } from "./FlowList";
 import { Settings } from "./Settings";
+import { Sidebar } from "./Sidebar";
 import "./App.css";
 
 function useFlows() {
@@ -124,6 +125,12 @@ export default function App() {
     api.getSsl().then(setSsl);
     return api.status().then(setStatus);
   };
+  /** Same matching as the core (case-insensitive * wildcards; exclude wins). */
+  const decrypts = (host: string) => {
+    if (!ssl?.enabled) return false;
+    const glob = (p: string) => new RegExp(`^${p.split("*").map((x) => x.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`, "i");
+    return ssl.include.some((p) => glob(p).test(host)) && !ssl.exclude.some((p) => glob(p).test(host));
+  };
   /** Proxyman-style per-host toggle: enable adds the host to Include; disable removes it, excluding it if a wildcard still matches. */
   const sslForHost = (host: string, on: boolean) => {
     if (!ssl) return;
@@ -161,12 +168,6 @@ export default function App() {
     return () => clearTimeout(t);
   }, [searchBodies, filter.text, searchBodies && flows.size]);
 
-  const hosts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const f of flows.values()) m.set(f.host, (m.get(f.host) ?? 0) + 1);
-    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [flows]);
-
   const predicate = useMemo(() => compile(filter), [filter]);
   const visible = useMemo(
     () => (typeof predicate === "string" ? [] : [...flows.values()].filter(predicate)),
@@ -186,7 +187,6 @@ export default function App() {
     }
     return { pinned, errors, paused, down, up, apps: [...apps.entries()].sort((a, b) => b[1] - a[1]) };
   }, [flows]);
-  const pinnedCount = stats.pinned;
   const activeRules = rules?.rules.filter((r) => r.enabled).length ?? 0;
 
   const remove = (ids: number[]) => { api.remove(ids); if (selected != null && ids.includes(selected)) setSelected(null); };
@@ -307,26 +307,17 @@ export default function App() {
       {showSettings && <Settings status={status} onClose={() => setShowSettings(false)} onChanged={refresh} />}
       {error && <div className="banner">{error}</div>}
       <div className="main">
-        <aside className="sidebar">
-          <div className={`side-item ${!filter.host && !filter.pinnedOnly && !filter.client ? "active" : ""}`} onClick={() => set({ host: null, pinnedOnly: false, client: null })}>
-            All <span className="muted">{flows.size}</span>
-          </div>
-          <div className={`side-item ${filter.pinnedOnly ? "active" : ""}`} onClick={() => set({ host: null, pinnedOnly: true })}>
-            📌 Pinned <span className="muted">{pinnedCount}</span>
-          </div>
-          {stats.apps.length > 0 && <div className="side-title">Apps &amp; devices</div>}
-          {stats.apps.map(([a, n]) => (
-            <div key={a} className={`side-item ${filter.client === a ? "active" : ""}`} onClick={() => set({ client: filter.client === a ? null : a })} title={a}>
-              <span className="ellipsis">{/^\d+\.\d+\.\d+\.\d+$/.test(a) ? "📱 " : "▣ "}{a}</span> <span className="muted">{n}</span>
-            </div>
-          ))}
-          <div className="side-title">Domains</div>
-          {hosts.map(([h, n]) => (
-            <div key={h} className={`side-item ${filter.host === h ? "active" : ""}`} onClick={() => set({ host: filter.host === h ? null : h, pinnedOnly: false })} title={h}>
-              <span className="ellipsis">{h}</span> <span className="muted">{n}</span>
-            </div>
-          ))}
-        </aside>
+        <Sidebar
+          flows={flows}
+          filter={filter}
+          set={set}
+          decrypts={decrypts}
+          sslForHost={sslForHost}
+          onRule={setRulesDraft}
+          onExport={exportHar}
+          onRemove={remove}
+          notify={notify}
+        />
         <div className="content" ref={contentRef} style={{ ["--list-pct" as string]: `${listPct}%` }}>
           <FlowList
             flows={visible}
@@ -335,10 +326,11 @@ export default function App() {
             onContextMenu={(id, x, y) => { setSelected(id); setMenu({ id, x, y }); }}
             follow={follow}
             colors={colors}
+            onEnableSsl={(host) => sslForHost(host, true)}
           />
           <div className="split" onMouseDown={startSplit} title="Drag to resize" />
           {sel ? (
-            <FlowDetail summary={sel} />
+            <FlowDetail summary={sel} onSsl={sslForHost} onPin={(id, pinned) => api.pin(id, pinned)} />
           ) : (
             <div className="detail empty muted">
               {status?.running

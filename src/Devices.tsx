@@ -74,20 +74,28 @@ function WifiSetup({ status, onChanged }: { status: ProxyStatus | null; onChange
             </table>
             <p className="muted">The device must be on the same Wi-Fi network as this computer.</p>
             <h4>iPhone / iPad</h4>
-            <ol>
-              <li>Settings → Wi-Fi → ⓘ next to the network → Configure Proxy → <b>Manual</b>.</li>
-              <li>Enter the server and port above, Save.</li>
-              <li>In Safari open <code>http://sniffo.cert</code> (or scan the QR), download and install the profile.</li>
-              <li>Settings → General → About → Certificate Trust Settings → enable <b>Sniffo Root CA</b>.</li>
+            <ol className="steps">
+              <li><b>Proxy</b>: Settings → Wi-Fi → ⓘ next to the network → Configure Proxy → <b>Manual</b> → server and port above → Save.</li>
+              <li><b>Download the certificate</b>: in <b>Safari</b> (not Chrome) open <code>http://sniffo.cert</code> or scan the QR → <i>Download for iOS</i> → Allow.</li>
+              <li><b>Install it</b>: Settings → General → VPN &amp; Device Management → <i>Sniffo Root CA</i> → Install.</li>
+              <li className="must"><b>Trust it</b>: Settings → General → About → <b>Certificate Trust Settings</b> → turn on <i>Sniffo Root CA</i>. Without this switch iOS keeps saying “This connection is not private”.</li>
+              <li><b>Choose what to decrypt</b>: in Sniffo click 🔒 next to a domain in the sidebar, or <i>Enable SSL Proxying</i> on its row. Other HTTPS stays an untouched tunnel.</li>
             </ol>
             <h4>Android</h4>
-            <ol>
-              <li>Settings → Wi-Fi → long-press the network → Modify → Advanced → Proxy <b>Manual</b>.</li>
-              <li>Enter the server and port above, Save.</li>
-              <li>Open <code>http://sniffo.cert</code> in Chrome, download the Android certificate.</li>
-              <li>Settings → Security → Install a certificate → <b>CA certificate</b>.</li>
-              <li>Your own apps need a <code>network_security_config</code> that trusts user CAs.</li>
+            <ol className="steps">
+              <li><b>Proxy</b>: Settings → Wi-Fi → long-press the network → Modify → Advanced → Proxy <b>Manual</b> → server and port above. (Over USB use <i>Simulators &amp; USB → Set proxy</i> instead.)</li>
+              <li><b>Download</b>: open <code>http://sniffo.cert</code> in Chrome → <i>Download for Android</i>.</li>
+              <li className="must"><b>Install</b>: Settings → Security → Encryption &amp; credentials → Install a certificate → <b>CA certificate</b> → sniffo-ca.crt.</li>
+              <li><b>Choose what to decrypt</b> in Sniffo, as above. Chrome trusts user CAs; your own apps need a <code>network_security_config</code> that trusts user certificates; other apps ignore them.</li>
             </ol>
+            <div className="callout">
+              <b>Good to know</b>
+              <ul>
+                <li><b>Corporate VPN on this computer</b> (Cato, Zscaler, GlobalProtect…): if it inspects TLS, HTTPS tunnelled from the phone arrives with the company's certificate, which the phone rejects. Enable SSL Proxying for the hosts you use (or <code>*</code> in Settings) so Sniffo re-signs them with its own CA.</li>
+                <li><b>Certificate pinning</b>: apps that pin their server certificate (banking, many Apple/Google services) can't be decrypted by any proxy; leave them tunnelled.</li>
+                <li><b>When you're done</b> set the phone's proxy back to <i>Off</i>: if Sniffo isn't running the phone has no internet.</li>
+              </ul>
+            </div>
           </div>
           <div className="qr">
             {qr && <img src={qr} width={180} height={180} alt="Certificate page QR code" />}
@@ -183,8 +191,8 @@ function Connected({ onWifi, port }: { onWifi: () => void; port: number }) {
                     <button disabled={busy} onClick={() => run({ type: "open_url", value: url }, "Open URL")}>Open URL</button>
                   </div>
                 )}
-                {device.platform === "ios_simulator" && <p className="muted small">The simulator uses this Mac's network: enable “System proxy” in the toolbar.</p>}
-                {device.platform === "android" && <p className="muted small">“Set proxy” tunnels the device's 127.0.0.1:{port} to this computer over adb — works over USB, no Wi-Fi needed.</p>}
+                {device.platform === "ios_simulator" && <p className="muted small">The simulator uses this Mac's network: keep “System proxy” on, install the CA here, then enable SSL Proxying for the hosts you want to decrypt (🔒 in the sidebar).</p>}
+                {device.platform === "android" && <p className="muted small">“Set proxy” tunnels the device's 127.0.0.1:{port} to this computer over adb — works over USB, no Wi-Fi needed. After installing the CA, enable SSL Proxying for the hosts to decrypt (🔒 in the sidebar). Remove the proxy before unplugging.</p>}
               </>
             )}
           </>

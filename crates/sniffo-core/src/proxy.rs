@@ -502,15 +502,21 @@ struct Capture {
 const CERT_PAGE: &str = r#"<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sniffo certificate</title>
 <style>body{font:17px -apple-system,Roboto,sans-serif;max-width:560px;margin:24px auto;padding:0 16px;line-height:1.5}
-a.b{display:block;text-align:center;background:#0a66ff;color:#fff;padding:12px;border-radius:10px;text-decoration:none;margin:12px 0}</style>
+a.b{display:block;text-align:center;background:#0a66ff;color:#fff;padding:12px;border-radius:10px;text-decoration:none;margin:12px 0}
+.must{background:#fff4d6;border-radius:8px;padding:6px 8px}li{margin:6px 0}</style>
 <h2>Sniffo root certificate</h2>
 <a class="b" href="/sniffo-ca.pem">Download for iOS / macOS</a>
 <a class="b" href="/sniffo-ca.crt">Download for Android</a>
-<h3>iPhone / iPad</h3><ol><li>Open this page in <b>Safari</b> and tap the iOS download, then <i>Allow</i>.</li>
-<li>Settings → General → VPN &amp; Device Management → <i>Sniffo Root CA</i> → Install.</li>
-<li>Settings → General → About → Certificate Trust Settings → enable <i>Sniffo Root CA</i>.</li></ol>
-<h3>Android</h3><ol><li>Tap the Android download.</li><li>Settings → Security → Encryption &amp; credentials → Install a certificate → <i>CA certificate</i>.</li>
-<li>Apps must trust user CAs (<code>network_security_config</code>) to be decrypted; browsers like Chrome do.</li></ol>"#;
+<h3>iPhone / iPad</h3><ol>
+<li>Open this page in <b>Safari</b>, tap the iOS download, then <i>Allow</i>.</li>
+<li>Settings &rarr; General &rarr; VPN &amp; Device Management &rarr; <i>Sniffo Root CA</i> &rarr; Install.</li>
+<li class="must"><b>Settings &rarr; General &rarr; About &rarr; Certificate Trust Settings</b> &rarr; turn on <i>Sniffo Root CA</i>. Without it you'll see &ldquo;This connection is not private&rdquo;.</li>
+<li>In Sniffo, enable SSL Proxying for the hosts you want to inspect (🔒 next to the domain).</li></ol>
+<h3>Android</h3><ol>
+<li>Tap the Android download.</li>
+<li class="must">Settings &rarr; Security &rarr; Encryption &amp; credentials &rarr; Install a certificate &rarr; <b>CA certificate</b>.</li>
+<li>Chrome trusts it; your own apps need a <code>network_security_config</code> that trusts user CAs.</li></ol>
+<p>When you're done, turn the Wi-Fi proxy off again: without Sniffo running the device has no internet.</p>"#;
 
 /// Serves the certificate page when a device opens http://sniffo.cert or hits the proxy port directly.
 fn cert_response(path: &str, ca: &RootCa) -> Response<Body> {
