@@ -258,3 +258,4 @@ button.pin.on, button.pin:hover { opacity: 1; filter: none; }
 .callout li { margin: 3px 0; }
 .app-icon { width: 14px; height: 14px; margin-right: 5px; vertical-align: -2px; flex: none; display: inline-block; }
 .app-icon.fallback { font-size: 11px; text-align: center; line-height: 14px; }
+.side-item input.rename { flex: 1; min-width: 0; font-size: 12px; padding: 0 4px; border: 1px solid var(--accent); border-radius: 4px; background: var(--bg); }

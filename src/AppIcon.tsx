@@ -18,10 +18,16 @@ function iconUrl(name: string) {
   return p;
 }
 
-const fallback = (name: string) => (/^\d+\.\d+\.\d+\.\d+$/.test(name) ? "📱" : name.startsWith("Android") ? "🤖" : "▣");
+const fallback = (name: string) =>
+  name === "This Mac" ? "💻" : /^[\d.:a-f]+$/i.test(name) ? "📱" : name.startsWith("Android") ? "🤖" : "▣";
 
 export function AppIcon({ name }: { name: string }) {
   const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => { let live = true; iconUrl(name).then((u) => live && setUrl(u)); return () => { live = false; }; }, [name]);
+  useEffect(() => {
+    if (name === "This Mac" || /^[\d.:a-f]+$/i.test(name)) { setUrl(null); return; }
+    let live = true;
+    iconUrl(name).then((u) => live && setUrl(u));
+    return () => { live = false; };
+  }, [name]);
   return url ? <img className="app-icon" src={url} alt="" /> : <span className="app-icon fallback">{fallback(name)}</span>;
 }

@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Action, FlowSummary, Rule } from "./api";
 import { clientLabel, Filter } from "./filters";
 import { AppIcon } from "./AppIcon";
+import { deviceName, isLocal, renameDevice, useClientsVersion } from "./clients";
 import { defaultAction, newRule } from "./RulesEditor";
 
 // Domains only: per-endpoint rows explode on REST APIs with ids in paths (/items/9, /users/123…),
@@ -55,7 +56,41 @@ export function Sidebar(props: {
   const q = query.trim().toLowerCase();
   const matches = (...texts: string[]) => !q || texts.some((t) => t.toLowerCase().includes(q));
   const domainList = [...domains.entries()].filter(([h]) => matches(h)).sort((a, b) => a[0].localeCompare(b[0]));
-  const appList = [...apps.entries()].filter(([a]) => matches(a)).sort((a, b) => b[1] - a[1]);
+  useClientsVersion();
+  // Client keys are app names (local, resolved) or IPs (unresolved local traffic / remote devices).
+  const label = (key: string) => (isLocal(key) ? "This Mac (other)" : deviceName(key) ?? key);
+  const appList = [...apps.entries()].filter(([a]) => matches(a, label(a))).sort((a, b) => b[1] - a[1]);
+  const isDevice = (key: string) => /^[\d.:a-f]+$/i.test(key) && !isLocal(key);
+  const macApps = appList.filter(([a]) => !isDevice(a));
+  const devices = appList.filter(([a]) => isDevice(a));
+  const [deviceMenu, setDeviceMenu] = useState<{ ip: string; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!deviceMenu) return;
+    const close = () => setDeviceMenu(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [deviceMenu]);
+  const [editing, setEditing] = useState<string | null>(null);
+  const rename = (ip: string) => setEditing(ip);
+  const clientRow = (a: string, n: number) => (
+    <div key={a} className={`side-item ${filter.client === a ? "active" : ""}`} onClick={() => set({ client: filter.client === a ? null : a })} title={isDevice(a) ? `${a} — right-click to rename` : a}
+      onContextMenu={isDevice(a) ? (e) => { e.preventDefault(); e.stopPropagation(); setDeviceMenu({ ip: a, x: e.clientX, y: e.clientY }); } : undefined}
+      onDoubleClick={isDevice(a) ? () => rename(a) : undefined}>
+      <AppIcon name={isLocal(a) ? "This Mac" : a} />
+      {editing === a ? (
+        <input className="rename" autoFocus defaultValue={deviceName(a) ?? ""} placeholder={`Name for ${a}`}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { renameDevice(a, e.currentTarget.value); setEditing(null); }
+            if (e.key === "Escape") setEditing(null);
+          }}
+          onBlur={(e) => { renameDevice(a, e.currentTarget.value); setEditing(null); }} />
+      ) : (
+        <span className="ellipsis grow">{label(a)}</span>
+      )}
+      <span className="muted">{n}</span>
+    </div>
+  );
   const pinList = pins.filter((p) => matches(p.host));
 
   const idsFor = (host: string) => [...flows.values()].filter((f) => f.host === host).map((f) => f.id);
@@ -114,13 +149,24 @@ export function Sidebar(props: {
         {!pinList.length && !q && <div className="muted side-hint">Right-click a domain → Pin</div>}
       </Section>
 
-      <Section id="apps" title="Apps & devices" count={appList.length}>
-        {appList.map(([a, n]) => (
-          <div key={a} className={`side-item ${filter.client === a ? "active" : ""}`} onClick={() => set({ client: filter.client === a ? null : a })} title={a}>
-            <AppIcon name={a} /><span className="ellipsis grow">{a}</span> <span className="muted">{n}</span>
-          </div>
-        ))}
+      <Section id="mac" title="This Mac" count={macApps.length}>
+        {macApps.map(([a, n]) => clientRow(a, n))}
       </Section>
+
+      <Section id="devices" title="Devices" count={devices.length}>
+        {devices.map(([a, n]) => clientRow(a, n))}
+        {!devices.length && !q && <div className="muted side-hint">Phones using this proxy appear here (Devices button in the toolbar)</div>}
+      </Section>
+
+      {deviceMenu && (
+        <div className="menu" style={{ left: deviceMenu.x, top: deviceMenu.y }}>
+          <div className="menu-label">{deviceMenu.ip}</div>
+          <div onClick={() => rename(deviceMenu.ip)}>Rename…</div>
+          <div onClick={() => set({ client: deviceMenu.ip })}>Show only this device</div>
+          <div onClick={() => onExport([...flows.values()].filter((f) => f.client_ip === deviceMenu.ip).map((f) => f.id))}>Export as HAR…</div>
+          <div className="danger" onClick={() => onRemove([...flows.values()].filter((f) => f.client_ip === deviceMenu.ip).map((f) => f.id))}>Delete its flows</div>
+        </div>
+      )}
 
       <Section id="domains" title="Domains" count={domainList.length}>
         {domainList.map(([h]) => item(h, "dom:"))}

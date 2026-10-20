@@ -2,6 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { FlowSummary, formatBytes } from "./api";
 import { AppIcon } from "./AppIcon";
+import { clientDisplay, clientIconName, useClientsVersion } from "./clients";
 
 const ROW = 24;
 
@@ -29,7 +30,7 @@ interface Column { id: string; label: string; width: number | "flex"; align?: "r
 export const COLUMNS: Column[] = [
   { id: "id", label: "#", width: 52, cell: (f) => (f.pinned ? "📌" : f.id) },
   { id: "time", label: "Time", width: 96, cell: (f) => time(f.started_ms) },
-  { id: "client", label: "Client", width: 140, cell: (f) => <><AppIcon name={f.client_app ?? f.client_ip} />{f.client_app ?? f.client_ip}</>, title: (f) => `${f.client_app ?? ""} ${f.client_ip}` },
+  { id: "client", label: "Client", width: 140, cell: (f) => <><AppIcon name={clientIconName(f)} />{clientDisplay(f)}</>, title: (f) => `${clientDisplay(f)} — ${f.client_ip}` },
   { id: "method", label: "Method", width: 72, cell: (f) => <b>{f.method}</b> },
   { id: "status", label: "Code", width: 46, cell: (f) => (f.state === "failed" ? "ERR" : f.state === "paused" ? "⏸" : isTunnel(f) ? "" : f.status ?? "…") },
   { id: "tls", label: "🔒", width: 22, cell: (f) => (f.scheme === "https" || f.scheme === "wss" ? "🔒" : ""), title: (f) => f.scheme },
@@ -93,6 +94,7 @@ export function FlowList(props: {
 }) {
   const { flows, selected, onSelect, onContextMenu, follow, colors, onEnableSsl } = props;
   const [widths, setWidths] = useState<Record<string, number>>(() => load("sniffo.columnWidths", {}));
+  useClientsVersion(); // client labels change when a device is renamed
   const parent = useRef<HTMLDivElement>(null);
   const v = useVirtualizer({ count: flows.length, getScrollElement: () => parent.current, estimateSize: () => ROW, overscan: 20, scrollMargin: ROW, scrollPaddingStart: ROW });
   const [hidden, setHidden] = useState(loadHidden);
