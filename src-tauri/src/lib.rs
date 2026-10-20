@@ -146,6 +146,39 @@ async fn device_command(state: State<'_, AppState>, device: String, command: dev
 }
 
 #[tauri::command]
+async fn repeat_flow(state: State<'_, AppState>, id: u64) -> Result<u16, String> {
+    let addr = state.proxy.lock().await.as_ref().map(|p| p.addr).ok_or("start the proxy first")?;
+    let f = state.engine.flow(id).ok_or("flow not found")?;
+    sniffo_core::compose::send(addr, &state.ca.cert_pem, &f.method, &f.url, &f.request.headers, f.request.body).await
+}
+
+#[tauri::command]
+async fn compose_request(state: State<'_, AppState>, method: String, url: String, headers: Vec<(String, String)>, body: String) -> Result<u16, String> {
+    let addr = state.proxy.lock().await.as_ref().map(|p| p.addr).ok_or("start the proxy first")?;
+    sniffo_core::compose::send(addr, &state.ca.cert_pem, &method, &url, &headers, body.into()).await
+}
+
+/// Writes the given flows (all when `ids` is empty) as HAR; also used to save sessions.
+#[tauri::command]
+fn export_har(state: State<'_, AppState>, path: String, ids: Vec<u64>) -> Result<usize, String> {
+    let flows: Vec<_> = state.engine.all_flows().into_iter().filter(|f| ids.is_empty() || ids.contains(&f.id)).collect();
+    let json = serde_json::to_vec_pretty(&sniffo_core::har::export(&flows)).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| format!("{path}: {e}"))?;
+    Ok(flows.len())
+}
+
+/// Loads a HAR/session file; `replace` clears current flows first (opening a session).
+#[tauri::command]
+fn import_har(state: State<'_, AppState>, path: String, replace: bool) -> Result<usize, String> {
+    let data = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+    let flows = sniffo_core::har::import(&data)?;
+    if replace {
+        state.engine.clear();
+    }
+    Ok(state.engine.import(flows))
+}
+
+#[tauri::command]
 fn list_flows(state: State<'_, AppState>) -> Vec<FlowSummary> {
     state.engine.summaries()
 }
@@ -242,6 +275,7 @@ pub fn run() {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into())).init();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             let ca = RootCa::load_or_create(&dir)?;
@@ -270,7 +304,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            proxy_status, start_proxy, stop_proxy, set_allow_lan, list_devices, device_command, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
+            proxy_status, start_proxy, stop_proxy, set_allow_lan, list_devices, device_command, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
             get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, list_breakpoints, resume_breakpoint
         ])
         .build(tauri::generate_context!())
