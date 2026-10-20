@@ -2,7 +2,8 @@
 
 use crate::{
     ca::RootCa,
-    flow::{Flow, FlowId, FlowState, FlowSummary, Message, headers_from, now_ms},
+    flow::{Flow, FlowId, FlowState, FlowSummary, Headers, Message, headers_from, now_ms},
+    rules::{Plan, Rules},
 };
 use bytes::{Bytes, BytesMut};
 use http_body_util::{BodyExt, BodyDataStream};
@@ -10,24 +11,28 @@ use hudsucker::{
     Body, HttpContext, HttpHandler, Proxy, RequestOrResponse,
     certificate_authority::RcgenAuthority,
     futures::Stream,
-    hyper::{Method, Request, Response, StatusCode},
+    hyper::{HeaderMap, Method, Request, Response, StatusCode, Uri, header::{HeaderName, HeaderValue}},
     rustls::{ClientConfig, RootCertStore, crypto::aws_lc_rs, pki_types::{CertificateDer, pem::PemObject}},
     tokio_tungstenite::Connector,
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
+    future::Future,
     net::SocketAddr,
     pin::Pin,
-    sync::{Arc, RwLock, atomic::{AtomicU64, Ordering}},
-    task::{Context, Poll},
+    sync::{Arc, Mutex, RwLock, atomic::{AtomicU64, Ordering}},
+    task::{Context, Poll, ready},
+    time::Duration,
 };
-use tokio::{net::TcpListener, sync::{broadcast, oneshot}, task::JoinHandle};
+use tokio::{net::TcpListener, sync::{broadcast, oneshot}, task::JoinHandle, time::Sleep};
 
 /// Bodies above this size are forwarded intact but stored truncated.
 pub const MAX_STORED_BODY: usize = 32 * 1024 * 1024;
 /// Oldest unpinned flows are evicted past this count to bound memory.
 pub const MAX_FLOWS: usize = 50_000;
+/// A forgotten breakpoint lets the message through unmodified after this long.
+pub const BREAKPOINT_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SslProxying {
@@ -82,6 +87,32 @@ pub enum FlowEvent {
     Upsert(FlowSummary),
     Removed(Vec<FlowId>),
     Cleared,
+    Breakpoint(BreakpointHit),
+}
+
+/// Editable view of a request or response held at a breakpoint.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Editable {
+    pub method: String,
+    pub url: String,
+    pub status: u16,
+    pub headers: Headers,
+    /// Decoded text body; `None` when binary. Sending back `None` keeps the original bytes.
+    pub body: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct BreakpointHit {
+    pub id: FlowId,
+    pub response: bool,
+    pub message: Editable,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "type", content = "message", rename_all = "lowercase")]
+pub enum Decision {
+    Continue(Editable),
+    Abort,
 }
 
 struct Inner {
@@ -89,6 +120,8 @@ struct Inner {
     next_id: AtomicU64,
     events: broadcast::Sender<FlowEvent>,
     ssl: RwLock<SslProxying>,
+    rules: RwLock<Arc<Rules>>,
+    paused: Mutex<HashMap<FlowId, (BreakpointHit, oneshot::Sender<Decision>)>>,
 }
 
 impl Inner {
@@ -100,6 +133,22 @@ impl Inner {
             flow.summary()
         };
         let _ = self.events.send(FlowEvent::Upsert(summary));
+    }
+
+    /// Holds the caller until the UI decides (or the timeout lets it through unchanged).
+    async fn pause(&self, id: FlowId, response: bool, message: Editable) -> Decision {
+        let (tx, rx) = oneshot::channel();
+        let hit = BreakpointHit { id, response, message: message.clone() };
+        self.paused.lock().unwrap().insert(id, (hit.clone(), tx));
+        self.update(id, |f| f.state = FlowState::Paused);
+        let _ = self.events.send(FlowEvent::Breakpoint(hit));
+        let decision = tokio::time::timeout(BREAKPOINT_TIMEOUT, rx).await;
+        self.paused.lock().unwrap().remove(&id);
+        self.update(id, |f| f.state = FlowState::Pending);
+        match decision {
+            Ok(Ok(d)) => d,
+            _ => Decision::Continue(message),
+        }
     }
 }
 
@@ -117,6 +166,8 @@ impl Default for Engine {
                 next_id: AtomicU64::new(1),
                 events: broadcast::channel(4096).0,
                 ssl: RwLock::default(),
+                rules: RwLock::default(),
+                paused: Mutex::default(),
             }),
         }
     }
@@ -180,6 +231,25 @@ impl Engine {
         *self.inner.ssl.write().unwrap() = ssl;
     }
 
+    pub fn rules(&self) -> Rules {
+        (**self.inner.rules.read().unwrap()).clone()
+    }
+
+    pub fn set_rules(&self, rules: Rules) {
+        *self.inner.rules.write().unwrap() = Arc::new(rules);
+    }
+
+    /// Flows currently held at a breakpoint.
+    pub fn breakpoints(&self) -> Vec<BreakpointHit> {
+        self.inner.paused.lock().unwrap().values().map(|(h, _)| h.clone()).collect()
+    }
+
+    /// Releases a paused flow. Returns false if it was no longer paused.
+    pub fn resume(&self, id: FlowId, decision: Decision) -> bool {
+        let Some((_, tx)) = self.inner.paused.lock().unwrap().remove(&id) else { return false };
+        tx.send(decision).is_ok()
+    }
+
     pub async fn start(&self, listener: TcpListener, ca: &RootCa, opts: StartOptions) -> Result<ProxyHandle, String> {
         let addr = listener.local_addr().map_err(|e| e.to_string())?;
         let authority = RcgenAuthority::new(ca.issuer().map_err(|e| e.to_string())?, 1_000, aws_lc_rs::default_provider());
@@ -214,7 +284,7 @@ impl Engine {
             .with_ca(authority)
             .with_http_connector(https)
             .with_websocket_connector(Connector::Rustls(Arc::new(tls)))
-            .with_http_handler(Capture { engine: self.inner.clone(), id: None, is_head: false })
+            .with_http_handler(Capture { engine: self.inner.clone(), id: None, is_head: false, break_response: false, download_bps: None })
             .with_graceful_shutdown(async { let _ = rx.await; })
             .build()
             .map_err(|e| e.to_string())?;
@@ -242,31 +312,77 @@ impl ProxyHandle {
     }
 }
 
-/// Per-request handler: hudsucker clones it for each request, so `id` links request to response.
+/// Per-request handler: hudsucker clones it for each request, so fields link request to response.
 #[derive(Clone)]
 struct Capture {
     engine: Arc<Inner>,
     id: Option<FlowId>,
     is_head: bool,
+    break_response: bool,
+    download_bps: Option<u64>,
 }
 
 fn error_response(status: StatusCode, msg: String) -> Response<Body> {
     Response::builder().status(status).header("content-type", "text/plain").body(Body::from(msg)).expect("valid response")
 }
 
-impl HttpHandler for Capture {
-    async fn handle_request(&mut self, ctx: &HttpContext, req: Request<Body>) -> RequestOrResponse {
-        if req.method() == Method::CONNECT {
-            return req.into();
+fn header_map(headers: &Headers) -> HeaderMap {
+    let mut map = HeaderMap::new();
+    for (k, v) in headers {
+        if let (Ok(k), Ok(v)) = (HeaderName::try_from(k.as_str()), HeaderValue::try_from(v.as_str())) {
+            map.append(k, v);
         }
-        let (parts, body) = req.into_parts();
-        let body = match body.collect().await {
-            Ok(b) => b.to_bytes(),
-            Err(e) => return error_response(StatusCode::BAD_REQUEST, format!("failed to read request body: {e}")).into(),
-        };
+    }
+    map
+}
+
+/// Text view of a body for editing (`None` when binary), decoding Content-Encoding first.
+fn editable_body(headers: &Headers, raw: &Bytes) -> Option<String> {
+    let m = Message { headers: headers.clone(), body: raw.clone(), body_size: raw.len() };
+    String::from_utf8(m.decoded_body().to_vec()).ok()
+}
+
+/// Applies an edited body: edited text is sent uncompressed, so encoding/length headers are reset.
+fn apply_body(headers: &mut HeaderMap, original: Bytes, edited: Option<String>) -> Bytes {
+    match edited {
+        None => original,
+        Some(text) => {
+            headers.remove("content-encoding");
+            headers.insert("content-length", HeaderValue::from(text.len()));
+            Bytes::from(text)
+        }
+    }
+}
+
+fn map_remote(uri: &Uri, plan: &Plan) -> Option<Uri> {
+    if plan.map_remote.is_empty() {
+        return None;
+    }
+    let mut scheme = uri.scheme_str().unwrap_or("http").to_owned();
+    let mut host = uri.host().unwrap_or_default().to_owned();
+    let mut port = uri.port_u16();
+    let mut path = uri.path().to_owned();
+    for (s, h, p, pa) in &plan.map_remote {
+        if let Some(s) = s { scheme = s.clone(); port = None; }
+        if let Some(h) = h { host = h.clone(); }
+        if let Some(p) = p { port = Some(*p); }
+        if let Some(pa) = pa { path = pa.clone(); }
+    }
+    let query = uri.query().map(|q| format!("?{q}")).unwrap_or_default();
+    let port = port.map(|p| format!(":{p}")).unwrap_or_default();
+    format!("{scheme}://{host}{port}{path}{query}").parse().ok()
+}
+
+async fn throttle_bytes(len: usize, bps: Option<u64>) {
+    if let Some(bps) = bps {
+        tokio::time::sleep(Duration::from_secs_f64(len as f64 / bps as f64)).await;
+    }
+}
+
+impl Capture {
+    fn record(&mut self, ctx: &HttpContext, parts: &hudsucker::hyper::http::request::Parts, body: &Bytes, tags: Vec<String>) -> FlowId {
         let id = self.engine.next_id.fetch_add(1, Ordering::Relaxed);
         self.id = Some(id);
-        self.is_head = parts.method == Method::HEAD;
         let uri = &parts.uri;
         let flow = Flow {
             id,
@@ -278,7 +394,8 @@ impl HttpHandler for Capture {
             host: uri.host().unwrap_or_default().to_owned(),
             path: uri.path_and_query().map(|p| p.to_string()).unwrap_or_else(|| "/".into()),
             http_version: format!("{:?}", parts.version),
-            request: Message { headers: headers_from(&parts.headers), body_size: body.len(), body: truncate(&body) },
+            request: Message { headers: headers_from(&parts.headers), body_size: body.len(), body: truncate(body) },
+            tags,
             ..Default::default()
         };
         let summary = flow.summary();
@@ -295,12 +412,130 @@ impl HttpHandler for Capture {
         if !evicted.is_empty() {
             let _ = self.engine.events.send(FlowEvent::Removed(evicted));
         }
+        id
+    }
+
+    /// Records a response generated by the proxy itself (block, map local, abort).
+    fn local_response(&self, id: FlowId, status: StatusCode, headers: HeaderMap, body: Bytes, error: Option<String>) -> Response<Body> {
+        let recorded = Message { headers: headers_from(&headers), body_size: body.len(), body: truncate(&body) };
+        self.engine.update(id, |f| {
+            let elapsed = now_ms().saturating_sub(f.started_ms);
+            f.status = Some(status.as_u16());
+            f.ttfb_ms = Some(elapsed);
+            f.duration_ms = Some(elapsed);
+            f.response = Some(recorded);
+            f.state = if error.is_some() { FlowState::Failed } else { FlowState::Complete };
+            f.error = error;
+        });
+        let mut res = Response::new(Body::from(body));
+        *res.status_mut() = status;
+        *res.headers_mut() = headers;
+        res
+    }
+}
+
+impl HttpHandler for Capture {
+    async fn handle_request(&mut self, ctx: &HttpContext, req: Request<Body>) -> RequestOrResponse {
+        if req.method() == Method::CONNECT {
+            return req.into();
+        }
+        let (mut parts, body) = req.into_parts();
+        let body = match body.collect().await {
+            Ok(b) => b.to_bytes(),
+            Err(e) => return error_response(StatusCode::BAD_REQUEST, format!("failed to read request body: {e}")).into(),
+        };
+        self.is_head = parts.method == Method::HEAD;
+        let rules = self.engine.rules.read().unwrap().clone();
+        let plan = rules.plan(parts.method.as_str(), &parts.uri.to_string());
+        if !plan.record {
+            return Request::from_parts(parts, Body::from(body)).into();
+        }
+        let id = self.record(ctx, &parts, &body, plan.tags.clone());
+        self.break_response = plan.break_response;
+        self.download_bps = plan.download_bps;
+
+        if plan.block {
+            let mut h = HeaderMap::new();
+            h.insert("content-type", HeaderValue::from_static("text/plain"));
+            return self.local_response(id, StatusCode::FORBIDDEN, h, Bytes::from_static(b"Blocked by Sniffo"), None).into();
+        }
+
+        let mut body = body;
+        if plan.break_request {
+            let headers = headers_from(&parts.headers);
+            let editable = Editable {
+                method: parts.method.to_string(),
+                url: parts.uri.to_string(),
+                status: 0,
+                body: editable_body(&headers, &body),
+                headers,
+            };
+            match self.engine.pause(id, false, editable).await {
+                Decision::Abort => {
+                    return self.local_response(id, StatusCode::BAD_GATEWAY, HeaderMap::new(), Bytes::new(), Some("aborted at breakpoint".into())).into();
+                }
+                Decision::Continue(e) => {
+                    parts.method = Method::from_bytes(e.method.as_bytes()).unwrap_or(parts.method);
+                    parts.uri = e.url.parse().unwrap_or(parts.uri);
+                    parts.headers = header_map(&e.headers);
+                    body = apply_body(&mut parts.headers, body, e.body);
+                    let (method, url, headers, recorded) = (parts.method.to_string(), parts.uri.to_string(), headers_from(&parts.headers), body.clone());
+                    self.engine.update(id, |f| {
+                        f.method = method;
+                        f.url = url;
+                        f.request = Message { headers, body_size: recorded.len(), body: truncate(&recorded) };
+                    });
+                }
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(plan.latency_ms)).await;
+        throttle_bytes(body.len(), plan.upload_bps).await;
+
+        if let Some((status, headers, text, file)) = plan.map_local {
+            let (bytes, error) = match file {
+                Some(path) => match tokio::fs::read(&path).await {
+                    Ok(b) => (Bytes::from(b), None),
+                    Err(e) => (Bytes::new(), Some(format!("map local: cannot read {path}: {e}"))),
+                },
+                None => (Bytes::from(text), None),
+            };
+            let mut h = header_map(&headers);
+            h.insert("content-length", HeaderValue::from(bytes.len()));
+            let status = if error.is_some() { StatusCode::INTERNAL_SERVER_ERROR } else { StatusCode::from_u16(status).unwrap_or(StatusCode::OK) };
+            throttle_bytes(bytes.len(), plan.download_bps).await;
+            return self.local_response(id, status, h, bytes, error).into();
+        }
+
+        if let Some(uri) = map_remote(&parts.uri, &plan) {
+            parts.uri = uri;
+        }
         Request::from_parts(parts, Body::from(body)).into()
     }
 
     async fn handle_response(&mut self, _ctx: &HttpContext, res: Response<Body>) -> Response<Body> {
         let Some(id) = self.id else { return res };
-        let (parts, body) = res.into_parts();
+        let (mut parts, body) = res.into_parts();
+
+        if self.break_response {
+            // Editing needs the whole body, so this path buffers instead of streaming.
+            let raw = match body.collect().await {
+                Ok(b) => b.to_bytes(),
+                Err(e) => return self.local_response(id, StatusCode::BAD_GATEWAY, HeaderMap::new(), Bytes::new(), Some(format!("reading response: {e}"))),
+            };
+            let headers = headers_from(&parts.headers);
+            let editable = Editable { method: String::new(), url: String::new(), status: parts.status.as_u16(), body: editable_body(&headers, &raw), headers };
+            return match self.engine.pause(id, true, editable).await {
+                Decision::Abort => self.local_response(id, StatusCode::BAD_GATEWAY, HeaderMap::new(), Bytes::new(), Some("aborted at breakpoint".into())),
+                Decision::Continue(e) => {
+                    let mut headers = header_map(&e.headers);
+                    let body = apply_body(&mut headers, raw, e.body);
+                    throttle_bytes(body.len(), self.download_bps).await;
+                    self.local_response(id, StatusCode::from_u16(e.status).unwrap_or(parts.status), headers, body, None)
+                }
+            };
+        }
+
         let headers = headers_from(&parts.headers);
         let bodyless = self.is_head || parts.status.is_informational() || matches!(parts.status.as_u16(), 204 | 304);
         let expected = if bodyless {
@@ -313,7 +548,19 @@ impl HttpHandler for Capture {
             f.ttfb_ms = Some(now_ms().saturating_sub(f.started_ms));
             f.response = Some(Message { headers, ..Default::default() });
         });
-        let tee = Tee { inner: body.into_data_stream(), buf: BytesMut::new(), size: 0, expected, sink: Some((self.engine.clone(), id)) };
+        if self.download_bps.is_some() {
+            // Throttled bodies arrive slowly; let hyper stream rather than trusting the length upfront.
+            parts.headers.remove("content-length");
+        }
+        let tee = Tee {
+            inner: body.into_data_stream(),
+            buf: BytesMut::new(),
+            size: 0,
+            expected,
+            sink: Some((self.engine.clone(), id)),
+            rate: self.download_bps,
+            delay: None,
+        };
         Response::from_parts(parts, Body::from_stream(tee))
     }
 
@@ -346,6 +593,9 @@ struct Tee {
     /// From Content-Length: hyper stops polling once it has that many bytes, so `None` may never come.
     expected: Option<usize>,
     sink: Option<(Arc<Inner>, FlowId)>,
+    /// Download throttle in bytes/s: after each chunk, wait before reading the next.
+    rate: Option<u64>,
+    delay: Option<Pin<Box<Sleep>>>,
 }
 
 impl Tee {
@@ -368,6 +618,10 @@ impl Stream for Tee {
     type Item = Result<Bytes, hudsucker::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if let Some(d) = self.delay.as_mut() {
+            ready!(d.as_mut().poll(cx));
+            self.delay = None;
+        }
         let poll = Pin::new(&mut self.inner).poll_next(cx);
         match &poll {
             Poll::Ready(Some(Ok(chunk))) => {
@@ -375,6 +629,9 @@ impl Stream for Tee {
                 let room = MAX_STORED_BODY.saturating_sub(self.buf.len());
                 let chunk = chunk.slice(..chunk.len().min(room));
                 self.buf.extend_from_slice(&chunk);
+                if let Some(rate) = self.rate {
+                    self.delay = Some(Box::pin(tokio::time::sleep(Duration::from_secs_f64(chunk.len() as f64 / rate as f64))));
+                }
                 if self.expected.is_some_and(|e| self.size >= e) {
                     self.finish(None);
                 }

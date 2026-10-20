@@ -3971,6 +3971,7 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "hyper-util",
+ "regex",
  "reqwest",
  "rustls-native-certs",
  "serde",

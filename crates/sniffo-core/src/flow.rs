@@ -43,6 +43,8 @@ impl Message {
 pub enum FlowState {
     #[default]
     Pending,
+    /// Held at a breakpoint, waiting for the user.
+    Paused,
     Complete,
     Failed,
 }
@@ -67,6 +69,8 @@ pub struct Flow {
     pub state: FlowState,
     pub error: Option<String>,
     pub pinned: bool,
+    /// Names of the rules that acted on this flow.
+    pub tags: Vec<String>,
 }
 
 /// Lightweight row for the flow list (no bodies, no headers).
@@ -86,6 +90,7 @@ pub struct FlowSummary {
     pub response_size: Option<usize>,
     pub error: Option<String>,
     pub pinned: bool,
+    pub tags: Vec<String>,
 }
 
 impl Flow {
@@ -105,6 +110,7 @@ impl Flow {
             response_size: self.response.as_ref().map(|r| r.body_size),
             error: self.error.clone(),
             pinned: self.pinned,
+            tags: self.tags.clone(),
         }
     }
 
