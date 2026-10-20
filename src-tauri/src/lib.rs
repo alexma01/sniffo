@@ -16,6 +16,7 @@ struct AppState {
     snapshot_path: PathBuf,
     settings_path: PathBuf,
     allow_lan: AtomicBool,
+    auto_system_proxy: AtomicBool,
     proxy: Mutex<Option<ProxyHandle>>,
     network: std::sync::Mutex<NetworkOptions>,
     reverse_cfg: std::sync::Mutex<Vec<ReverseProxy>>,
@@ -30,6 +31,9 @@ struct Saved {
     /// Listen on all interfaces so phones/tablets on the LAN can use the proxy.
     #[serde(default = "yes")]
     allow_lan: bool,
+    /// Like Proxyman: point the OS at Sniffo on launch (restored on quit).
+    #[serde(default = "yes")]
+    auto_system_proxy: bool,
     #[serde(default)]
     ssl: SslProxying,
     #[serde(default)]
@@ -59,6 +63,7 @@ impl AppState {
     fn save(&self) -> Result<(), String> {
         let saved = Saved {
             allow_lan: self.allow_lan.load(Ordering::Relaxed),
+            auto_system_proxy: self.auto_system_proxy.load(Ordering::Relaxed),
             ssl: self.engine.ssl_proxying(),
             rules: self.engine.rules(),
             network: self.network.lock().unwrap().clone(),
@@ -76,6 +81,7 @@ struct ProxyStatus {
     address: Option<String>,
     port: Option<u16>,
     allow_lan: bool,
+    auto_system_proxy: bool,
     lan: Vec<system::LanAddress>,
     ca_path: String,
     ca_trusted: bool,
@@ -90,6 +96,7 @@ async fn proxy_status(state: State<'_, AppState>) -> Result<ProxyStatus, String>
         address: proxy.as_ref().map(|p| format!("127.0.0.1:{}", p.addr.port())),
         port: proxy.as_ref().map(|p| p.addr.port()),
         allow_lan: state.allow_lan.load(Ordering::Relaxed),
+        auto_system_proxy: state.auto_system_proxy.load(Ordering::Relaxed),
         lan: system::lan_addresses(),
         ca_path: state.ca_path.display().to_string(),
         ca_trusted: system::ca_trusted(&state.ca_path),
@@ -111,7 +118,12 @@ async fn start_proxy(state: State<'_, AppState>, port: Option<u16>) -> Result<St
     let network = state.network.lock().unwrap().clone();
     let handle = state.engine.start(listener, &state.ca, StartOptions { network, ..Default::default() }).await?;
     let addr = handle.addr.to_string();
+    let port = handle.addr.port();
     *proxy = Some(handle);
+    // Keep the OS pointed at us when the port changes (snapshot of the user's settings is kept).
+    if system::system_proxy_enabled(&state.snapshot_path) {
+        system::enable_system_proxy("127.0.0.1", port, &state.snapshot_path).map_err(|e| e.to_string())?;
+    }
     Ok(addr)
 }
 
@@ -205,6 +217,12 @@ fn import_har(state: State<'_, AppState>, path: String, replace: bool) -> Result
         state.engine.clear();
     }
     Ok(state.engine.import(flows))
+}
+
+#[tauri::command]
+fn set_auto_system_proxy(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    state.auto_system_proxy.store(enabled, Ordering::Relaxed);
+    state.save()
 }
 
 #[tauri::command]
@@ -431,12 +449,13 @@ pub fn run() {
             }
             let engine = Engine::default();
             let settings_path = dir.join("settings.json");
-            let mut allow_lan = true;
+            let (mut allow_lan, mut auto_system_proxy) = (true, true);
             let (mut network, mut reverse_cfg, mut proto_files) = (NetworkOptions::default(), vec![], vec![]);
             if let Ok(data) = std::fs::read(&settings_path) {
                 match serde_json::from_slice::<Saved>(&data) {
                     Ok(saved) => {
                         allow_lan = saved.allow_lan;
+                        auto_system_proxy = saved.auto_system_proxy;
                         network = saved.network;
                         reverse_cfg = saved.reverse;
                         proto_files = saved.proto_files;
@@ -447,7 +466,7 @@ pub fn run() {
                 }
             }
             forward_events(app.handle().clone(), &engine);
-            app.manage(AppState { engine, ca, ca_path: dir.join("sniffo-ca.pem"), snapshot_path, settings_path, allow_lan: AtomicBool::new(allow_lan), proxy: Mutex::new(None),
+            app.manage(AppState { engine, ca, ca_path: dir.join("sniffo-ca.pem"), snapshot_path, settings_path, allow_lan: AtomicBool::new(allow_lan), auto_system_proxy: AtomicBool::new(auto_system_proxy), proxy: Mutex::new(None),
                 network: std::sync::Mutex::new(network), reverse_cfg: std::sync::Mutex::new(reverse_cfg.clone()), reverse: Mutex::new(vec![]),
                 proto_pool: std::sync::Mutex::new(match proto_files.is_empty() {
                     true => None,
@@ -466,7 +485,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            proxy_status, start_proxy, stop_proxy, set_allow_lan, list_devices, device_command, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
+            proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, list_devices, device_command, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
             get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, export_rules, import_rules, get_proto_schemas, set_proto_files, decode_proto, list_breakpoints, resume_breakpoint
         ])
         .build(tauri::generate_context!())
