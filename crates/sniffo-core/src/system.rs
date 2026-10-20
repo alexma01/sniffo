@@ -328,7 +328,8 @@ const VPN_HELPER_SCRIPT: &str = include_str!("macos-vpn-helper.sh");
 #[cfg(target_os = "macos")]
 const VPN_HELPER: &str = "/Library/PrivilegedHelperTools/dev.sniffo.vpn-proxy";
 #[cfg(target_os = "macos")]
-const VPN_SUDOERS: &str = "/etc/sudoers.d/dev.sniffo";
+// sudo's #includedir silently skips file names containing a '.', so no dots here.
+const VPN_SUDOERS: &str = "/etc/sudoers.d/sniffo";
 
 /// HTTPS proxy macOS actually uses right now (after VPNs have had their say).
 #[cfg(target_os = "macos")]
@@ -363,7 +364,7 @@ pub fn install_vpn_helper() -> io::Result<()> {
     fs::write(&script, VPN_HELPER_SCRIPT)?;
     fs::write(&rule, format!("{user} ALL=(root) NOPASSWD: {VPN_HELPER} set *, {VPN_HELPER} restore\n"))?;
     let cmd = format!(
-        "/bin/mkdir -p /Library/PrivilegedHelperTools && /usr/bin/install -o root -g wheel -m 755 '{}' {VPN_HELPER} && /usr/sbin/visudo -cf '{}' && /usr/bin/install -o root -g wheel -m 440 '{}' {VPN_SUDOERS}",
+        "/bin/mkdir -p /Library/PrivilegedHelperTools && /usr/bin/install -o root -g wheel -m 755 '{}' {VPN_HELPER} && /usr/sbin/visudo -cf '{}' && /usr/bin/install -o root -g wheel -m 440 '{}' {VPN_SUDOERS} && /bin/rm -f /etc/sudoers.d/dev.sniffo",
         script.display(),
         rule.display(),
         rule.display()
