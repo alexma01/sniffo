@@ -37,15 +37,50 @@ async fn decrypts_https() {
     s.proxy.stop().await;
 }
 
+/// Client that trusts only the real upstream cert: fails if the proxy decrypts the stream.
+fn upstream_only_client(s: &Setup, up_pem: &str) -> reqwest::Client {
+    reqwest::Client::builder()
+        .proxy(reqwest::Proxy::all(format!("http://{}", s.proxy.addr)).unwrap())
+        .tls_certs_only([reqwest::Certificate::from_pem(up_pem.as_bytes()).unwrap()])
+        .build()
+        .unwrap()
+}
+
+#[tokio::test]
+async fn default_tunnels_https_and_records_it() {
+    let (up, up_pem) = upstream_https().await;
+    let s = start_default(vec![]).await;
+    let res = upstream_only_client(&s, &up_pem).get(format!("https://localhost:{}/tunnel", up.port())).send().await.unwrap();
+    assert_eq!(res.status(), 200, "client saw the upstream certificate");
+    let rows = s.engine.summaries();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    let f = &rows[0];
+    assert_eq!((f.method.as_str(), f.host.as_str(), f.url.clone()), ("CONNECT", "localhost", format!("https://localhost:{}", up.port())));
+    assert_eq!(f.state, FlowState::Complete);
+    s.proxy.stop().await;
+}
+
+#[tokio::test]
+async fn enabling_a_host_decrypts_only_that_host() {
+    let (up, up_pem) = upstream_https().await;
+    let s = start_default(vec![up_pem]).await;
+    s.engine.set_ssl_proxying(SslProxying { include: vec!["localhost".into()], ..Default::default() });
+    let res = client(&s, None).get(format!("https://localhost:{}/secure", up.port())).send().await.unwrap();
+    assert_eq!(res.status(), 200, "client trusted the Sniffo CA");
+    res.text().await.unwrap();
+    let f = settled(&s.engine, 1).await;
+    assert_eq!((f.method.as_str(), f.path.as_str(), f.status), ("GET", "/secure", Some(200)));
+    s.proxy.stop().await;
+}
+
 #[tokio::test]
 async fn excluded_hosts_are_tunnelled() {
     let (up, up_pem) = upstream_https().await;
     let s = start(vec![]).await;
-    s.engine.set_ssl_proxying(SslProxying { exclude: vec!["localhost".into()], ..Default::default() });
-    // Client must trust the real upstream cert: the proxy does not touch the TLS stream.
-    let res = client(&s, Some(&up_pem)).get(format!("https://localhost:{}/tunnel", up.port())).send().await.unwrap();
+    s.engine.set_ssl_proxying(SslProxying { exclude: vec!["localhost".into()], ..decrypt_all() });
+    let res = upstream_only_client(&s, &up_pem).get(format!("https://localhost:{}/tunnel", up.port())).send().await.unwrap();
     assert_eq!(res.status(), 200);
-    assert!(s.engine.summaries().is_empty());
+    assert_eq!(s.engine.summaries().iter().map(|f| f.method.as_str()).collect::<Vec<_>>(), ["CONNECT"]);
     s.proxy.stop().await;
 }
 

@@ -370,9 +370,14 @@ export function FlowDetail({ summary }: { summary: FlowSummary }) {
       <div className="detail-url" title={flow.url}>
         <span className="method">{flow.method}</span> {flow.url}
       </div>
+      {flow.method === "CONNECT" && (
+        <div className="muted pad-s">
+          Encrypted tunnel passed through untouched: SSL Proxying is not enabled for {flow.host}. Right-click the row → Enable SSL Proxying, then retry the request.
+        </div>
+      )}
       <div className="detail-panes">
         <Pane title="Request" flow={flow} response={false} />
-        <Pane title="Response" flow={flow} response={true} />
+        {flow.method !== "CONNECT" && <Pane title="Response" flow={flow} response={true} />}
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ async fn start_with(opts: StartOptions) -> (Engine, sniffo_core::ProxyHandle, Ro
     let _ = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider().install_default();
     let ca = RootCa::generate().unwrap();
     let engine = Engine::default();
+    engine.set_ssl_proxying(decrypt_all());
     let h = engine.start(TcpListener::bind("127.0.0.1:0").await.unwrap(), &ca, opts).await.unwrap();
     (engine, h, ca)
 }
