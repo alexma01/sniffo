@@ -9,6 +9,7 @@ pub mod har;
 pub mod net;
 pub mod proxy;
 pub mod rules;
+pub mod schema;
 pub mod script;
 pub mod system;
 

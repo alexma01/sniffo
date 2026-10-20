@@ -12,6 +12,7 @@ const samples: [string, string, number, string, string][] = [
   ["POST", "https://api.example.com/graphql", 200, "application/json", '{"data":{"user":{"name":"Ada"}}}'],
   ["GET", "https://www.example.org/feed.xml", 200, "application/xml", "<rss><channel><title>Feed</title><item><title>One</title></item></channel></rss>"],
   ["PUT", "https://api.example.com/v1/items/9", 500, "text/plain", "boom"],
+  ["POST", "https://api.example.com/demo.UserService/Get", 200, "application/grpc", String.fromCharCode(0, 0, 0, 0, 7, 8, 7, 18, 3, 97, 100, 97)],
   ["GET", "https://www.example.org/", 304, "text/html", ""],
 ];
 
@@ -68,6 +69,8 @@ mockIPC((cmd, args) => {
     case "get_network": return { upstream: null, dns: [["api.myapp.test", "127.0.0.1"]], ignore_upstream_tls_errors: false };
     case "get_reverse": return [{ enabled: true, port: 9300, target: "https://api.example.com" }];
     case "set_reverse": return a.reverse.map(() => null);
+    case "get_proto_schemas": return { files: ["/Users/me/protos/user.proto"], messages: ["demo.User", "demo.UserList"] };
+    case "decode_proto": return [{ id: 7, name: "Ada", status: "ACTIVE" }];
     case "get_ssl_proxying": return { enabled: true, include: ["*"], exclude: [] };
     default: return null;
   }

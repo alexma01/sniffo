@@ -112,7 +112,12 @@ export interface Upstream { kind: "http" | "socks5"; host: string; port: number;
 export interface NetworkOptions { upstream: Upstream | null; dns: [string, string][]; ignore_upstream_tls_errors: boolean }
 export interface ReverseProxy { enabled: boolean; port: number; target: string }
 
+export interface ProtoSchemas { files: string[]; messages: string[] }
+
 export const api = {
+  getProtoSchemas: () => invoke<ProtoSchemas>("get_proto_schemas"),
+  setProtoFiles: (files: string[]) => invoke<ProtoSchemas>("set_proto_files", { files }),
+  decodeProto: (id: number, response: boolean, messageType: string) => invoke<unknown[]>("decode_proto", { id, response, messageType }),
   getNetwork: () => invoke<NetworkOptions>("get_network"),
   setNetwork: (network: NetworkOptions) => invoke<void>("set_network", { network }),
   getReverse: () => invoke<ReverseProxy[]>("get_reverse"),

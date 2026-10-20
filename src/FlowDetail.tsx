@@ -81,6 +81,41 @@ function protobufView(bytes: Uint8Array, grpc: boolean) {
   }
 }
 
+const protoKey = (flow: Flow, response: boolean) => `sniffo.proto.${flow.host}${flow.path.split("?")[0]}.${response ? "res" : "req"}`;
+
+/** Protobuf body with an optional schema type (remembered per endpoint); raw decode otherwise. */
+function ProtoBody({ flow, response, bytes, contentType }: { flow: Flow; response: boolean; bytes: Uint8Array | null; contentType?: string }) {
+  const [types, setTypes] = useState<string[]>([]);
+  const [type, setType] = useState<string>(() => { try { return localStorage.getItem(protoKey(flow, response)) ?? ""; } catch { return ""; } });
+  const [decoded, setDecoded] = useState<unknown[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => { api.getProtoSchemas().then((s) => setTypes(s.messages)); }, []);
+  useEffect(() => {
+    setDecoded(null); setError(null);
+    if (!type) return;
+    api.decodeProto(flow.id, response, type).then(setDecoded, (e) => setError(String(e)));
+  }, [flow.id, response, type, flow.state]);
+
+  const choose = (t: string) => {
+    setType(t);
+    try { if (t) localStorage.setItem(protoKey(flow, response), t); else localStorage.removeItem(protoKey(flow, response)); } catch { /* storage unavailable */ }
+  };
+
+  return (
+    <div>
+      <div className="seg">
+        <select value={type} onChange={(e) => choose(e.target.value)} title={types.length ? "Message type from your .proto schemas" : "Add .proto files in Settings to decode with a schema"}>
+          <option value="">Raw (no schema)</option>
+          {types.map((t) => <option key={t}>{t}</option>)}
+        </select>
+      </div>
+      {error && <p className="err pad-s">{error}</p>}
+      {type && decoded ? decoded.map((m, i) => <div key={i} className="part"><JsonTree value={m} /></div>) : <BodyView bytes={bytes} contentType={contentType} />}
+    </div>
+  );
+}
+
 function GraphQL({ flow, bytes }: { flow: Flow; bytes: Uint8Array | null }) {
   const op = useMemo(() => {
     try {
@@ -286,7 +321,9 @@ function Pane(props: { title: string; flow: Flow; response: boolean }) {
         ) : tab === "cookies" ? (
           <HeaderTable headers={cookies(msg.headers, response)} />
         ) : tab === "body" ? (
-          <BodyView bytes={bytes} contentType={header(msg.headers, "content-type")} />
+          /protobuf|grpc/.test(header(msg.headers, "content-type") ?? "")
+            ? <ProtoBody flow={flow} response={response} bytes={bytes} contentType={header(msg.headers, "content-type")} />
+            : <BodyView bytes={bytes} contentType={header(msg.headers, "content-type")} />
         ) : (
           <pre className="code">
             {firstLine + "\n" + msg.headers.map(([k, v]) => `${k}: ${v}`).join("\n") + "\n\n" +

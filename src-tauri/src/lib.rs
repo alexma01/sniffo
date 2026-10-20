@@ -20,6 +20,8 @@ struct AppState {
     network: std::sync::Mutex<NetworkOptions>,
     reverse_cfg: std::sync::Mutex<Vec<ReverseProxy>>,
     reverse: Mutex<Vec<ProxyHandle>>,
+    proto_files: std::sync::Mutex<Vec<String>>,
+    proto_pool: std::sync::Mutex<Option<prost_reflect::DescriptorPool>>,
 }
 
 /// Persisted user configuration.
@@ -36,6 +38,9 @@ struct Saved {
     network: NetworkOptions,
     #[serde(default)]
     reverse: Vec<ReverseProxy>,
+    /// .proto / descriptor-set files used to decode protobuf bodies.
+    #[serde(default)]
+    proto_files: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -58,6 +63,7 @@ impl AppState {
             rules: self.engine.rules(),
             network: self.network.lock().unwrap().clone(),
             reverse: self.reverse_cfg.lock().unwrap().clone(),
+            proto_files: self.proto_files.lock().unwrap().clone(),
         };
         let json = serde_json::to_vec_pretty(&saved).map_err(|e| e.to_string())?;
         std::fs::write(&self.settings_path, json).map_err(|e| e.to_string())
@@ -316,6 +322,41 @@ fn set_rules(state: State<'_, AppState>, rules: Rules) -> Result<(), String> {
     state.save()
 }
 
+#[derive(Serialize)]
+struct ProtoSchemas {
+    files: Vec<String>,
+    messages: Vec<String>,
+}
+
+fn proto_schemas(state: &AppState) -> ProtoSchemas {
+    let messages = state.proto_pool.lock().unwrap().as_ref().map(sniffo_core::schema::message_names).unwrap_or_default();
+    ProtoSchemas { files: state.proto_files.lock().unwrap().clone(), messages }
+}
+
+#[tauri::command]
+fn get_proto_schemas(state: State<'_, AppState>) -> ProtoSchemas {
+    proto_schemas(&state)
+}
+
+/// Compiles the given schema files; nothing changes if any of them fails.
+#[tauri::command]
+fn set_proto_files(state: State<'_, AppState>, files: Vec<String>) -> Result<ProtoSchemas, String> {
+    let pool = if files.is_empty() { None } else { Some(sniffo_core::schema::load(&files.iter().map(PathBuf::from).collect::<Vec<_>>())?) };
+    *state.proto_pool.lock().unwrap() = pool;
+    *state.proto_files.lock().unwrap() = files;
+    state.save()?;
+    Ok(proto_schemas(&state))
+}
+
+#[tauri::command]
+fn decode_proto(state: State<'_, AppState>, id: u64, response: bool, message_type: String) -> Result<Vec<serde_json::Value>, String> {
+    let flow = state.engine.flow(id).ok_or("flow not found")?;
+    let msg = if response { flow.response.ok_or("no response")? } else { flow.request };
+    let grpc = msg.header("content-type").is_some_and(|c| c.starts_with("application/grpc"));
+    let pool = state.proto_pool.lock().unwrap();
+    sniffo_core::schema::decode(pool.as_ref().ok_or("no protobuf schemas loaded")?, &message_type, &msg.decoded_body(), grpc)
+}
+
 #[tauri::command]
 fn export_rules(state: State<'_, AppState>, path: String) -> Result<usize, String> {
     let rules = state.engine.rules();
@@ -391,13 +432,14 @@ pub fn run() {
             let engine = Engine::default();
             let settings_path = dir.join("settings.json");
             let mut allow_lan = true;
-            let (mut network, mut reverse_cfg) = (NetworkOptions::default(), vec![]);
+            let (mut network, mut reverse_cfg, mut proto_files) = (NetworkOptions::default(), vec![], vec![]);
             if let Ok(data) = std::fs::read(&settings_path) {
                 match serde_json::from_slice::<Saved>(&data) {
                     Ok(saved) => {
                         allow_lan = saved.allow_lan;
                         network = saved.network;
                         reverse_cfg = saved.reverse;
+                        proto_files = saved.proto_files;
                         engine.set_ssl_proxying(saved.ssl);
                         engine.set_rules(saved.rules);
                     }
@@ -406,7 +448,14 @@ pub fn run() {
             }
             forward_events(app.handle().clone(), &engine);
             app.manage(AppState { engine, ca, ca_path: dir.join("sniffo-ca.pem"), snapshot_path, settings_path, allow_lan: AtomicBool::new(allow_lan), proxy: Mutex::new(None),
-                network: std::sync::Mutex::new(network), reverse_cfg: std::sync::Mutex::new(reverse_cfg.clone()), reverse: Mutex::new(vec![]) });
+                network: std::sync::Mutex::new(network), reverse_cfg: std::sync::Mutex::new(reverse_cfg.clone()), reverse: Mutex::new(vec![]),
+                proto_pool: std::sync::Mutex::new(match proto_files.is_empty() {
+                    true => None,
+                    false => sniffo_core::schema::load(&proto_files.iter().map(PathBuf::from).collect::<Vec<_>>())
+                        .inspect_err(|e| tracing::error!("protobuf schemas: {e}"))
+                        .ok(),
+                }),
+                proto_files: std::sync::Mutex::new(proto_files) });
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = handle.state::<AppState>();
@@ -418,7 +467,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             proxy_status, start_proxy, stop_proxy, set_allow_lan, list_devices, device_command, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
-            get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, export_rules, import_rules, list_breakpoints, resume_breakpoint
+            get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, export_rules, import_rules, get_proto_schemas, set_proto_files, decode_proto, list_breakpoints, resume_breakpoint
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
