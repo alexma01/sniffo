@@ -12,6 +12,7 @@ const samples: [string, string, number, string, string][] = [
   ["POST", "https://api.example.com/graphql", 200, "application/json", '{"data":{"user":{"name":"Ada"}}}'],
   ["GET", "https://www.example.org/feed.xml", 200, "application/xml", "<rss><channel><title>Feed</title><item><title>One</title></item></channel></rss>"],
   ["PUT", "https://api.example.com/v1/items/9", 500, "text/plain", "boom"],
+  ["CONNECT", "https://dev-h2o-api.hubsense.io:443/", 200, "", ""],
   ["POST", "https://api.example.com/demo.UserService/Get", 200, "application/grpc", String.fromCharCode(0, 0, 0, 0, 7, 8, 7, 18, 3, 97, 100, 97)],
   ["GET", "https://www.example.org/", 304, "text/html", ""],
   // Tunnels: SSL Proxying not enabled for these hosts (no status, no response).
