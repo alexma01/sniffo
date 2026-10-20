@@ -4,8 +4,10 @@ use crate::{
     ca::RootCa,
     flow::{Flow, FlowId, FlowState, FlowSummary, Headers, Message, WsMessage, headers_from, now_ms},
     client::ClientApps,
+    net::{NetworkOptions, NoVerify, OverrideResolver, UpstreamKind},
     rules::{Plan, Rules},
 };
+use hyper_util::client::legacy::connect::{HttpConnector, proxy::{SocksV5, Tunnel}};
 use bytes::{Bytes, BytesMut};
 use http_body_util::{BodyExt, BodyDataStream};
 use hudsucker::{
@@ -232,6 +234,9 @@ impl Default for Engine {
 pub struct StartOptions {
     /// Extra PEM roots trusted for upstream TLS (self-signed dev servers, tests).
     pub extra_upstream_roots: Vec<String>,
+    pub network: NetworkOptions,
+    /// Reverse-proxy mode: requests to this listener go to this base URL (e.g. http://localhost:3000).
+    pub reverse_target: Option<String>,
 }
 
 impl Engine {
@@ -323,41 +328,85 @@ impl Engine {
     }
 
     pub async fn start(&self, listener: TcpListener, ca: &RootCa, opts: StartOptions) -> Result<ProxyHandle, String> {
-        let addr = listener.local_addr().map_err(|e| e.to_string())?;
-        let authority = RcgenAuthority::new(ca.issuer().map_err(|e| e.to_string())?, 1_000, aws_lc_rs::default_provider());
+        let provider = Arc::new(aws_lc_rs::default_provider());
+        let builder = ClientConfig::builder_with_provider(provider.clone()).with_safe_default_protocol_versions().map_err(|e| e.to_string())?;
+        let tls = if opts.network.ignore_upstream_tls_errors {
+            builder.dangerous().with_custom_certificate_verifier(Arc::new(NoVerify(provider))).with_no_client_auth()
+        } else {
+            // OS trust store first (corporate TLS inspection CAs live there), webpki as fallback.
+            let mut roots = RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
+            let native = rustls_native_certs::load_native_certs();
+            for e in &native.errors {
+                tracing::warn!("system root store: {e}");
+            }
+            roots.add_parsable_certificates(native.certs);
+            for pem in &opts.extra_upstream_roots {
+                for der in CertificateDer::pem_slice_iter(pem.as_bytes()) {
+                    roots.add(der.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+                }
+            }
+            builder.with_root_certificates(roots).with_no_client_auth()
+        };
+        let mut http = HttpConnector::new_with_resolver(OverrideResolver::new(&opts.network.dns)?);
+        // hyper-rustls handles https; the plain connector must let those URIs through.
+        http.enforce_http(false);
 
-        // OS trust store first (corporate TLS inspection CAs live there), webpki as fallback.
-        let mut roots = RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
-        let native = rustls_native_certs::load_native_certs();
-        for e in &native.errors {
-            tracing::warn!("system root store: {e}");
-        }
-        roots.add_parsable_certificates(native.certs);
-        for pem in &opts.extra_upstream_roots {
-            for der in CertificateDer::pem_slice_iter(pem.as_bytes()) {
-                roots.add(der.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        match &opts.network.upstream {
+            None => self.launch(listener, ca, &opts, tls.clone(), https(tls, http)).await,
+            Some(up) => {
+                let uri: Uri = format!("http://{}:{}", up.host, up.port).parse().map_err(|e| format!("upstream proxy address: {e}"))?;
+                match up.kind {
+                    UpstreamKind::Http => {
+                        let mut tunnel = Tunnel::new(uri, http);
+                        if !up.username.is_empty() {
+                            use base64::Engine as _;
+                            let token = base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", up.username, up.password));
+                            tunnel = tunnel.with_auth(HeaderValue::from_str(&format!("Basic {token}")).map_err(|e| e.to_string())?);
+                        }
+                        self.launch(listener, ca, &opts, tls.clone(), https(tls, tunnel)).await
+                    }
+                    UpstreamKind::Socks5 => {
+                        let mut socks = SocksV5::new(uri, http);
+                        if !up.username.is_empty() {
+                            socks = socks.with_auth(up.username.clone(), up.password.clone());
+                        }
+                        self.launch(listener, ca, &opts, tls.clone(), https(tls, socks)).await
+                    }
+                }
             }
         }
-        let tls = ClientConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
-            .with_safe_default_protocol_versions()
-            .map_err(|e| e.to_string())?
-            .with_root_certificates(roots)
-            .with_no_client_auth();
-        let https = hyper_rustls::HttpsConnectorBuilder::new()
-            .with_tls_config(tls.clone())
-            .https_or_http()
-            .enable_http1()
-            .enable_http2()
-            .build();
+    }
 
+    async fn launch<C>(&self, listener: TcpListener, ca: &RootCa, opts: &StartOptions, tls: ClientConfig, connector: C) -> Result<ProxyHandle, String>
+    where
+        C: hudsucker::hyper_util::client::legacy::connect::Connect + Clone + Send + Sync + 'static,
+    {
+        let addr = listener.local_addr().map_err(|e| e.to_string())?;
+        let authority = RcgenAuthority::new(ca.issuer().map_err(|e| e.to_string())?, 1_000, aws_lc_rs::default_provider());
+        let reverse = match &opts.reverse_target {
+            Some(t) => Some(Arc::new(t.parse::<Uri>().map_err(|e| format!("reverse proxy target: {e}"))?)),
+            None => None,
+        };
         let (tx, rx) = oneshot::channel::<()>();
         let proxy = Proxy::builder()
             .with_listener(listener)
             .with_ca(authority)
-            .with_http_connector(https)
+            .with_http_connector(connector)
             .with_websocket_connector(Connector::Rustls(Arc::new(tls)))
             .with_websocket_handler(Frames { engine: self.inner.clone() })
-            .with_http_handler(Capture { engine: self.inner.clone(), id: None, is_head: false, break_response: false, download_bps: None, ca: Arc::new(ca.clone()), proxy_port: addr.port(), lookup: None, scripts: Arc::default(), script_request: serde_json::Value::Null })
+            .with_http_handler(Capture {
+                engine: self.inner.clone(),
+                id: None,
+                is_head: false,
+                break_response: false,
+                download_bps: None,
+                ca: Arc::new(ca.clone()),
+                proxy_port: addr.port(),
+                lookup: None,
+                scripts: Arc::default(),
+                script_request: serde_json::Value::Null,
+                reverse,
+            })
             .with_graceful_shutdown(async { let _ = rx.await; })
             .build()
             .map_err(|e| e.to_string())?;
@@ -368,6 +417,10 @@ impl Engine {
         });
         Ok(ProxyHandle { addr, shutdown: Some(tx), task })
     }
+}
+
+fn https<C>(tls: ClientConfig, inner: C) -> hyper_rustls::HttpsConnector<C> {
+    hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls).https_or_http().enable_http1().enable_http2().wrap_connector(inner)
 }
 
 pub struct ProxyHandle {
@@ -398,6 +451,8 @@ struct Capture {
     /// Script rules for this request, plus the request as scripts last saw it (for onResponse).
     scripts: Arc<Vec<(String, String)>>,
     script_request: serde_json::Value,
+    /// Reverse-proxy target for this listener.
+    reverse: Option<Arc<Uri>>,
     /// Client-app lookup running alongside the upstream request (see `handle_response`).
     lookup: Option<Arc<Mutex<Option<JoinHandle<()>>>>>,
 }
@@ -561,6 +616,13 @@ impl HttpHandler for Capture {
             Ok(b) => b.to_bytes(),
             Err(e) => return error_response(StatusCode::BAD_REQUEST, format!("failed to read request body: {e}")).into(),
         };
+        if let (None, Some(target)) = (parts.uri.authority(), &self.reverse) {
+            let pq = parts.uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
+            let base = target.to_string();
+            if let Ok(uri) = format!("{}{pq}", base.trim_end_matches('/')).parse() {
+                parts.uri = uri;
+            }
+        }
         if parts.uri.authority().is_none() || parts.uri.host() == Some(CERT_HOST) {
             return cert_response(parts.uri.path(), &self.ca).into();
         }

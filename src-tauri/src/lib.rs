@@ -1,6 +1,7 @@
 use serde::Serialize;
 use serde::Deserialize;
 use sniffo_core::devices::{self, Device};
+use sniffo_core::net::NetworkOptions;
 use sniffo_core::{BreakpointHit, Decision, Engine, Flow, FlowEvent, FlowSummary, ProxyHandle, RootCa, Rules, SslProxying, StartOptions, system};
 use std::{path::PathBuf, sync::atomic::{AtomicBool, Ordering}, time::Duration};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, ipc::Response};
@@ -16,6 +17,9 @@ struct AppState {
     settings_path: PathBuf,
     allow_lan: AtomicBool,
     proxy: Mutex<Option<ProxyHandle>>,
+    network: std::sync::Mutex<NetworkOptions>,
+    reverse_cfg: std::sync::Mutex<Vec<ReverseProxy>>,
+    reverse: Mutex<Vec<ProxyHandle>>,
 }
 
 /// Persisted user configuration.
@@ -28,6 +32,18 @@ struct Saved {
     ssl: SslProxying,
     #[serde(default)]
     rules: Rules,
+    #[serde(default)]
+    network: NetworkOptions,
+    #[serde(default)]
+    reverse: Vec<ReverseProxy>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct ReverseProxy {
+    enabled: bool,
+    port: u16,
+    /// Base URL requests are forwarded to, e.g. http://localhost:3000
+    target: String,
 }
 
 fn yes() -> bool {
@@ -36,7 +52,13 @@ fn yes() -> bool {
 
 impl AppState {
     fn save(&self) -> Result<(), String> {
-        let saved = Saved { allow_lan: self.allow_lan.load(Ordering::Relaxed), ssl: self.engine.ssl_proxying(), rules: self.engine.rules() };
+        let saved = Saved {
+            allow_lan: self.allow_lan.load(Ordering::Relaxed),
+            ssl: self.engine.ssl_proxying(),
+            rules: self.engine.rules(),
+            network: self.network.lock().unwrap().clone(),
+            reverse: self.reverse_cfg.lock().unwrap().clone(),
+        };
         let json = serde_json::to_vec_pretty(&saved).map_err(|e| e.to_string())?;
         std::fs::write(&self.settings_path, json).map_err(|e| e.to_string())
     }
@@ -80,7 +102,8 @@ async fn start_proxy(state: State<'_, AppState>, port: Option<u16>) -> Result<St
     let listener = TcpListener::bind((host, port.unwrap_or(DEFAULT_PORT)))
         .await
         .map_err(|e| format!("cannot listen on port {}: {e}", port.unwrap_or(DEFAULT_PORT)))?;
-    let handle = state.engine.start(listener, &state.ca, StartOptions::default()).await?;
+    let network = state.network.lock().unwrap().clone();
+    let handle = state.engine.start(listener, &state.ca, StartOptions { network, ..Default::default() }).await?;
     let addr = handle.addr.to_string();
     *proxy = Some(handle);
     Ok(addr)
@@ -176,6 +199,61 @@ fn import_har(state: State<'_, AppState>, path: String, replace: bool) -> Result
         state.engine.clear();
     }
     Ok(state.engine.import(flows))
+}
+
+#[tauri::command]
+fn get_network(state: State<'_, AppState>) -> NetworkOptions {
+    state.network.lock().unwrap().clone()
+}
+
+/// Saves outgoing-connection options and restarts the proxy so they take effect.
+#[tauri::command]
+async fn set_network(state: State<'_, AppState>, network: NetworkOptions) -> Result<(), String> {
+    *state.network.lock().unwrap() = network;
+    state.save()?;
+    let port = state.proxy.lock().await.as_ref().map(|p| p.addr.port());
+    if port.is_some() {
+        start_proxy(state, port).await?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_reverse(state: State<'_, AppState>) -> Vec<ReverseProxy> {
+    state.reverse_cfg.lock().unwrap().clone()
+}
+
+/// (Re)starts every enabled reverse proxy listener; returns per-entry errors.
+#[tauri::command]
+async fn set_reverse(state: State<'_, AppState>, reverse: Vec<ReverseProxy>) -> Result<Vec<Option<String>>, String> {
+    *state.reverse_cfg.lock().unwrap() = reverse.clone();
+    state.save()?;
+    start_reverse(&state, &reverse).await
+}
+
+async fn start_reverse(state: &AppState, entries: &[ReverseProxy]) -> Result<Vec<Option<String>>, String> {
+    let mut running = state.reverse.lock().await;
+    for h in running.drain(..) {
+        h.stop().await;
+    }
+    let network = state.network.lock().unwrap().clone();
+    let mut errors = vec![];
+    for e in entries {
+        if !e.enabled {
+            errors.push(None);
+            continue;
+        }
+        let opts = StartOptions { network: network.clone(), reverse_target: Some(e.target.clone()), ..Default::default() };
+        let result = match TcpListener::bind(("127.0.0.1", e.port)).await {
+            Ok(l) => state.engine.start(l, &state.ca, opts).await,
+            Err(err) => Err(format!("port {}: {err}", e.port)),
+        };
+        match result {
+            Ok(h) => { running.push(h); errors.push(None); }
+            Err(err) => errors.push(Some(err)),
+        }
+    }
+    Ok(errors)
 }
 
 #[tauri::command]
@@ -289,10 +367,13 @@ pub fn run() {
             let engine = Engine::default();
             let settings_path = dir.join("settings.json");
             let mut allow_lan = true;
+            let (mut network, mut reverse_cfg) = (NetworkOptions::default(), vec![]);
             if let Ok(data) = std::fs::read(&settings_path) {
                 match serde_json::from_slice::<Saved>(&data) {
                     Ok(saved) => {
                         allow_lan = saved.allow_lan;
+                        network = saved.network;
+                        reverse_cfg = saved.reverse;
                         engine.set_ssl_proxying(saved.ssl);
                         engine.set_rules(saved.rules);
                     }
@@ -300,11 +381,19 @@ pub fn run() {
                 }
             }
             forward_events(app.handle().clone(), &engine);
-            app.manage(AppState { engine, ca, ca_path: dir.join("sniffo-ca.pem"), snapshot_path, settings_path, allow_lan: AtomicBool::new(allow_lan), proxy: Mutex::new(None) });
+            app.manage(AppState { engine, ca, ca_path: dir.join("sniffo-ca.pem"), snapshot_path, settings_path, allow_lan: AtomicBool::new(allow_lan), proxy: Mutex::new(None),
+                network: std::sync::Mutex::new(network), reverse_cfg: std::sync::Mutex::new(reverse_cfg.clone()), reverse: Mutex::new(vec![]) });
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state = handle.state::<AppState>();
+                if let Ok(errors) = start_reverse(&state, &reverse_cfg).await {
+                    errors.into_iter().flatten().for_each(|e| tracing::error!("reverse proxy: {e}"));
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            proxy_status, start_proxy, stop_proxy, set_allow_lan, list_devices, device_command, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
+            proxy_status, start_proxy, stop_proxy, set_allow_lan, list_devices, device_command, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
             get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, list_breakpoints, resume_breakpoint
         ])
         .build(tauri::generate_context!())

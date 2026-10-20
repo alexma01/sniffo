@@ -105,7 +105,15 @@ export type DeviceCommand =
   | { type: "install_ca" } | { type: "install_system_ca" } | { type: "set_proxy" } | { type: "clear_proxy" }
   | { type: "restart" } | { type: "boot" } | { type: "shutdown" } | { type: "open_url"; value: string };
 
+export interface Upstream { kind: "http" | "socks5"; host: string; port: number; username: string; password: string }
+export interface NetworkOptions { upstream: Upstream | null; dns: [string, string][]; ignore_upstream_tls_errors: boolean }
+export interface ReverseProxy { enabled: boolean; port: number; target: string }
+
 export const api = {
+  getNetwork: () => invoke<NetworkOptions>("get_network"),
+  setNetwork: (network: NetworkOptions) => invoke<void>("set_network", { network }),
+  getReverse: () => invoke<ReverseProxy[]>("get_reverse"),
+  setReverse: (reverse: ReverseProxy[]) => invoke<(string | null)[]>("set_reverse", { reverse }),
   listDevices: () => invoke<Device[]>("list_devices"),
   deviceCommand: (device: string, command: DeviceCommand) => invoke<string>("device_command", { device, command }),
   status: () => invoke<ProxyStatus>("proxy_status"),
