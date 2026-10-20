@@ -256,3 +256,5 @@ button.pin.on, button.pin:hover { opacity: 1; filter: none; }
 .callout { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-top: 10px; background: var(--bg-2); }
 .callout ul { padding-left: 18px; margin: 4px 0; }
 .callout li { margin: 3px 0; }
+.app-icon { width: 14px; height: 14px; margin-right: 5px; vertical-align: -2px; flex: none; display: inline-block; }
+.app-icon.fallback { font-size: 11px; text-align: center; line-height: 14px; }
