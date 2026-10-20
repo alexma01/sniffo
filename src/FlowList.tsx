@@ -34,6 +34,7 @@ export const COLUMNS: Column[] = [
     cell: (f) => (
       <>
         {f.state === "paused" && <span className="badge warn">⏸ paused</span>}
+        {f.ws_count > 0 && <span className="badge">WS {f.ws_count}</span>}
         {f.tags.map((t) => <span key={t} className="badge">{t}</span>)}
         {f.path}
       </>
@@ -41,7 +42,7 @@ export const COLUMNS: Column[] = [
   },
   { id: "version", label: "Protocol", width: 72, cell: (f) => f.http_version.replace("HTTP/", "h") },
   { id: "reqtype", label: "Req type", width: 120, cell: (f) => f.request_type?.split(";")[0] ?? "" },
-  { id: "type", label: "Type", width: 130, cell: (f) => f.content_type?.split(";")[0] ?? "" },
+  { id: "type", label: "Type", width: 130, cell: (f) => (f.status === 101 ? "websocket" : f.content_type?.split(";")[0] ?? "") },
   { id: "reqsize", label: "Req", width: 64, align: "right", cell: (f) => (f.request_size ? formatBytes(f.request_size) : "") },
   { id: "size", label: "Size", width: 68, align: "right", cell: (f) => formatBytes(f.response_size) },
   { id: "ttfb", label: "TTFB", width: 64, align: "right", cell: (f) => ms(f.ttfb_ms) },

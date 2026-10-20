@@ -73,6 +73,20 @@ pub struct Flow {
     pub pinned: bool,
     /// Names of the rules that acted on this flow.
     pub tags: Vec<String>,
+    /// Frames of a WebSocket connection (empty for plain HTTP).
+    pub ws_messages: Vec<WsMessage>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct WsMessage {
+    /// Client -> server.
+    pub outgoing: bool,
+    pub time_ms: u64,
+    /// text / binary / ping / pong / close
+    pub kind: &'static str,
+    pub size: usize,
+    /// Text frames as-is; binary frames base64 (truncated to keep memory bounded).
+    pub data: String,
 }
 
 /// Lightweight row for the flow list (no bodies, no headers).
@@ -99,6 +113,7 @@ pub struct FlowSummary {
     pub error: Option<String>,
     pub pinned: bool,
     pub tags: Vec<String>,
+    pub ws_count: usize,
 }
 
 impl Flow {
@@ -125,6 +140,7 @@ impl Flow {
             error: self.error.clone(),
             pinned: self.pinned,
             tags: self.tags.clone(),
+            ws_count: self.ws_messages.len(),
         }
     }
 

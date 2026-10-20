@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, Flow, FlowSummary, formatBytes, header, Headers } from "./api";
+import { api, Flow, FlowSummary, formatBytes, header, Headers, WsMessage } from "./api";
 import { JsonTree } from "./JsonTree";
 
-type Tab = "headers" | "query" | "cookies" | "body" | "raw" | "timing";
+type Tab = "headers" | "query" | "cookies" | "body" | "raw" | "timing" | "messages";
 
 function isText(bytes: Uint8Array) {
   const n = Math.min(bytes.length, 4096);
@@ -154,6 +154,29 @@ function Timing({ flow }: { flow: Flow }) {
   return <HeaderTable headers={rows} />;
 }
 
+function Messages({ messages }: { messages: WsMessage[] }) {
+  const [open, setOpen] = useState<number | null>(null);
+  if (!messages.length) return <div className="muted pad">No frames yet</div>;
+  const t0 = messages[0].time_ms;
+  return (
+    <div className="ws">
+      {messages.map((m, i) => (
+        <div key={i}>
+          <div className={`ws-row ${m.outgoing ? "out" : "in"} ${open === i ? "open" : ""}`} onClick={() => setOpen(open === i ? null : i)}>
+            <span className="ws-dir">{m.outgoing ? "↑" : "↓"}</span>
+            <span className="ws-time">+{((m.time_ms - t0) / 1000).toFixed(3)}s</span>
+            <span className="ws-kind">{m.kind}</span>
+            <span className="ws-size">{formatBytes(m.size)}</span>
+            <span className="ws-data">{m.data}</span>
+          </div>
+          {open === i && m.kind === "text" && <BodyView bytes={new TextEncoder().encode(m.data)} />}
+          {open === i && m.kind === "binary" && <BodyView bytes={Uint8Array.from(atob(m.data), (c) => c.charCodeAt(0))} />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Pane(props: { title: string; flow: Flow; response: boolean }) {
   const { flow, response } = props;
   const msg = response ? flow.response : flow.request;
@@ -170,7 +193,11 @@ function Pane(props: { title: string; flow: Flow; response: boolean }) {
     try { return [...new URL(flow.url).searchParams.entries()] as Headers; } catch { return []; }
   }, [flow.url]);
 
-  const tabs: Tab[] = response ? ["headers", "cookies", "body", "raw", "timing"] : ["headers", "query", "cookies", "body", "raw"];
+  const ws = flow.status === 101 || flow.ws_messages.length > 0;
+  const tabs: Tab[] = response
+    ? ws ? ["messages", "headers", "timing"] : ["headers", "cookies", "body", "raw", "timing"]
+    : ["headers", "query", "cookies", "body", "raw"];
+  useEffect(() => { if (ws && response) setTab("messages"); }, [flow.id]);
   const firstLine = response ? `${flow.http_version} ${flow.status ?? ""}` : `${flow.method} ${flow.path} ${flow.http_version}`;
 
   return (
@@ -186,6 +213,8 @@ function Pane(props: { title: string; flow: Flow; response: boolean }) {
       <div className="pane-body">
         {tab === "timing" ? (
           <Timing flow={flow} />
+        ) : tab === "messages" ? (
+          <Messages messages={flow.ws_messages} />
         ) : !msg ? (
           <div className="muted pad">{flow.error ?? "Waiting for response…"}</div>
         ) : tab === "headers" ? (
