@@ -12,6 +12,7 @@ import { FlowDetail } from "./FlowDetail";
 import { FlowList, isTunnel } from "./FlowList";
 import { Settings } from "./Settings";
 import { Sidebar } from "./Sidebar";
+import { setLocalIps } from "./clients";
 import "./App.css";
 
 function useFlows() {
@@ -120,6 +121,7 @@ export default function App() {
 
   const [rules, setRules] = useState<Rules | null>(null);
   const [ssl, setSsl] = useState<SslProxying | null>(null);
+  useEffect(() => { if (status) setLocalIps(status.lan.map((a) => a.ip)); }, [status]);
   const refresh = () => {
     api.getRules().then(setRules);
     api.getSsl().then(setSsl);
