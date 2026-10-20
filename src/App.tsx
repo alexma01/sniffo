@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, FlowEvent, FlowSummary, ProxyStatus } from "./api";
 import { FlowDetail } from "./FlowDetail";
 import { FlowList } from "./FlowList";
+import { Settings } from "./Settings";
 import "./App.css";
 
 function useFlows() {
@@ -38,6 +39,7 @@ export default function App() {
   const [filter, setFilter] = useState("");
   const [host, setHost] = useState<string | null>(null);
   const [follow, setFollow] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
 
   const refresh = () => api.status().then(setStatus);
   const start = () => api.start().then(() => setError(null), (e) => setError(String(e))).finally(refresh);
@@ -68,12 +70,25 @@ export default function App() {
         ) : (
           <button onClick={start}>Start</button>
         )}
+        <label className="check" title="Route this machine's HTTP/HTTPS traffic through Sniffo">
+          <input
+            type="checkbox"
+            checked={!!status?.system_proxy}
+            disabled={!status?.running}
+            onChange={(e) => api.setSystemProxy(e.target.checked).then(() => setError(null), (err) => setError(String(err))).finally(refresh)}
+          /> System proxy
+        </label>
+        {status && !status.ca_trusted && (
+          <button className="warn" onClick={() => setShowSettings(true)}>Certificate not trusted</button>
+        )}
         <button onClick={() => { api.clear(); setSelected(null); }}>Clear</button>
         <input className="filter" placeholder="Filter: URL, method, status" value={filter} onChange={(e) => setFilter(e.target.value)} />
         <label className="check"><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> Auto-scroll</label>
         <span className="spacer" />
         <span className="muted">{visible.length} / {flows.size}</span>
+        <button onClick={() => setShowSettings(true)}>Settings</button>
       </header>
+      {showSettings && <Settings status={status} onClose={() => setShowSettings(false)} onChanged={refresh} />}
       {error && <div className="banner">{error}</div>}
       <div className="main">
         <aside className="sidebar">

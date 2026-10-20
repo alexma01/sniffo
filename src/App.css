@@ -107,3 +107,19 @@ input { font: inherit; color: inherit; }
 .kv .k { color: var(--accent); white-space: nowrap; width: 1%; }
 .kv .v { word-break: break-all; }
 .preview { max-width: 100%; }
+
+button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+button.warn { border-color: var(--warn); color: var(--warn); }
+.ok { color: var(--ok); }
+.err { color: var(--err); }
+.modal-back { position: fixed; inset: 0; background: rgb(0 0 0 / 0.35); display: flex; align-items: center; justify-content: center; z-index: 10; }
+.modal { width: min(640px, 92vw); max-height: 90vh; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; box-shadow: 0 10px 40px rgb(0 0 0 / 0.3); }
+.modal h3 { margin: 0 0 8px; }
+.modal h4 { margin: 14px 0 6px; }
+.modal p { margin: 4px 0; word-break: break-all; }
+.row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.row.end { justify-content: flex-end; margin-top: 16px; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cols label { display: flex; flex-direction: column; gap: 4px; }
+.input, textarea { padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); font: 12px/1.5 ui-monospace, Menlo, monospace; }
+.input { width: 90px; }

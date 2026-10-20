@@ -53,6 +53,8 @@ export interface ProxyStatus {
   running: boolean;
   address: string | null;
   ca_path: string;
+  ca_trusted: boolean;
+  system_proxy: boolean;
 }
 
 export type FlowEvent = { type: "upsert"; flow: FlowSummary } | { type: "cleared" };
@@ -61,6 +63,9 @@ export const api = {
   status: () => invoke<ProxyStatus>("proxy_status"),
   start: (port?: number) => invoke<string>("start_proxy", { port }),
   stop: () => invoke<void>("stop_proxy"),
+  setSystemProxy: (enabled: boolean) => invoke<void>("set_system_proxy", { enabled }),
+  trustCa: () => invoke<void>("trust_ca"),
+  revealCa: () => invoke<void>("reveal_ca"),
   listFlows: () => invoke<FlowSummary[]>("list_flows"),
   getFlow: (id: number) => invoke<Flow | null>("get_flow", { id }),
   getBody: (id: number, response: boolean) => invoke<ArrayBuffer>("get_body", { id, response }),
