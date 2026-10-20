@@ -70,6 +70,7 @@ export interface ProxyStatus {
   port: number | null;
   allow_lan: boolean;
   auto_system_proxy: boolean;
+  vpn: { state: "not_needed" | "applied" | "helper_missing" } | { state: "failed"; detail: string };
   lan: { interface: string; ip: string }[];
   ca_path: string;
   ca_trusted: boolean;
@@ -131,6 +132,7 @@ export const api = {
   stop: () => invoke<void>("stop_proxy"),
   setAllowLan: (allow: boolean) => invoke<void>("set_allow_lan", { allow }),
   setAutoSystemProxy: (enabled: boolean) => invoke<void>("set_auto_system_proxy", { enabled }),
+  installVpnHelper: () => invoke<void>("install_vpn_helper"),
   setSystemProxy: (enabled: boolean) => invoke<void>("set_system_proxy", { enabled }),
   trustCa: () => invoke<void>("trust_ca"),
   revealCa: () => invoke<void>("reveal_ca"),

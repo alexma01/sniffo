@@ -360,6 +360,14 @@ export default function App() {
           <span className="item" title={status.lan.map((a) => `${a.interface}: ${a.ip}`).join("\n")}><span className="label">LAN</span> {status.lan[0].ip}:{status.port}</span>
         )}
         <span className="item"><span className="label">System proxy</span> {status?.system_proxy ? <span className="ok">On</span> : "Off"}</span>
+        {status?.system_proxy && status.vpn.state === "applied" && <span className="item ok" title="A VPN overrides the system proxy; Sniffo routes its entry through the proxy">VPN routed</span>}
+        {status?.system_proxy && status.vpn.state === "helper_missing" && (
+          <button className="linkish err" title="A VPN (e.g. Cato) is hiding the system proxy, so browsers bypass Sniffo. Installing the helper asks for your password once."
+            onClick={() => api.installVpnHelper().then(() => notify("VPN helper installed"), fail).finally(refresh)}>
+            VPN bypasses Sniffo — Install helper…
+          </button>
+        )}
+        {status?.system_proxy && status.vpn.state === "failed" && <span className="item err" title={status.vpn.detail}>VPN routing failed</span>}
         <span className="item"><span className="label">Certificate</span> {status?.ca_trusted ? <span className="ok">Trusted</span> : <span className="err">Not trusted</span>}</span>
         <span className="item"><span className="label">SSL proxying</span> {!ssl?.enabled ? "Off" : ssl.include.includes("*") ? "All hosts" : `${ssl.include.length} hosts`}{ssl?.exclude.length ? ` (−${ssl.exclude.length})` : ""}</span>
         <span className="item"><span className="label">Rules</span> {activeRules} active</span>
