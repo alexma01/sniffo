@@ -68,7 +68,7 @@ input { font: inherit; color: inherit; }
 .side-item.active { background: var(--sel); }
 
 .content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.flow-list { flex: 1 1 45%; display: flex; flex-direction: column; min-height: 120px; border-bottom: 1px solid var(--border); }
+.flow-list { flex: 0 0 var(--list-pct, 45%); display: flex; flex-direction: column; min-height: 80px; overflow: hidden; }
 .flow-scroll { flex: 1; overflow: auto; outline: none; }
 .flow-row { display: flex; align-items: center; gap: 8px; padding: 0 10px; white-space: nowrap; cursor: default; font-variant-numeric: tabular-nums; }
 .flow-row > span { overflow: hidden; text-overflow: ellipsis; }
@@ -87,7 +87,7 @@ input { font: inherit; color: inherit; }
 .s-redirect .c-status { color: var(--redirect); }
 .s-pending .c-status { color: var(--muted); }
 
-.detail { flex: 1 1 55%; display: flex; flex-direction: column; min-height: 0; }
+.detail { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
 .detail.empty { align-items: center; justify-content: center; padding: 24px; text-align: center; }
 .detail-url { padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, Menlo, monospace; }
 .method { font-weight: 700; }
@@ -214,3 +214,13 @@ button.linkish.err { color: var(--err); }
 .modal textarea { width: 100%; }
 .badge.gql { background: color-mix(in srgb, var(--redirect) 20%, transparent); color: var(--redirect); }
 .pad-s { padding: 4px 10px; }
+
+.split { height: 5px; flex: none; cursor: row-resize; border-top: 1px solid var(--border); background: var(--bg-2); }
+.split:hover { background: var(--accent); }
+.flow-row.head .th { position: relative; overflow: visible; }
+.resizer { position: absolute; right: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 1; }
+.resizer:hover { background: color-mix(in srgb, var(--accent) 40%, transparent); }
+.swatches { display: flex; gap: 6px; padding: 4px 10px !important; }
+.swatches:hover { background: none !important; color: inherit !important; }
+.swatches span { width: 14px; height: 14px; border-radius: 50%; cursor: pointer; display: inline-block; font-size: 10px; text-align: center; line-height: 14px; }
+.swatches span.none { border: 1px solid var(--border); }

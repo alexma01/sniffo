@@ -52,6 +52,19 @@ export const COLUMNS: Column[] = [
 
 const DEFAULT_HIDDEN = ["reqtype", "ttfb"];
 
+function load<T>(key: string, fallback: T): T {
+  try {
+    const v = localStorage.getItem(key);
+    return v ? JSON.parse(v) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function save(key: string, value: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ }
+}
+
 function loadHidden(): Set<string> {
   try {
     const v = localStorage.getItem("sniffo.hiddenColumns");
@@ -67,17 +80,18 @@ export function FlowList(props: {
   onSelect: (id: number) => void;
   onContextMenu: (id: number, x: number, y: number) => void;
   follow: boolean;
+  /** Row highlight colours set from the context menu. */
+  colors: Map<number, string>;
 }) {
-  const { flows, selected, onSelect, onContextMenu, follow } = props;
+  const { flows, selected, onSelect, onContextMenu, follow, colors } = props;
+  const [widths, setWidths] = useState<Record<string, number>>(() => load("sniffo.columnWidths", {}));
   const parent = useRef<HTMLDivElement>(null);
   const v = useVirtualizer({ count: flows.length, getScrollElement: () => parent.current, estimateSize: () => ROW, overscan: 20 });
   const [hidden, setHidden] = useState(loadHidden);
   const [picker, setPicker] = useState<{ x: number; y: number } | null>(null);
   const cols = COLUMNS.filter((c) => !hidden.has(c.id));
 
-  useEffect(() => {
-    try { localStorage.setItem("sniffo.hiddenColumns", JSON.stringify([...hidden])); } catch { /* storage unavailable */ }
-  }, [hidden]);
+  useEffect(() => save("sniffo.hiddenColumns", [...hidden]), [hidden]);
 
   useEffect(() => {
     if (follow && flows.length) v.scrollToIndex(flows.length - 1);
@@ -99,12 +113,40 @@ export function FlowList(props: {
     }
   };
 
-  const style = (c: Column) => (c.width === "flex" ? { flex: 1, minWidth: 120 } : { width: c.width, flex: "none" as const, textAlign: c.align });
+  const style = (c: Column) => {
+    const w: number | "flex" = c.id in widths ? widths[c.id] : c.width;
+    return w === "flex" ? { flex: 1, minWidth: 120 } : { width: w, flex: "none" as const, textAlign: c.align };
+  };
+
+  /** Drag the right edge of a header cell to resize that column. */
+  const startResize = (c: Column, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect().width;
+    let latest = widths;
+    const move = (ev: MouseEvent) => {
+      latest = { ...latest, [c.id]: Math.max(30, Math.round(startW + ev.clientX - startX)) };
+      setWidths(latest);
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      save("sniffo.columnWidths", latest);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
 
   return (
     <div className="flow-list">
       <div className="flow-row head" onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setPicker({ x: e.clientX, y: e.clientY }); }} title="Right-click to choose columns">
-        {cols.map((c) => <span key={c.id} style={style(c)}>{c.label}</span>)}
+        {cols.map((c) => (
+          <span key={c.id} style={style(c)} className="th">
+            {c.label}
+            <span className="resizer" onMouseDown={(e) => startResize(c, e)} onDoubleClick={() => { const { [c.id]: _, ...rest } = widths; setWidths(rest); save("sniffo.columnWidths", rest); }} title="Drag to resize, double-click to reset" />
+          </span>
+        ))}
       </div>
       <div
         className="flow-scroll"
@@ -122,7 +164,7 @@ export function FlowList(props: {
               <div
                 key={f.id}
                 className={`flow-row ${f.id === selected ? "selected" : ""} ${statusClass(f)}`}
-                style={{ position: "absolute", top: 0, transform: `translateY(${row.start}px)`, height: ROW, width: "100%" }}
+                style={{ position: "absolute", top: 0, transform: `translateY(${row.start}px)`, height: ROW, width: "100%", ...(colors.has(f.id) && f.id !== selected ? { background: colors.get(f.id) } : {}) }}
                 onClick={() => onSelect(f.id)}
                 onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(f.id, e.clientX, e.clientY); }}
               >

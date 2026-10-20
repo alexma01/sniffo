@@ -44,6 +44,15 @@ function useFlows() {
 
 interface Menu { id: number; x: number; y: number }
 
+const HIGHLIGHTS: Record<string, string> = {
+  Red: "rgb(255 59 48 / 0.22)", Orange: "rgb(255 149 0 / 0.22)", Yellow: "rgb(255 204 0 / 0.25)",
+  Green: "rgb(52 199 89 / 0.22)", Blue: "rgb(0 122 255 / 0.20)", Purple: "rgb(175 82 222 / 0.22)",
+};
+
+function loadNumber(key: string, fallback: number) {
+  try { return Number(localStorage.getItem(key)) || fallback; } catch { return fallback; }
+}
+
 async function requestOf(id: number): Promise<Req> {
   const flow = await api.getFlow(id);
   const body = new TextDecoder().decode(await api.getBody(id, false));
@@ -70,6 +79,29 @@ export default function App() {
   const [fileMenu, setFileMenu] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const filterRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [listPct, setListPct] = useState(() => loadNumber("sniffo.listHeight", 45));
+  const [colors, setColors] = useState<Map<number, string>>(new Map());
+  const highlight = (id: number, color: string | null) => setColors((m) => {
+    const next = new Map(m);
+    if (color) next.set(id, color); else next.delete(id);
+    return next;
+  });
+
+  /** Drag the divider between the list and the detail panes. */
+  const startSplit = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const box = contentRef.current!.getBoundingClientRect();
+    let pct = listPct;
+    const move = (ev: MouseEvent) => { pct = Math.min(85, Math.max(15, ((ev.clientY - box.top) / box.height) * 100)); setListPct(pct); };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      try { localStorage.setItem("sniffo.listHeight", String(Math.round(pct))); } catch { /* storage unavailable */ }
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
 
   const notify = (text: string) => { setToast(text); setTimeout(() => setToast(null), 3000); };
   const fail = (e: unknown) => setError(String(e));
@@ -273,14 +305,16 @@ export default function App() {
             </div>
           ))}
         </aside>
-        <div className="content">
+        <div className="content" ref={contentRef} style={{ ["--list-pct" as string]: `${listPct}%` }}>
           <FlowList
             flows={visible}
             selected={selected}
             onSelect={(id) => { setSelected(id); setFollow(false); }}
             onContextMenu={(id, x, y) => { setSelected(id); setMenu({ id, x, y }); }}
             follow={follow}
+            colors={colors}
           />
+          <div className="split" onMouseDown={startSplit} title="Drag to resize" />
           {sel ? (
             <FlowDetail summary={sel} />
           ) : (
@@ -335,6 +369,12 @@ export default function App() {
           <div onClick={() => requestOf(menuFlow.id).then(setCompose)}>Edit &amp; Repeat…</div>
           <hr />
           <div onClick={() => api.pin(menuFlow.id, !menuFlow.pinned)}>{menuFlow.pinned ? "Unpin" : "Pin"}</div>
+          <div className="swatches" onClick={(e) => e.stopPropagation()}>
+            {Object.entries(HIGHLIGHTS).map(([name, c]) => (
+              <span key={name} title={name} style={{ background: c.replace(/0\.2\d\)/, "0.9)") }} onClick={() => { highlight(menuFlow.id, c); setMenu(null); }} />
+            ))}
+            <span title="No highlight" className="none" onClick={() => { highlight(menuFlow.id, null); setMenu(null); }}>✕</span>
+          </div>
           <div onClick={() => copy(menuFlow.url, "URL")}>Copy URL</div>
           <div onClick={() => requestOf(menuFlow.id).then((r) => copy(toCurl(r), "as cURL"))}>Copy as cURL</div>
           <div onClick={() => requestOf(menuFlow.id).then((r) => copy(toFetch(r), "as fetch"))}>Copy as fetch</div>
