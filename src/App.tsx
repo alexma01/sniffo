@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, BreakpointHit, FlowEvent, FlowSummary, ProxyStatus, Rule } from "./api";
+import { api, BreakpointHit, FlowEvent, FlowSummary, formatBytes, ProxyStatus, Rule, Rules, SslProxying } from "./api";
 import { BreakpointEditor } from "./BreakpointEditor";
 import { Devices } from "./Devices";
 import { defaultAction, newRule, RulesEditor } from "./RulesEditor";
-import { compile, emptyFilter, Filter, STATUSES, toggle, TYPES } from "./filters";
+import { clientLabel, compile, emptyFilter, Filter, STATUSES, toggle, TYPES } from "./filters";
 import { FlowDetail } from "./FlowDetail";
 import { FlowList } from "./FlowList";
 import { Settings } from "./Settings";
@@ -50,12 +50,21 @@ export default function App() {
   const [showDevices, setShowDevices] = useState(false);
   const [menu, setMenu] = useState<Menu | null>(null);
 
-  const refresh = () => api.status().then(setStatus);
+  const [rules, setRules] = useState<Rules | null>(null);
+  const [ssl, setSsl] = useState<SslProxying | null>(null);
+  const refresh = () => {
+    api.getRules().then(setRules);
+    api.getSsl().then(setSsl);
+    return api.status().then(setStatus);
+  };
   const start = () => api.start().then(() => setError(null), (e) => setError(String(e))).finally(refresh);
   const set = (patch: Partial<Filter>) => setFilter((f) => ({ ...f, ...patch }));
 
   useEffect(() => {
-    api.status().then((s) => (s.running ? setStatus(s) : start()));
+    api.status().then((s) => (s.running ? refresh() : start()));
+    // LAN addresses change when Wi-Fi/VPN changes.
+    const t = setInterval(() => api.status().then(setStatus), 10_000);
+    return () => clearInterval(t);
   }, []);
 
   // Body search runs in the backend; debounce and re-run as new flows arrive.
@@ -77,7 +86,21 @@ export default function App() {
     [flows, predicate],
   );
   const sel = selected != null ? flows.get(selected) : undefined;
-  const pinnedCount = useMemo(() => [...flows.values()].filter((f) => f.pinned).length, [flows]);
+  const stats = useMemo(() => {
+    let pinned = 0, errors = 0, paused = 0, down = 0, up = 0;
+    const apps = new Map<string, number>();
+    for (const f of flows.values()) {
+      if (f.pinned) pinned++;
+      if (f.state === "failed" || (f.status ?? 0) >= 400) errors++;
+      if (f.state === "paused") paused++;
+      down += f.response_size ?? 0;
+      up += f.request_size;
+      apps.set(clientLabel(f), (apps.get(clientLabel(f)) ?? 0) + 1);
+    }
+    return { pinned, errors, paused, down, up, apps: [...apps.entries()].sort((a, b) => b[1] - a[1]) };
+  }, [flows]);
+  const pinnedCount = stats.pinned;
+  const activeRules = rules?.rules.filter((r) => r.enabled).length ?? 0;
 
   const remove = (ids: number[]) => { api.remove(ids); if (selected != null && ids.includes(selected)) setSelected(null); };
 
@@ -121,7 +144,6 @@ export default function App() {
         )}
         <button onClick={() => { api.clear(); setSelected(null); }} title="Remove all unpinned flows">Clear</button>
         <span className="spacer" />
-        <span className="muted">{visible.length} / {flows.size}</span>
         <button onClick={() => setRulesDraft(null)}>Rules</button>
         <button onClick={() => setShowSettings(true)}>Settings</button>
       </header>
@@ -146,22 +168,28 @@ export default function App() {
         <span className="spacer" />
         <label className="check"><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> Auto-scroll</label>
       </div>
-      {rulesDraft !== undefined && <RulesEditor draft={rulesDraft} onClose={() => setRulesDraft(undefined)} />}
+      {rulesDraft !== undefined && <RulesEditor draft={rulesDraft} onClose={() => { setRulesDraft(undefined); refresh(); }} />}
       {hits.length > 0 && <BreakpointEditor hits={hits} onDone={doneHit} />}
       {showDevices && <Devices status={status} onClose={() => setShowDevices(false)} onChanged={refresh} />}
       {showSettings && <Settings status={status} onClose={() => setShowSettings(false)} onChanged={refresh} />}
       {error && <div className="banner">{error}</div>}
       <div className="main">
         <aside className="sidebar">
-          <div className={`side-item ${!filter.host && !filter.pinnedOnly ? "active" : ""}`} onClick={() => set({ host: null, pinnedOnly: false })}>
+          <div className={`side-item ${!filter.host && !filter.pinnedOnly && !filter.client ? "active" : ""}`} onClick={() => set({ host: null, pinnedOnly: false, client: null })}>
             All <span className="muted">{flows.size}</span>
           </div>
           <div className={`side-item ${filter.pinnedOnly ? "active" : ""}`} onClick={() => set({ host: null, pinnedOnly: true })}>
             📌 Pinned <span className="muted">{pinnedCount}</span>
           </div>
+          {stats.apps.length > 0 && <div className="side-title">Apps &amp; devices</div>}
+          {stats.apps.map(([a, n]) => (
+            <div key={a} className={`side-item ${filter.client === a ? "active" : ""}`} onClick={() => set({ client: filter.client === a ? null : a })} title={a}>
+              <span className="ellipsis">{/^\d+\.\d+\.\d+\.\d+$/.test(a) ? "📱 " : "▣ "}{a}</span> <span className="muted">{n}</span>
+            </div>
+          ))}
           <div className="side-title">Domains</div>
           {hosts.map(([h, n]) => (
-            <div key={h} className={`side-item ${filter.host === h ? "active" : ""}`} onClick={() => set({ host: h, pinnedOnly: false })} title={h}>
+            <div key={h} className={`side-item ${filter.host === h ? "active" : ""}`} onClick={() => set({ host: filter.host === h ? null : h, pinnedOnly: false })} title={h}>
               <span className="ellipsis">{h}</span> <span className="muted">{n}</span>
             </div>
           ))}
@@ -185,6 +213,22 @@ export default function App() {
           )}
         </div>
       </div>
+      <footer className="statusbar">
+        <span className="item"><span className={`dot ${status?.running ? "on" : "off"}`} />{status?.running ? `Proxy ${status.address}` : "Proxy stopped"}</span>
+        {status?.running && status.allow_lan && status.lan[0] && (
+          <span className="item" title={status.lan.map((a) => `${a.interface}: ${a.ip}`).join("\n")}><span className="label">LAN</span> {status.lan[0].ip}:{status.port}</span>
+        )}
+        <span className="item"><span className="label">System proxy</span> {status?.system_proxy ? <span className="ok">On</span> : "Off"}</span>
+        <span className="item"><span className="label">Certificate</span> {status?.ca_trusted ? <span className="ok">Trusted</span> : <span className="err">Not trusted</span>}</span>
+        <span className="item"><span className="label">SSL proxying</span> {!ssl?.enabled ? "Off" : ssl.include.includes("*") ? "All hosts" : `${ssl.include.length} hosts`}{ssl?.exclude.length ? ` (−${ssl.exclude.length})` : ""}</span>
+        <span className="item"><span className="label">Rules</span> {activeRules} active</span>
+        {rules?.allow_list.enabled && <span className="item warn">Allow list on</span>}
+        <span className="spacer" />
+        {stats.paused > 0 && <span className="item warn">⏸ {stats.paused} paused</span>}
+        <span className="item"><span className="label">Errors</span> {stats.errors}</span>
+        <span className="item"><span className="label">↑</span> {formatBytes(stats.up)} <span className="label">↓</span> {formatBytes(stats.down)}</span>
+        <span className="item">{visible.length} / {flows.size} flows</span>
+      </footer>
       {menu && menuFlow && (
         <div className="menu" style={{ left: menu.x, top: menu.y }}>
           <div onClick={() => api.pin(menuFlow.id, !menuFlow.pinned)}>{menuFlow.pinned ? "Unpin" : "Pin"}</div>

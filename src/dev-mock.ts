@@ -29,7 +29,9 @@ const pinned = new Set<number>();
 let rules: unknown = { rules: [], allow_list: { enabled: false, patterns: [] } };
 
 const summary = (f: Flow): FlowSummary => ({
-  id: f.id, started_ms: f.started_ms, duration_ms: f.duration_ms, method: f.method, url: f.url, host: f.host, path: f.path,
+  id: f.id, started_ms: f.started_ms, ttfb_ms: f.ttfb_ms, duration_ms: f.duration_ms, method: f.method, url: f.url, host: f.host, path: f.path,
+  scheme: f.scheme, http_version: f.id % 2 ? "HTTP/2.0" : "HTTP/1.1", client_ip: f.id === 6 ? "192.168.1.40" : "127.0.0.1",
+  client_app: f.id === 6 ? null : f.id % 3 ? "Google Chrome" : "curl", request_type: null,
   status: f.status, state: f.state, content_type: f.response?.headers[0][1] ?? null, request_size: f.request.body_size,
   response_size: f.response?.body_size ?? null, error: f.error, pinned: pinned.has(f.id), tags: f.id === 2 ? ["Map Local /login"] : [],
 });

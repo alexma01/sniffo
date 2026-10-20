@@ -75,14 +75,12 @@ input { font: inherit; color: inherit; }
 .flow-row.head { height: 24px; background: var(--bg-2); border-bottom: 1px solid var(--border); font-weight: 600; font-size: 12px; }
 .flow-scroll .flow-row:nth-child(even) { background: color-mix(in srgb, var(--bg-2) 50%, transparent); }
 .flow-scroll .flow-row.selected { background: var(--sel); }
-.c-id { width: 48px; color: var(--muted); }
-.c-method { width: 64px; font-weight: 600; }
-.c-status { width: 44px; }
-.c-host { width: 200px; }
-.c-path { flex: 1; }
-.c-type { width: 140px; color: var(--muted); }
-.c-size { width: 72px; text-align: right; }
-.c-time { width: 72px; text-align: right; }
+.c-id, .c-time, .c-type, .c-reqtype, .c-version { color: var(--muted); }
+.c-client { color: var(--accent); }
+.menu-check { display: flex; align-items: center; gap: 6px; padding: 2px 10px; }
+.statusbar { display: flex; align-items: center; gap: 14px; padding: 3px 10px; border-top: 1px solid var(--border); background: var(--bg-2); font-size: 12px; white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+.statusbar .item { display: flex; gap: 4px; align-items: center; }
+.statusbar .label { color: var(--muted); }
 .s-ok .c-status { color: var(--ok); }
 .s-warn .c-status { color: var(--warn); }
 .s-err .c-status, .s-err .c-path { color: var(--err); }
@@ -172,3 +170,4 @@ button.lan { font-variant-numeric: tabular-nums; font-weight: 600; }
 .kv.big td { padding: 6px 10px; }
 .qr { text-align: center; padding-top: 20px; }
 .qr img { border-radius: 8px; background: white; padding: 6px; }
+.statusbar .warn { color: var(--warn); }

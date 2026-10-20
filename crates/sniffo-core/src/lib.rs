@@ -1,6 +1,7 @@
 //! Sniffo core: MITM debugging proxy engine, independent from the desktop UI.
 
 pub mod ca;
+pub mod client;
 pub mod flow;
 pub mod proxy;
 pub mod rules;

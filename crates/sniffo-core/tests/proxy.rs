@@ -95,3 +95,24 @@ async fn serves_certificate_page_to_devices() {
     assert!(direct.contains("Sniffo root certificate"));
     assert!(s.engine.summaries().is_empty(), "cert page is not recorded");
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn resolves_local_client_app() {
+    let up = upstream_http().await;
+    let s = start(vec![]).await;
+    let status = tokio::process::Command::new("curl")
+        .args(["-s", "-o", "/dev/null", "-x", &format!("http://{}", s.proxy.addr), &format!("http://{up}/who")])
+        .status()
+        .await
+        .unwrap();
+    assert!(status.success());
+    for _ in 0..100 {
+        if let Some(app) = s.engine.flow(1).and_then(|f| f.client_app) {
+            assert_eq!(app, "curl");
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("client app never resolved");
+}

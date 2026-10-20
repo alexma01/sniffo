@@ -3,6 +3,7 @@
 use crate::{
     ca::RootCa,
     flow::{Flow, FlowId, FlowState, FlowSummary, Headers, Message, headers_from, now_ms},
+    client::ClientApps,
     rules::{Plan, Rules},
 };
 use bytes::{Bytes, BytesMut};
@@ -125,6 +126,7 @@ struct Inner {
     ssl: RwLock<SslProxying>,
     rules: RwLock<Arc<Rules>>,
     paused: Mutex<HashMap<FlowId, (BreakpointHit, oneshot::Sender<Decision>)>>,
+    apps: ClientApps,
 }
 
 impl Inner {
@@ -171,6 +173,7 @@ impl Default for Engine {
                 ssl: RwLock::default(),
                 rules: RwLock::default(),
                 paused: Mutex::default(),
+                apps: ClientApps::default(),
             }),
         }
     }
@@ -287,7 +290,7 @@ impl Engine {
             .with_ca(authority)
             .with_http_connector(https)
             .with_websocket_connector(Connector::Rustls(Arc::new(tls)))
-            .with_http_handler(Capture { engine: self.inner.clone(), id: None, is_head: false, break_response: false, download_bps: None, ca: Arc::new(ca.clone()) })
+            .with_http_handler(Capture { engine: self.inner.clone(), id: None, is_head: false, break_response: false, download_bps: None, ca: Arc::new(ca.clone()), proxy_port: addr.port(), lookup: None })
             .with_graceful_shutdown(async { let _ = rx.await; })
             .build()
             .map_err(|e| e.to_string())?;
@@ -324,6 +327,9 @@ struct Capture {
     break_response: bool,
     download_bps: Option<u64>,
     ca: Arc<RootCa>,
+    proxy_port: u16,
+    /// Client-app lookup running alongside the upstream request (see `handle_response`).
+    lookup: Option<Arc<Mutex<Option<JoinHandle<()>>>>>,
 }
 
 const CERT_PAGE: &str = r#"<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -430,6 +436,15 @@ impl Capture {
             tags,
             ..Default::default()
         };
+        if ctx.client_addr.ip().is_loopback() {
+            let (engine, proxy_port, client_port) = (self.engine.clone(), self.proxy_port, ctx.client_addr.port());
+            let task = tokio::spawn(async move {
+                if let Some(app) = engine.apps.resolve(proxy_port, client_port).await {
+                    engine.update(id, |f| f.client_app = Some(app));
+                }
+            });
+            self.lookup = Some(Arc::new(Mutex::new(Some(task))));
+        }
         let summary = flow.summary();
         let evicted = {
             let mut flows = self.engine.flows.write().unwrap();
@@ -550,6 +565,11 @@ impl HttpHandler for Capture {
 
     async fn handle_response(&mut self, _ctx: &HttpContext, res: Response<Body>) -> Response<Body> {
         let Some(id) = self.id else { return res };
+        // Keep the client connection open until lsof has seen it (one-shot clients close right after).
+        let lookup = self.lookup.take().and_then(|l| l.lock().unwrap().take());
+        if let Some(task) = lookup {
+            let _ = tokio::time::timeout(Duration::from_millis(300), task).await;
+        }
         let (mut parts, body) = res.into_parts();
 
         if self.break_response {

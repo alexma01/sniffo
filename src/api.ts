@@ -7,11 +7,17 @@ export type Headers = [string, string][];
 export interface FlowSummary {
   id: number;
   started_ms: number;
+  ttfb_ms: number | null;
   duration_ms: number | null;
   method: string;
   url: string;
+  scheme: string;
+  http_version: string;
   host: string;
   path: string;
+  client_ip: string;
+  client_app: string | null;
+  request_type: string | null;
   status: number | null;
   state: FlowState;
   content_type: string | null;
