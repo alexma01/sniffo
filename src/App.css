@@ -119,7 +119,7 @@ button.warn { border-color: var(--warn); color: var(--warn); }
 .row.end { justify-content: flex-end; margin-top: 16px; }
 .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .cols label { display: flex; flex-direction: column; gap: 4px; }
-.input, textarea { padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); font: 12px/1.5 ui-monospace, Menlo, monospace; }
+.input, textarea { padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: inherit; font: 12px/1.5 ui-monospace, Menlo, monospace; }
 .input { width: 90px; }
 
 .filterbar { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-bottom: 1px solid var(--border); background: var(--bg-2); flex-wrap: wrap; }

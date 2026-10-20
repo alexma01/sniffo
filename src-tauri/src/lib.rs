@@ -387,8 +387,8 @@ fn list_breakpoints(state: State<'_, AppState>) -> Vec<BreakpointHit> {
 }
 
 #[tauri::command]
-fn resume_breakpoint(state: State<'_, AppState>, id: u64, decision: Decision) -> bool {
-    state.engine.resume(id, decision)
+fn resume_breakpoint(state: State<'_, AppState>, id: u64, response: bool, decision: Decision) -> bool {
+    state.engine.resume(id, response, decision)
 }
 
 #[tauri::command]

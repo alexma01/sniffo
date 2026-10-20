@@ -3,24 +3,43 @@ import { api, BreakpointHit, Editable } from "./api";
 import { headersToText, textToHeaders } from "./RulesEditor";
 
 /** Edits the oldest paused flow; the others wait in the queue. */
-export function BreakpointEditor({ hits, onDone }: { hits: BreakpointHit[]; onDone: (id: number) => void }) {
+export function BreakpointEditor({ hits, onDone }: { hits: BreakpointHit[]; onDone: (hit: BreakpointHit) => void }) {
   const hit = hits[0];
   const [msg, setMsg] = useState<Editable>(hit.message);
   const [headers, setHeaders] = useState(headersToText(hit.message.headers));
 
-  useEffect(() => { setMsg(hit.message); setHeaders(headersToText(hit.message.headers)); }, [hit.id, hit.response]);
+  useEffect(() => { setMsg(hit.message); setHeaders(headersToText(hit.message.headers)); }, [hit]);
 
   const finish = (abort: boolean) => {
     const decision = abort ? { type: "abort" as const } : { type: "continue" as const, message: { ...msg, headers: textToHeaders(headers) } };
-    api.resume(hit.id, decision).finally(() => onDone(hit.id));
+    api.resume(hit.id, hit.response, decision).finally(() => onDone(hit));
   };
+
+  const more = hits.length > 1 && <span className="muted"> ({hits.length - 1} more waiting)</span>;
+  if (hit.ws) return (
+    <div className="modal-back">
+      <div className="modal wide">
+        <h3>Breakpoint — WebSocket {hit.response ? "↓ server → client" : "↑ client → server"} #{hit.id}{more}</h3>
+        <div className="form">
+          <label>
+            {hit.ws === "binary" ? "Binary frame (base64)" : "Text frame"}
+            <textarea rows={12} value={msg.body ?? ""} onChange={(e) => setMsg({ ...msg, body: e.target.value })} />
+          </label>
+        </div>
+        <div className="row end">
+          <button className="danger" onClick={() => finish(true)}>Drop frame</button>
+          <button className="primary" onClick={() => finish(false)}>Forward</button>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="modal-back">
       <div className="modal wide">
         <h3>
           Breakpoint — {hit.response ? "Response" : "Request"} #{hit.id}
-          {hits.length > 1 && <span className="muted"> ({hits.length - 1} more waiting)</span>}
+          {more}
         </h3>
         <div className="form">
           {hit.response ? (

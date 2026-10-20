@@ -60,7 +60,7 @@ async fn request_breakpoint_edits_url() {
     assert_eq!(s.engine.flow(hit.id).unwrap().state, FlowState::Paused);
     let mut msg = hit.message;
     msg.url = msg.url.replace("/before", "/after");
-    assert!(s.engine.resume(hit.id, Decision::Continue(msg)));
+    assert!(s.engine.resume(hit.id, hit.response, Decision::Continue(msg)));
 
     let body = req.await.unwrap().unwrap().text().await.unwrap();
     assert_eq!(body, r#"{"path":"/after"}"#);
@@ -85,7 +85,7 @@ async fn response_breakpoint_edits_status_and_body_or_aborts() {
     let mut msg = hit.message;
     msg.status = 418;
     msg.body = Some("edited".into());
-    s.engine.resume(hit.id, Decision::Continue(msg));
+    s.engine.resume(hit.id, hit.response, Decision::Continue(msg));
     let res = req.await.unwrap().unwrap();
     assert_eq!(res.status(), 418);
     assert_eq!(res.text().await.unwrap(), "edited");
@@ -93,7 +93,7 @@ async fn response_breakpoint_edits_status_and_body_or_aborts() {
     let wait = next_hit(&mut events);
     let req = tokio::spawn(client(&s, None).get(format!("http://{up}/y")).send());
     let hit = wait.await;
-    s.engine.resume(hit.id, Decision::Abort);
+    s.engine.resume(hit.id, hit.response, Decision::Abort);
     assert_eq!(req.await.unwrap().unwrap().status(), 502);
     assert_eq!(s.engine.flow(hit.id).unwrap().state, FlowState::Failed);
 }

@@ -58,7 +58,9 @@ mockIPC((cmd, args) => {
     case "pin_flow": a.pinned ? pinned.add(a.id) : pinned.delete(a.id); emit("flows", [{ type: "upsert", data: summary(flows.find((f) => f.id === a.id)!) }]); return;
     case "get_rules": return rules;
     case "set_rules": rules = a.rules; return;
-    case "list_breakpoints": return [];
+    // Open http://localhost:1420/#ws-breakpoint to preview the WebSocket frame editor.
+    case "list_breakpoints": return location.hash === "#ws-breakpoint"
+      ? [{ id: 3, response: true, ws: "text", message: { method: "", url: "https://stream.example.com/live", status: 0, headers: [], body: '{"event":"tick","v":43}' } }] : [];
     case "list_devices": return [
       { id: "SIM1", name: "iPhone 18 Pro", platform: "ios_simulator", state: "Booted", os: "iOS 27.0", emulator: true },
       { id: "emulator-5554", name: "sdk gphone64 arm64", platform: "android", state: "device", os: "Android 15", emulator: true },
