@@ -155,7 +155,13 @@ impl Engine {
         let addr = listener.local_addr().map_err(|e| e.to_string())?;
         let authority = RcgenAuthority::new(ca.issuer().map_err(|e| e.to_string())?, 1_000, aws_lc_rs::default_provider());
 
+        // OS trust store first (corporate TLS inspection CAs live there), webpki as fallback.
         let mut roots = RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
+        let native = rustls_native_certs::load_native_certs();
+        for e in &native.errors {
+            tracing::warn!("system root store: {e}");
+        }
+        roots.add_parsable_certificates(native.certs);
         for pem in &opts.extra_upstream_roots {
             for der in CertificateDer::pem_slice_iter(pem.as_bytes()) {
                 roots.add(der.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;

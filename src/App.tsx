@@ -1,51 +1,105 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useMemo, useState } from "react";
+import { api, FlowEvent, FlowSummary, ProxyStatus } from "./api";
+import { FlowDetail } from "./FlowDetail";
+import { FlowList } from "./FlowList";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
-
-  return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
-  );
+function useFlows() {
+  const [flows, setFlows] = useState<Map<number, FlowSummary>>(new Map());
+  useEffect(() => {
+    const reload = () => api.listFlows().then((list) => setFlows(new Map(list.map((f) => [f.id, f]))));
+    reload();
+    const apply = (events: FlowEvent[]) =>
+      setFlows((prev) => {
+        let next = new Map(prev);
+        for (const e of events) {
+          if (e.type === "cleared") next = new Map();
+          else next.set(e.flow.id, e.flow);
+        }
+        return next;
+      });
+    const un = [api.onFlows(apply), api.onResync(reload)];
+    return () => { un.forEach((p) => p.then((f) => f())); };
+  }, []);
+  return flows;
 }
 
-export default App;
+function matches(f: FlowSummary, q: string) {
+  if (!q) return true;
+  const s = q.toLowerCase();
+  return f.url.toLowerCase().includes(s) || f.method.toLowerCase() === s || String(f.status ?? "").startsWith(s);
+}
+
+export default function App() {
+  const flows = useFlows();
+  const [status, setStatus] = useState<ProxyStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [filter, setFilter] = useState("");
+  const [host, setHost] = useState<string | null>(null);
+  const [follow, setFollow] = useState(true);
+
+  const refresh = () => api.status().then(setStatus);
+  const start = () => api.start().then(() => setError(null), (e) => setError(String(e))).finally(refresh);
+
+  useEffect(() => {
+    api.status().then((s) => (s.running ? setStatus(s) : start()));
+  }, []);
+
+  const hosts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const f of flows.values()) m.set(f.host, (m.get(f.host) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [flows]);
+
+  const visible = useMemo(
+    () => [...flows.values()].filter((f) => (!host || f.host === host) && matches(f, filter)),
+    [flows, host, filter],
+  );
+  const sel = selected != null ? flows.get(selected) : undefined;
+
+  return (
+    <div className="app">
+      <header className="toolbar">
+        <span className={`dot ${status?.running ? "on" : "off"}`} />
+        <span>{status?.running ? `Listening on ${status.address}` : "Proxy stopped"}</span>
+        {status?.running ? (
+          <button onClick={() => api.stop().finally(refresh)}>Stop</button>
+        ) : (
+          <button onClick={start}>Start</button>
+        )}
+        <button onClick={() => { api.clear(); setSelected(null); }}>Clear</button>
+        <input className="filter" placeholder="Filter: URL, method, status" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <label className="check"><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> Auto-scroll</label>
+        <span className="spacer" />
+        <span className="muted">{visible.length} / {flows.size}</span>
+      </header>
+      {error && <div className="banner">{error}</div>}
+      <div className="main">
+        <aside className="sidebar">
+          <div className={`side-item ${host == null ? "active" : ""}`} onClick={() => setHost(null)}>
+            All <span className="muted">{flows.size}</span>
+          </div>
+          <div className="side-title">Domains</div>
+          {hosts.map(([h, n]) => (
+            <div key={h} className={`side-item ${host === h ? "active" : ""}`} onClick={() => setHost(h)} title={h}>
+              <span className="ellipsis">{h}</span> <span className="muted">{n}</span>
+            </div>
+          ))}
+        </aside>
+        <div className="content">
+          <FlowList flows={visible} selected={selected} onSelect={(id) => { setSelected(id); setFollow(false); }} follow={follow} />
+          {sel ? (
+            <FlowDetail summary={sel} />
+          ) : (
+            <div className="detail empty muted">
+              {status?.running
+                ? `Set your HTTP/HTTPS proxy to ${status.address} and trust the CA at ${status.ca_path}`
+                : "Start the proxy to capture traffic"}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

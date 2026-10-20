@@ -3950,9 +3950,13 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "sniffo-core",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3968,6 +3972,7 @@ dependencies = [
  "hyper-rustls",
  "hyper-util",
  "reqwest",
+ "rustls-native-certs",
  "serde",
  "serde_json",
  "tempfile",
