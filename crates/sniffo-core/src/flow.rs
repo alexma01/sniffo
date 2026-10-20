@@ -52,6 +52,8 @@ pub struct Flow {
     pub id: FlowId,
     pub client_addr: String,
     pub started_ms: u64,
+    /// Time until response headers arrived.
+    pub ttfb_ms: Option<u64>,
     pub duration_ms: Option<u64>,
     pub method: String,
     pub url: String,
@@ -64,6 +66,7 @@ pub struct Flow {
     pub response: Option<Message>,
     pub state: FlowState,
     pub error: Option<String>,
+    pub pinned: bool,
 }
 
 /// Lightweight row for the flow list (no bodies, no headers).
@@ -82,6 +85,7 @@ pub struct FlowSummary {
     pub request_size: usize,
     pub response_size: Option<usize>,
     pub error: Option<String>,
+    pub pinned: bool,
 }
 
 impl Flow {
@@ -100,7 +104,18 @@ impl Flow {
             request_size: self.request.body_size,
             response_size: self.response.as_ref().map(|r| r.body_size),
             error: self.error.clone(),
+            pinned: self.pinned,
         }
+    }
+
+    /// Case-insensitive search across URL, headers and decoded text bodies.
+    pub fn contains(&self, needle_lower: &str) -> bool {
+        let hit = |s: &str| s.to_lowercase().contains(needle_lower);
+        let msg_hit = |m: &Message| {
+            m.headers.iter().any(|(k, v)| hit(k) || hit(v))
+                || std::str::from_utf8(&m.decoded_body()).is_ok_and(hit)
+        };
+        hit(&self.url) || msg_hit(&self.request) || self.response.as_ref().is_some_and(msg_hit)
     }
 }
 

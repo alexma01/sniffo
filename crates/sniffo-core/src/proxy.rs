@@ -26,6 +26,8 @@ use tokio::{net::TcpListener, sync::{broadcast, oneshot}, task::JoinHandle};
 
 /// Bodies above this size are forwarded intact but stored truncated.
 pub const MAX_STORED_BODY: usize = 32 * 1024 * 1024;
+/// Oldest unpinned flows are evicted past this count to bound memory.
+pub const MAX_FLOWS: usize = 50_000;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SslProxying {
@@ -75,9 +77,10 @@ pub fn wildcard(pattern: &str, text: &str) -> bool {
 }
 
 #[derive(Clone, Debug, Serialize)]
-#[serde(tag = "type", content = "flow", rename_all = "lowercase")]
+#[serde(tag = "type", content = "data", rename_all = "lowercase")]
 pub enum FlowEvent {
     Upsert(FlowSummary),
+    Removed(Vec<FlowId>),
     Cleared,
 }
 
@@ -138,9 +141,35 @@ impl Engine {
         self.inner.flows.read().unwrap().get(&id).cloned()
     }
 
+    /// Removes all unpinned flows.
     pub fn clear(&self) {
-        self.inner.flows.write().unwrap().clear();
-        let _ = self.inner.events.send(FlowEvent::Cleared);
+        let mut flows = self.inner.flows.write().unwrap();
+        if flows.values().any(|f| f.pinned) {
+            let ids: Vec<_> = flows.values().filter(|f| !f.pinned).map(|f| f.id).collect();
+            flows.retain(|_, f| f.pinned);
+            let _ = self.inner.events.send(FlowEvent::Removed(ids));
+        } else {
+            flows.clear();
+            let _ = self.inner.events.send(FlowEvent::Cleared);
+        }
+    }
+
+    pub fn remove(&self, ids: &[FlowId]) {
+        let mut flows = self.inner.flows.write().unwrap();
+        for id in ids {
+            flows.remove(id);
+        }
+        let _ = self.inner.events.send(FlowEvent::Removed(ids.to_vec()));
+    }
+
+    pub fn set_pinned(&self, id: FlowId, pinned: bool) {
+        self.inner.update(id, |f| f.pinned = pinned);
+    }
+
+    /// Ids of flows whose URL, headers or text bodies contain `query` (case-insensitive).
+    pub fn search(&self, query: &str) -> Vec<FlowId> {
+        let q = query.to_lowercase();
+        self.inner.flows.read().unwrap().values().filter(|f| f.contains(&q)).map(|f| f.id).collect()
     }
 
     pub fn ssl_proxying(&self) -> SslProxying {
@@ -253,8 +282,19 @@ impl HttpHandler for Capture {
             ..Default::default()
         };
         let summary = flow.summary();
-        self.engine.flows.write().unwrap().insert(id, flow);
+        let evicted = {
+            let mut flows = self.engine.flows.write().unwrap();
+            flows.insert(id, flow);
+            let excess = flows.len().saturating_sub(MAX_FLOWS);
+            // ponytail: linear scan of the oldest entries; only runs once the cap is hit.
+            let ids: Vec<_> = flows.values().filter(|f| !f.pinned).take(excess).map(|f| f.id).collect();
+            ids.iter().for_each(|id| { flows.remove(id); });
+            ids
+        };
         let _ = self.engine.events.send(FlowEvent::Upsert(summary));
+        if !evicted.is_empty() {
+            let _ = self.engine.events.send(FlowEvent::Removed(evicted));
+        }
         Request::from_parts(parts, Body::from(body)).into()
     }
 
@@ -270,6 +310,7 @@ impl HttpHandler for Capture {
         };
         self.engine.update(id, |f| {
             f.status = Some(parts.status.as_u16());
+            f.ttfb_ms = Some(now_ms().saturating_sub(f.started_ms));
             f.response = Some(Message { headers, ..Default::default() });
         });
         let tee = Tee { inner: body.into_data_stream(), buf: BytesMut::new(), size: 0, expected, sink: Some((self.engine.clone(), id)) };

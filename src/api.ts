@@ -18,6 +18,7 @@ export interface FlowSummary {
   request_size: number;
   response_size: number | null;
   error: string | null;
+  pinned: boolean;
 }
 
 export interface Message {
@@ -29,6 +30,7 @@ export interface Flow {
   id: number;
   client_addr: string;
   started_ms: number;
+  ttfb_ms: number | null;
   duration_ms: number | null;
   method: string;
   url: string;
@@ -57,7 +59,10 @@ export interface ProxyStatus {
   system_proxy: boolean;
 }
 
-export type FlowEvent = { type: "upsert"; flow: FlowSummary } | { type: "cleared" };
+export type FlowEvent =
+  | { type: "upsert"; data: FlowSummary }
+  | { type: "removed"; data: number[] }
+  | { type: "cleared" };
 
 export const api = {
   status: () => invoke<ProxyStatus>("proxy_status"),
@@ -70,6 +75,9 @@ export const api = {
   getFlow: (id: number) => invoke<Flow | null>("get_flow", { id }),
   getBody: (id: number, response: boolean) => invoke<ArrayBuffer>("get_body", { id, response }),
   clear: () => invoke<void>("clear_flows"),
+  remove: (ids: number[]) => invoke<void>("remove_flows", { ids }),
+  pin: (id: number, pinned: boolean) => invoke<void>("pin_flow", { id, pinned }),
+  search: (query: string) => invoke<number[]>("search_flows", { query }),
   getSsl: () => invoke<SslProxying>("get_ssl_proxying"),
   setSsl: (ssl: SslProxying) => invoke<void>("set_ssl_proxying", { ssl }),
   onFlows: (cb: (events: FlowEvent[]) => void) => listen<FlowEvent[]>("flows", (e) => cb(e.payload)),

@@ -104,6 +104,22 @@ fn clear_flows(state: State<'_, AppState>) {
 }
 
 #[tauri::command]
+fn remove_flows(state: State<'_, AppState>, ids: Vec<u64>) {
+    state.engine.remove(&ids);
+}
+
+#[tauri::command]
+fn pin_flow(state: State<'_, AppState>, id: u64, pinned: bool) {
+    state.engine.set_pinned(id, pinned);
+}
+
+#[tauri::command]
+async fn search_flows(state: State<'_, AppState>, query: String) -> Result<Vec<u64>, String> {
+    let engine = state.engine.clone();
+    tauri::async_runtime::spawn_blocking(move || engine.search(&query)).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_ssl_proxying(state: State<'_, AppState>) -> SslProxying {
     state.engine.ssl_proxying()
 }
@@ -156,7 +172,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            proxy_status, start_proxy, stop_proxy, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows,
+            proxy_status, start_proxy, stop_proxy, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
             get_ssl_proxying, set_ssl_proxying
         ])
         .build(tauri::generate_context!())

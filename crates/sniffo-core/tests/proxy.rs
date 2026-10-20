@@ -147,3 +147,22 @@ async fn records_upstream_failure() {
     assert!(f.error.is_some());
     s.proxy.stop().await;
 }
+
+#[tokio::test]
+async fn search_pin_and_clear() {
+    let up = upstream_http().await;
+    let s = start(vec![]).await;
+    let c = client(&s, None);
+    c.post(format!("http://{up}/a")).body("needle-in-request").send().await.unwrap().text().await.unwrap();
+    c.get(format!("http://{up}/b")).send().await.unwrap().text().await.unwrap();
+    settled(&s.engine, 2).await;
+
+    assert_eq!(s.engine.search("NEEDLE"), vec![1]);
+    assert_eq!(s.engine.search(r#""path":"/b""#), vec![2], "searches response body");
+
+    s.engine.set_pinned(2, true);
+    s.engine.clear();
+    let left: Vec<_> = s.engine.summaries().iter().map(|f| f.id).collect();
+    assert_eq!(left, vec![2], "pinned flows survive clear");
+    s.proxy.stop().await;
+}

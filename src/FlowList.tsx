@@ -17,9 +17,10 @@ export function FlowList(props: {
   flows: FlowSummary[];
   selected: number | null;
   onSelect: (id: number) => void;
+  onContextMenu: (id: number, x: number, y: number) => void;
   follow: boolean;
 }) {
-  const { flows, selected, onSelect, follow } = props;
+  const { flows, selected, onSelect, onContextMenu, follow } = props;
   const parent = useRef<HTMLDivElement>(null);
   const v = useVirtualizer({ count: flows.length, getScrollElement: () => parent.current, estimateSize: () => ROW, overscan: 20 });
 
@@ -66,8 +67,9 @@ export function FlowList(props: {
                 className={`flow-row ${f.id === selected ? "selected" : ""} ${statusClass(f)}`}
                 style={{ position: "absolute", top: 0, transform: `translateY(${row.start}px)`, height: ROW, width: "100%" }}
                 onClick={() => onSelect(f.id)}
+                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(f.id, e.clientX, e.clientY); }}
               >
-                <span className="c-id">{f.id}</span>
+                <span className="c-id">{f.pinned ? "📌" : f.id}</span>
                 <span className="c-method">{f.method}</span>
                 <span className="c-status">{f.state === "failed" ? "ERR" : f.status ?? "…"}</span>
                 <span className="c-host" title={f.host}>{f.host}</span>
