@@ -88,6 +88,7 @@ export interface Matcher { url: string; regex: boolean; methods: string[] }
 
 export type Action =
   | { type: "map_local"; status: number; headers: Headers; body: string; file: string | null }
+  | { type: "map_local_dir"; dir: string }
   | { type: "map_remote"; scheme: string | null; host: string | null; port: number | null; path: string | null }
   | { type: "block" }
   | { type: "breakpoint"; request: boolean; response: boolean }
@@ -95,7 +96,7 @@ export type Action =
   | { type: "script"; code: string };
 
 export interface Rule { id: string; name: string; enabled: boolean; matcher: Matcher; action: Action }
-export interface Rules { rules: Rule[]; allow_list: { enabled: boolean; patterns: string[] } }
+export interface Rules { rules: Rule[]; allow_list: { enabled: boolean; patterns: string[] }; no_caching: boolean }
 
 export interface Editable { method: string; url: string; status: number; headers: Headers; body: string | null }
 export interface BreakpointHit { id: number; response: boolean; message: Editable }
@@ -138,6 +139,8 @@ export const api = {
   search: (query: string) => invoke<number[]>("search_flows", { query }),
   getRules: () => invoke<Rules>("get_rules"),
   setRules: (rules: Rules) => invoke<void>("set_rules", { rules }),
+  exportRules: (path: string) => invoke<number>("export_rules", { path }),
+  importRules: (path: string) => invoke<number>("import_rules", { path }),
   listBreakpoints: () => invoke<BreakpointHit[]>("list_breakpoints"),
   resume: (id: number, decision: Decision) => invoke<boolean>("resume_breakpoint", { id, decision }),
   getSsl: () => invoke<SslProxying>("get_ssl_proxying"),

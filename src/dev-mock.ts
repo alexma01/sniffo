@@ -33,7 +33,7 @@ const flows: Flow[] = samples.map(([method, url, status, ct, body], i) => {
 });
 const bodies = new Map(samples.map((s, i) => [i + 1, enc.encode(s[4])]));
 const pinned = new Set<number>();
-let rules: unknown = { rules: [], allow_list: { enabled: false, patterns: [] } };
+let rules: unknown = { rules: [], allow_list: { enabled: false, patterns: [] }, no_caching: false };
 
 const summary = (f: Flow): FlowSummary => ({
   id: f.id, started_ms: f.started_ms, ttfb_ms: f.ttfb_ms, duration_ms: f.duration_ms, method: f.method, url: f.url, host: f.host, path: f.path,

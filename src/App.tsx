@@ -321,6 +321,7 @@ export default function App() {
         <span className="item"><span className="label">SSL proxying</span> {!ssl?.enabled ? "Off" : ssl.include.includes("*") ? "All hosts" : `${ssl.include.length} hosts`}{ssl?.exclude.length ? ` (−${ssl.exclude.length})` : ""}</span>
         <span className="item"><span className="label">Rules</span> {activeRules} active</span>
         {rules?.allow_list.enabled && <span className="item warn">Allow list on</span>}
+        {rules?.no_caching && <span className="item warn">No caching</span>}
         <span className="spacer" />
         {stats.paused > 0 && <span className="item warn">⏸ {stats.paused} paused</span>}
         <button className={`linkish ${logs.some((l) => l.error) ? "err" : ""}`} onClick={() => setShowConsole(!showConsole)}>Console ({logs.length})</button>

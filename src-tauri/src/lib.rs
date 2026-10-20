@@ -317,6 +317,30 @@ fn set_rules(state: State<'_, AppState>, rules: Rules) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn export_rules(state: State<'_, AppState>, path: String) -> Result<usize, String> {
+    let rules = state.engine.rules();
+    std::fs::write(&path, serde_json::to_vec_pretty(&rules).map_err(|e| e.to_string())?).map_err(|e| format!("{path}: {e}"))?;
+    Ok(rules.rules.len())
+}
+
+/// Appends rules from a file exported by Sniffo (existing rules are kept).
+#[tauri::command]
+fn import_rules(state: State<'_, AppState>, path: String) -> Result<usize, String> {
+    let data = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
+    let incoming: Rules = serde_json::from_slice(&data).map_err(|e| format!("not a Sniffo rules file: {e}"))?;
+    let mut rules = state.engine.rules();
+    let n = incoming.rules.len();
+    let stamp = sniffo_core::flow::now_ms();
+    for (i, mut r) in incoming.rules.into_iter().enumerate() {
+        r.id = format!("{}-{stamp}-{i}", r.id);
+        rules.rules.push(r);
+    }
+    state.engine.set_rules(rules);
+    state.save()?;
+    Ok(n)
+}
+
+#[tauri::command]
 fn list_breakpoints(state: State<'_, AppState>) -> Vec<BreakpointHit> {
     state.engine.breakpoints()
 }
@@ -394,7 +418,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             proxy_status, start_proxy, stop_proxy, set_allow_lan, list_devices, device_command, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
-            get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, list_breakpoints, resume_breakpoint
+            get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, export_rules, import_rules, list_breakpoints, resume_breakpoint
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

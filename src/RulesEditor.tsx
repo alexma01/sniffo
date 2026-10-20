@@ -1,9 +1,11 @@
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import { Action, api, Headers, Rule, Rules } from "./api";
 
 export const ACTION_LABELS: Record<Action["type"], string> = {
   breakpoint: "Breakpoint",
   map_local: "Map Local",
+  map_local_dir: "Map Local Directory",
   map_remote: "Map Remote",
   block: "Block",
   throttle: "Throttle",
@@ -37,6 +39,7 @@ export function defaultAction(type: Action["type"]): Action {
   switch (type) {
     case "breakpoint": return { type, request: true, response: false };
     case "map_local": return { type, status: 200, headers: [["content-type", "application/json"]], body: "{}", file: null };
+    case "map_local_dir": return { type, dir: "" };
     case "map_remote": return { type, scheme: null, host: "localhost", port: 3000, path: null };
     case "block": return { type };
     case "throttle": return { type, latency_ms: 300, download_kbps: 96, upload_kbps: 32 };
@@ -73,6 +76,16 @@ function ActionForm({ action, onChange }: { action: Action; onChange: (a: Action
           <label>Headers <textarea rows={3} value={headersToText(action.headers)} onChange={(e) => onChange({ ...action, headers: textToHeaders(e.target.value) })} /></label>
           <label>Body file (optional, overrides body) <input className="input wide" value={action.file ?? ""} placeholder="/path/to/response.json" onChange={(e) => onChange({ ...action, file: opt(e.target.value) })} /></label>
           <label>Body <textarea rows={8} value={action.body} disabled={!!action.file} onChange={(e) => onChange({ ...action, body: e.target.value })} /></label>
+        </div>
+      );
+    case "map_local_dir":
+      return (
+        <div className="form">
+          <div className="row">
+            <input className="input wide grow" value={action.dir} placeholder="/path/to/folder" onChange={(e) => onChange({ ...action, dir: e.target.value })} />
+            <button onClick={async () => { const d = await open({ directory: true }); if (typeof d === "string") onChange({ ...action, dir: d }); }}>Choose…</button>
+          </div>
+          <p className="muted">The part of the URL after the pattern's <code>*</code> is the file path (folders serve <code>index.html</code>). E.g. <code>https://cdn.example.com/assets/*</code> → <code>{action.dir || "folder"}/js/app.js</code>.</p>
         </div>
       );
     case "map_remote":
@@ -209,6 +222,21 @@ export function RulesEditor(props: { draft?: Rule | null; onClose: () => void })
             <div className="row">
               <button className="primary" onClick={() => setEditing(newRule("*", defaultAction("breakpoint"), "New rule"))}>Add rule</button>
             </div>
+            <div className="row">
+              <button onClick={async () => {
+                const path = await open({ filters: [{ name: "Sniffo rules", extensions: ["json"] }] });
+                if (typeof path === "string") api.importRules(path).then((n) => { setMsg(`Imported ${n} rules`); api.getRules().then(setRules); }, (e) => setMsg(String(e)));
+              }}>Import…</button>
+              <button onClick={async () => {
+                const path = await save({ filters: [{ name: "Sniffo rules", extensions: ["json"] }], defaultPath: "sniffo-rules.json" });
+                if (path) api.exportRules(path).then((n) => setMsg(`Exported ${n} rules`), (e) => setMsg(String(e)));
+              }}>Export…</button>
+            </div>
+            <h4>No Caching</h4>
+            <label className="check">
+              <input type="checkbox" checked={rules.no_caching} onChange={(e) => persist({ ...rules, no_caching: e.target.checked })} />
+              Strip caching headers so every request reaches the server (If-None-Match, ETag, Cache-Control…)
+            </label>
             <h4>Allow list</h4>
             <label className="check">
               <input type="checkbox" checked={rules.allow_list.enabled} onChange={(e) => persist({ ...rules, allow_list: { ...rules.allow_list, enabled: e.target.checked } })} />
