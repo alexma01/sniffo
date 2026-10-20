@@ -124,10 +124,19 @@ export default function App() {
     return api.status().then(setStatus);
   };
   const start = () => api.start().then(() => setError(null), (e) => setError(String(e))).finally(refresh);
+  /** First start of this app run: also take over the system proxy if the user wants that (default, like Proxyman). */
+  const launch = () => api.start()
+    .then(async () => {
+      setError(null);
+      const s = await api.status();
+      if (s.auto_system_proxy && !s.system_proxy) await api.setSystemProxy(true);
+    })
+    .catch((e) => setError(String(e)))
+    .finally(refresh);
   const set = (patch: Partial<Filter>) => setFilter((f) => ({ ...f, ...patch }));
 
   useEffect(() => {
-    api.status().then((s) => (s.running ? refresh() : start()));
+    api.status().then((s) => (s.running ? refresh() : launch()));
     // LAN addresses change when Wi-Fi/VPN changes.
     const t = setInterval(() => api.status().then(setStatus), 10_000);
     return () => clearInterval(t);
