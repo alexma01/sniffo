@@ -57,6 +57,10 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
         <section>
           <h4>Proxy</h4>
           <label className="row">Port <input className="input" value={port} onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))} /></label>
+          <label className="check">
+            <input type="checkbox" defaultChecked={status?.auto_system_proxy} onChange={(e) => api.setAutoSystemProxy(e.target.checked).then(onChanged)} />
+            Enable the system proxy automatically when Sniffo starts (restored when it quits)
+          </label>
         </section>
 
         <section>

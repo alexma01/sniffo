@@ -48,7 +48,7 @@ const summary = (f: Flow): FlowSummary => ({
 mockIPC((cmd, args) => {
   const a = (args ?? {}) as Record<string, any>;
   switch (cmd) {
-    case "proxy_status": return { running: true, address: "127.0.0.1:9191", port: 9191, allow_lan: true, lan: [{ interface: "en0", ip: "192.168.1.12" }, { interface: "utun4", ip: "10.8.0.2" }], ca_path: "~/sniffo-ca.pem", ca_trusted: false, system_proxy: false };
+    case "proxy_status": return { running: true, address: "127.0.0.1:9191", port: 9191, allow_lan: true, auto_system_proxy: true, lan: [{ interface: "en0", ip: "192.168.1.12" }, { interface: "utun4", ip: "10.8.0.2" }], ca_path: "~/sniffo-ca.pem", ca_trusted: false, system_proxy: false };
     case "list_flows": return flows.map(summary);
     case "get_flow": return flows.find((f) => f.id === a.id) ?? null;
     case "get_body": return a.response ? (bodies.get(a.id) ?? new Uint8Array()).buffer

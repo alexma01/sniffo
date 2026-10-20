@@ -69,6 +69,7 @@ export interface ProxyStatus {
   address: string | null;
   port: number | null;
   allow_lan: boolean;
+  auto_system_proxy: boolean;
   lan: { interface: string; ip: string }[];
   ca_path: string;
   ca_trusted: boolean;
@@ -129,6 +130,7 @@ export const api = {
   start: (port?: number) => invoke<string>("start_proxy", { port }),
   stop: () => invoke<void>("stop_proxy"),
   setAllowLan: (allow: boolean) => invoke<void>("set_allow_lan", { allow }),
+  setAutoSystemProxy: (enabled: boolean) => invoke<void>("set_auto_system_proxy", { enabled }),
   setSystemProxy: (enabled: boolean) => invoke<void>("set_system_proxy", { enabled }),
   trustCa: () => invoke<void>("trust_ca"),
   revealCa: () => invoke<void>("reveal_ca"),

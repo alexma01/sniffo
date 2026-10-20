@@ -26,7 +26,8 @@ export default defineConfig(() => ({
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // Worktrees of parallel sessions live under .claude/; their edits must not reload this app.
+      ignored: ["**/src-tauri/**", "**/.claude/**", "**/target/**"],
     },
   },
 }));
