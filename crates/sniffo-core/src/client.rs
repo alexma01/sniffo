@@ -12,6 +12,8 @@ const TTL: Duration = Duration::from_secs(60);
 #[derive(Default)]
 pub struct ClientApps {
     cache: Mutex<HashMap<u16, (String, Instant)>>,
+    /// App name -> its .app bundle (macOS), for icons.
+    bundles: Mutex<HashMap<String, std::path::PathBuf>>,
     /// Serializes lsof runs: one run resolves every connection open at that moment.
     scan: tokio::sync::Mutex<()>,
 }
@@ -30,13 +32,52 @@ impl ClientApps {
         if let Some(n) = self.cached(client_port) {
             return Some(n);
         }
-        let found = tokio::task::spawn_blocking(move || scan(proxy_port)).await.ok()?;
+        let known: Vec<String> = self.bundles.lock().unwrap().keys().cloned().collect();
+        let (found, bundles) = tokio::task::spawn_blocking(move || {
+            let found = scan(proxy_port);
+            // Bundle lookups only for apps not seen before (one `ps` per new app).
+            let mut bundles = vec![];
+            for (_, name, pid) in &found {
+                if !known.contains(name) && !bundles.iter().any(|(n, _)| n == name) {
+                    if let Some(b) = bundle_of(*pid) {
+                        bundles.push((name.clone(), b));
+                    }
+                }
+            }
+            (found, bundles)
+        })
+        .await
+        .ok()?;
+        self.bundles.lock().unwrap().extend(bundles);
         let now = Instant::now();
         let mut cache = self.cache.lock().unwrap();
         cache.retain(|_, (_, t)| t.elapsed() < TTL);
-        cache.extend(found.into_iter().map(|(p, n)| (p, (n, now))));
+        cache.extend(found.into_iter().map(|(p, n, _)| (p, (n, now))));
         cache.get(&client_port).map(|(n, _)| n.clone())
     }
+
+    /// The .app bundle of a client app seen in traffic (macOS only), e.g. for its icon.
+    pub fn bundle(&self, name: &str) -> Option<std::path::PathBuf> {
+        self.bundles.lock().unwrap().get(name).cloned()
+    }
+}
+
+/// Outermost `.app` containing the process' executable: helpers resolve to their app.
+#[cfg(target_os = "macos")]
+fn bundle_of(pid: u32) -> Option<std::path::PathBuf> {
+    let exe = output("ps", &["-o", "comm=", "-p", &pid.to_string()])?;
+    outer_app(exe.trim())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn bundle_of(_pid: u32) -> Option<std::path::PathBuf> {
+    None
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn outer_app(exe: &str) -> Option<std::path::PathBuf> {
+    let end = exe.find(".app/")? + 4;
+    Some(std::path::PathBuf::from(&exe[..end]))
 }
 
 fn output(cmd: &str, args: &[&str]) -> Option<String> {
@@ -44,8 +85,9 @@ fn output(cmd: &str, args: &[&str]) -> Option<String> {
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// (client port, app name, pid) for every connection to our port.
 #[cfg(unix)]
-fn scan(proxy_port: u16) -> Vec<(u16, String)> {
+fn scan(proxy_port: u16) -> Vec<(u16, String, u32)> {
     let own = std::process::id();
     if let Some(out) = output("lsof", &["-nP", "+c", "0", &format!("-iTCP:{proxy_port}"), "-sTCP:ESTABLISHED", "-F", "pcn"]) {
         return parse_lsof(&out, proxy_port, own);
@@ -55,24 +97,24 @@ fn scan(proxy_port: u16) -> Vec<(u16, String)> {
 }
 
 #[cfg(windows)]
-fn scan(proxy_port: u16) -> Vec<(u16, String)> {
+fn scan(proxy_port: u16) -> Vec<(u16, String, u32)> {
     let Some(netstat) = output("netstat", &["-ano", "-p", "TCP"]) else { return vec![] };
     let conns = parse_netstat(&netstat, proxy_port, std::process::id());
     if conns.is_empty() {
         return vec![];
     }
     let names = output("tasklist", &["/FO", "CSV", "/NH"]).map(|t| parse_tasklist(&t)).unwrap_or_default();
-    conns.into_iter().filter_map(|(port, pid)| names.get(&pid).map(|n| (port, app_name(n)))).collect()
+    conns.into_iter().filter_map(|(port, pid)| names.get(&pid).map(|n| (port, app_name(n), pid))).collect()
 }
 
 #[cfg(not(any(unix, windows)))]
-fn scan(_proxy_port: u16) -> Vec<(u16, String)> {
+fn scan(_proxy_port: u16) -> Vec<(u16, String, u32)> {
     vec![]
 }
 
 /// `ss -tnpH` lines: `0 0 127.0.0.1:49441 127.0.0.1:9191 users:(("curl",pid=123,fd=5))`
 #[cfg_attr(not(unix), allow(dead_code))]
-fn parse_ss(out: &str, own_pid: u32) -> Vec<(u16, String)> {
+fn parse_ss(out: &str, own_pid: u32) -> Vec<(u16, String, u32)> {
     out.lines()
         .filter_map(|l| {
             let cols: Vec<&str> = l.split_whitespace().collect();
@@ -81,7 +123,7 @@ fn parse_ss(out: &str, own_pid: u32) -> Vec<(u16, String)> {
             let users = l.split("users:((").nth(1)?;
             let name = users.split('"').nth(1)?;
             let pid: u32 = users.split("pid=").nth(1)?.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()?;
-            (pid != own_pid).then(|| (port, app_name(name)))
+            (pid != own_pid).then(|| (port, app_name(name), pid))
         })
         .collect()
 }
@@ -118,7 +160,7 @@ fn parse_tasklist(out: &str) -> std::collections::HashMap<u32, String> {
 
 /// Parses `lsof -F pcn` output into (client port, app name), skipping our own process.
 #[cfg_attr(not(unix), allow(dead_code))]
-fn parse_lsof(out: &str, proxy_port: u16, own_pid: u32) -> Vec<(u16, String)> {
+fn parse_lsof(out: &str, proxy_port: u16, own_pid: u32) -> Vec<(u16, String, u32)> {
     let mut result = vec![];
     let (mut pid, mut name) = (0u32, String::new());
     let suffix = format!("->127.0.0.1:{proxy_port}");
@@ -131,7 +173,7 @@ fn parse_lsof(out: &str, proxy_port: u16, own_pid: u32) -> Vec<(u16, String)> {
                 // n127.0.0.1:49441->127.0.0.1:9191  (client side of the connection)
                 if let Some(local) = val.strip_suffix(&suffix) {
                     if let Some(port) = local.rsplit(':').next().and_then(|p| p.parse().ok()) {
-                        result.push((port, name.clone()));
+                        result.push((port, name.clone(), pid));
                     }
                 }
             }
@@ -157,7 +199,7 @@ mod tests {
     #[test]
     fn parses_ss() {
         let out = "0      0      127.0.0.1:49441     127.0.0.1:9191 users:((\"curl\",pid=123,fd=5))\n0 0 127.0.0.1:50000 127.0.0.1:9191 users:((\"sniffo\",pid=9,fd=7))\n";
-        assert_eq!(parse_ss(out, 9), vec![(49441, "curl".into())]);
+        assert_eq!(parse_ss(out, 9), vec![(49441, "curl".into(), 123)]);
     }
 
     #[test]
@@ -173,6 +215,11 @@ mod tests {
     #[test]
     fn parses_lsof_and_skips_self() {
         let out = "p91278\ncsniffo\nf17\nn127.0.0.1:9191->127.0.0.1:49441\np92365\nccurl\nf5\nn127.0.0.1:49441->127.0.0.1:9191\np7\ncGoogle Chrome Helper (Renderer)\nf9\nn127.0.0.1:50000->127.0.0.1:9191\n";
-        assert_eq!(parse_lsof(out, 9191, 91278), vec![(49441, "curl".into()), (50000, "Google Chrome".into())]);
+        assert_eq!(parse_lsof(out, 9191, 91278), vec![(49441, "curl".into(), 92365), (50000, "Google Chrome".into(), 7)]);
+        assert_eq!(
+            outer_app("/Applications/Brave Browser.app/Contents/Frameworks/B.framework/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/x"),
+            Some("/Applications/Brave Browser.app".into())
+        );
+        assert_eq!(outer_app("/usr/bin/curl"), None);
     }
 }

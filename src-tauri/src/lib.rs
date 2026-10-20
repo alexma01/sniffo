@@ -306,6 +306,37 @@ async fn start_reverse(state: &AppState, entries: &[ReverseProxy]) -> Result<Vec
     Ok(errors)
 }
 
+/// PNG icon of a client app (macOS: from its bundle's .icns via sips), cached on disk.
+/// Empty response = no icon (CLI tools, LAN devices, other platforms).
+#[tauri::command]
+async fn app_icon(app: AppHandle, state: State<'_, AppState>, name: String) -> Result<Response, String> {
+    let Some(bundle) = state.engine.client_app_bundle(&name) else { return Ok(Response::new(vec![])) };
+    let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("icons");
+    let key: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+    let png = dir.join(format!("{key}.png"));
+    let bytes = tauri::async_runtime::spawn_blocking(move || -> Option<Vec<u8>> {
+        if let Ok(b) = std::fs::read(&png) {
+            return Some(b);
+        }
+        let plist = bundle.join("Contents/Info.plist");
+        let out = std::process::Command::new("plutil").args(["-extract", "CFBundleIconFile", "raw"]).arg(&plist).output().ok()?;
+        let mut file = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+        if file.is_empty() {
+            file = "AppIcon".into();
+        }
+        if !file.ends_with(".icns") {
+            file.push_str(".icns");
+        }
+        std::fs::create_dir_all(&dir).ok()?;
+        let icns = bundle.join("Contents/Resources").join(file);
+        let ok = std::process::Command::new("sips").args(["-s", "format", "png", "-Z", "64"]).arg(&icns).arg("--out").arg(&png).output().ok()?.status.success();
+        if ok { std::fs::read(&png).ok() } else { None }
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(Response::new(bytes.unwrap_or_default()))
+}
+
 #[tauri::command]
 fn list_flows(state: State<'_, AppState>) -> Vec<FlowSummary> {
     state.engine.summaries()
@@ -541,7 +572,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, install_vpn_helper, list_devices, device_command, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
+            proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, install_vpn_helper, list_devices, device_command, app_icon, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
             get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, export_rules, import_rules, get_proto_schemas, set_proto_files, decode_proto, list_breakpoints, resume_breakpoint, send_ws_message
         ])
         .build(tauri::generate_context!())

@@ -118,6 +118,7 @@ export interface ReverseProxy { enabled: boolean; port: number; target: string }
 export interface ProtoSchemas { files: string[]; messages: string[] }
 
 export const api = {
+  appIcon: (name: string) => invoke<ArrayBuffer>("app_icon", { name }),
   getProtoSchemas: () => invoke<ProtoSchemas>("get_proto_schemas"),
   setProtoFiles: (files: string[]) => invoke<ProtoSchemas>("set_proto_files", { files }),
   decodeProto: (id: number, response: boolean, messageType: string) => invoke<unknown[]>("decode_proto", { id, response, messageType }),

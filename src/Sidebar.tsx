@@ -1,6 +1,7 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Action, FlowSummary, Rule } from "./api";
 import { clientLabel, Filter } from "./filters";
+import { AppIcon } from "./AppIcon";
 import { defaultAction, newRule } from "./RulesEditor";
 
 // Domains only: per-endpoint rows explode on REST APIs with ids in paths (/items/9, /users/123…),
@@ -116,7 +117,7 @@ export function Sidebar(props: {
       <Section id="apps" title="Apps & devices" count={appList.length}>
         {appList.map(([a, n]) => (
           <div key={a} className={`side-item ${filter.client === a ? "active" : ""}`} onClick={() => set({ client: filter.client === a ? null : a })} title={a}>
-            <span className="ellipsis grow">{/^\d+\.\d+\.\d+\.\d+$/.test(a) ? "📱 " : "▣ "}{a}</span> <span className="muted">{n}</span>
+            <AppIcon name={a} /><span className="ellipsis grow">{a}</span> <span className="muted">{n}</span>
           </div>
         ))}
       </Section>

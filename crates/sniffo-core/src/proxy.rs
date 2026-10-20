@@ -296,6 +296,11 @@ impl Engine {
         self.inner.update(id, |f| f.pinned = pinned);
     }
 
+    /// .app bundle of a client app seen in traffic (macOS), for its icon.
+    pub fn client_app_bundle(&self, name: &str) -> Option<std::path::PathBuf> {
+        self.inner.apps.bundle(name)
+    }
+
     /// Full copies of every flow (for export).
     pub fn all_flows(&self) -> Vec<Flow> {
         self.inner.flows.read().unwrap().values().cloned().collect()
