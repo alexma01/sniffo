@@ -105,3 +105,24 @@ test("breakpoints on frames: edit and forward, or drop", async ({ sniffo }) => {
   await page.waitForTimeout(300);
   expect(sniffo.up.wsReceived.filter((f) => f.opcode === 2)).toHaveLength(0);
 });
+
+test("WebSocket to a host with a DNS override set in Settings: connects, recorded, injectable", async ({ sniffo }) => {
+  const { page } = sniffo;
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.locator(".modal section", { has: page.locator("h4", { hasText: "Upstream proxy" }) }).locator("textarea").fill("127.0.0.1 chat.test");
+  await page.locator(".modal").getByRole("button", { name: "Save" }).click();
+  await expect(page.locator(".modal")).toHaveCount(0);
+
+  const ws = await wsConnect(sniffo.port, sniffo.up.wsPort, "/ws", "chat.test");
+  ws.send("via the override");
+  await until(() => ws.received.find((f) => f.data.toString() === "echo:via the override"), "echo");
+  const r = page.locator(".flow-row:not(.head)", { has: page.locator(".c-host", { hasText: "chat.test" }) });
+  await expect(r.locator(".badge", { hasText: /^WS \d+$/ })).toHaveText("WS 2");
+  await r.click();
+  await expect(frames(page)).toHaveCount(2);
+  const pane = page.locator(".pane").nth(1);
+  await pane.locator(".ws-compose textarea").fill("injected via relay");
+  await pane.getByRole("button", { name: "Send" }).click();
+  await until(() => sniffo.up.wsReceived.find((f) => f.data.toString() === "injected via relay"), "server got it");
+  ws.close();
+});

@@ -210,7 +210,7 @@ export interface WsClient {
 }
 
 /** WebSocket through the proxy: CONNECT tunnel, then the upgrade inside it (as browsers do). */
-export function wsConnect(proxyPort: number, wsPort: number, path = "/ws"): Promise<WsClient> {
+export function wsConnect(proxyPort: number, wsPort: number, path = "/ws", host = "127.0.0.1"): Promise<WsClient> {
   return new Promise((ok, fail) => {
     const s = net.connect(proxyPort, "127.0.0.1");
     const received: Frame[] = [];
@@ -218,7 +218,7 @@ export function wsConnect(proxyPort: number, wsPort: number, path = "/ws"): Prom
     let head = "";
     const read = frameReader((f) => received.push(f));
     s.on("error", fail);
-    s.on("connect", () => s.write(`CONNECT 127.0.0.1:${wsPort} HTTP/1.1\r\nHost: 127.0.0.1:${wsPort}\r\n\r\n`));
+    s.on("connect", () => s.write(`CONNECT ${host}:${wsPort} HTTP/1.1\r\nHost: ${host}:${wsPort}\r\n\r\n`));
     s.on("data", (chunk) => {
       if (stage === "open") return read(chunk);
       head += chunk.toString("latin1");
@@ -229,7 +229,7 @@ export function wsConnect(proxyPort: number, wsPort: number, path = "/ws"): Prom
         if (!head.startsWith("HTTP/1.1 200")) return fail(new Error(head));
         stage = "upgrade";
         head = "";
-        s.write(`GET ${path} HTTP/1.1\r\nHost: 127.0.0.1:${wsPort}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${randomBytes(16).toString("base64")}\r\nSec-WebSocket-Version: 13\r\n\r\n`);
+        s.write(`GET ${path} HTTP/1.1\r\nHost: ${host}:${wsPort}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${randomBytes(16).toString("base64")}\r\nSec-WebSocket-Version: 13\r\n\r\n`);
       } else {
         if (!head.startsWith("HTTP/1.1 101")) return fail(new Error(head));
         stage = "open";
