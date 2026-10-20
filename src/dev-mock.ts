@@ -61,6 +61,9 @@ mockIPC((cmd, args) => {
     ];
     case "device_command": return "done (mock)";
     case "repeat_flow": case "compose_request": return 200;
+    case "get_network": return { upstream: null, dns: [["api.myapp.test", "127.0.0.1"]], ignore_upstream_tls_errors: false };
+    case "get_reverse": return [{ enabled: true, port: 9300, target: "https://api.example.com" }];
+    case "set_reverse": return a.reverse.map(() => null);
     case "get_ssl_proxying": return { enabled: true, include: ["*"], exclude: [] };
     default: return null;
   }

@@ -64,7 +64,7 @@ pub async fn start(extra_roots: Vec<String>) -> Setup {
     let ca = RootCa::generate().unwrap();
     let engine = Engine::default();
     let proxy = engine
-        .start(TcpListener::bind("127.0.0.1:0").await.unwrap(), &ca, StartOptions { extra_upstream_roots: extra_roots })
+        .start(TcpListener::bind("127.0.0.1:0").await.unwrap(), &ca, StartOptions { extra_upstream_roots: extra_roots, ..Default::default() })
         .await
         .unwrap();
     Setup { engine, proxy, ca }

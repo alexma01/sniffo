@@ -6,6 +6,7 @@ pub mod compose;
 pub mod devices;
 pub mod flow;
 pub mod har;
+pub mod net;
 pub mod proxy;
 pub mod rules;
 pub mod script;

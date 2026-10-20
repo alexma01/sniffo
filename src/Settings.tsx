@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, ProxyStatus, SslProxying } from "./api";
+import { api, NetworkOptions, ProxyStatus, ReverseProxy, SslProxying } from "./api";
 
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
 
@@ -10,15 +10,29 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
   const [exclude, setExclude] = useState("");
   const [port, setPort] = useState(status?.address?.split(":").pop() ?? "9191");
   const [msg, setMsg] = useState<string | null>(null);
+  const [net, setNet] = useState<NetworkOptions | null>(null);
+  const [dns, setDns] = useState("");
+  const [reverse, setReverse] = useState<ReverseProxy[]>([]);
+  const [reverseErrors, setReverseErrors] = useState<(string | null)[]>([]);
 
   useEffect(() => {
     api.getSsl().then((s) => { setSsl(s); setInclude(s.include.join("\n")); setExclude(s.exclude.join("\n")); });
+    api.getNetwork().then((n) => { setNet(n); setDns(n.dns.map(([h, ip]) => `${ip} ${h}`).join("\n")); });
+    api.getReverse().then(setReverse);
   }, []);
 
   const save = async () => {
     if (!ssl) return;
     try {
       await api.setSsl({ enabled: ssl.enabled, include: lines(include), exclude: lines(exclude) });
+      if (net) {
+        // hosts-file style: "IP host"
+        const entries = lines(dns).map((l) => l.split(/\s+/)).filter((p) => p.length >= 2).map(([ip, h]) => [h, ip] as [string, string]);
+        await api.setNetwork({ ...net, dns: entries });
+      }
+      const errs = await api.setReverse(reverse);
+      setReverseErrors(errs);
+      if (errs.some(Boolean)) { setMsg("Some reverse proxies failed to start"); return; }
       const p = Number(port);
       if (status?.running && !status.address?.endsWith(`:${p}`)) await api.start(p);
       onChanged();
@@ -64,6 +78,56 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
               <textarea value={exclude} onChange={(e) => setExclude(e.target.value)} rows={6} placeholder="*.apple.com" />
             </label>
           </div>
+        </section>
+
+        <section>
+          <h4>Upstream proxy</h4>
+          {net && (
+            <>
+              <label className="check">
+                <input type="checkbox" checked={!!net.upstream} onChange={(e) => setNet({ ...net, upstream: e.target.checked ? { kind: "http", host: "", port: 8080, username: "", password: "" } : null })} />
+                Send traffic through another proxy (e.g. corporate)
+              </label>
+              {net.upstream && (
+                <div className="grid4">
+                  <label>Type
+                    <select value={net.upstream.kind} onChange={(e) => setNet({ ...net, upstream: { ...net.upstream!, kind: e.target.value as "http" | "socks5" } })}>
+                      <option value="http">HTTP</option><option value="socks5">SOCKS5</option>
+                    </select>
+                  </label>
+                  <label>Host <input className="input wide" value={net.upstream.host} onChange={(e) => setNet({ ...net, upstream: { ...net.upstream!, host: e.target.value.trim() } })} /></label>
+                  <label>Port <input className="input" value={net.upstream.port} onChange={(e) => setNet({ ...net, upstream: { ...net.upstream!, port: Number(e.target.value.replace(/\D/g, "")) || 0 } })} /></label>
+                  <label>User / password
+                    <span className="row tight">
+                      <input className="input" value={net.upstream.username} placeholder="user" onChange={(e) => setNet({ ...net, upstream: { ...net.upstream!, username: e.target.value } })} />
+                      <input className="input" type="password" value={net.upstream.password} placeholder="pass" onChange={(e) => setNet({ ...net, upstream: { ...net.upstream!, password: e.target.value } })} />
+                    </span>
+                  </label>
+                </div>
+              )}
+              <h4>DNS overrides</h4>
+              <textarea rows={3} value={dns} placeholder={"127.0.0.1 api.myapp.test\n10.0.0.5 staging.example.com"} onChange={(e) => setDns(e.target.value)} />
+              <label className="check">
+                <input type="checkbox" checked={net.ignore_upstream_tls_errors} onChange={(e) => setNet({ ...net, ignore_upstream_tls_errors: e.target.checked })} />
+                Ignore upstream certificate errors <span className="warn">(insecure — only for self-signed dev servers)</span>
+              </label>
+            </>
+          )}
+        </section>
+
+        <section>
+          <h4>Reverse proxy</h4>
+          <p className="muted">Point an app at <code>http://localhost:PORT</code> and Sniffo forwards to the target, recording everything.</p>
+          {reverse.map((r, i) => (
+            <div key={i} className="row">
+              <input type="checkbox" checked={r.enabled} onChange={(e) => setReverse(reverse.map((x, j) => (j === i ? { ...x, enabled: e.target.checked } : x)))} />
+              localhost:<input className="input" value={r.port} onChange={(e) => setReverse(reverse.map((x, j) => (j === i ? { ...x, port: Number(e.target.value.replace(/\D/g, "")) || 0 } : x)))} />
+              →<input className="input wide grow" value={r.target} placeholder="https://api.example.com" onChange={(e) => setReverse(reverse.map((x, j) => (j === i ? { ...x, target: e.target.value.trim() } : x)))} />
+              <button onClick={() => setReverse(reverse.filter((_, j) => j !== i))}>✕</button>
+              {reverseErrors[i] && <span className="err small">{reverseErrors[i]}</span>}
+            </div>
+          ))}
+          <button onClick={() => setReverse([...reverse, { enabled: true, port: 9300 + reverse.length, target: "http://localhost:3000" }])}>Add reverse proxy</button>
         </section>
 
         {msg && <p className="muted">{msg}</p>}
