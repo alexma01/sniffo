@@ -26,7 +26,10 @@ export interface FlowSummary {
   error: string | null;
   pinned: boolean;
   tags: string[];
+  ws_count: number;
 }
+
+export interface WsMessage { outgoing: boolean; time_ms: number; kind: string; size: number; data: string }
 
 export interface Message {
   headers: Headers;
@@ -50,6 +53,7 @@ export interface Flow {
   response: Message | null;
   state: FlowState;
   error: string | null;
+  ws_messages: WsMessage[];
 }
 
 export interface SslProxying {

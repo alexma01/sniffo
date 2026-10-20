@@ -8,7 +8,7 @@ const enc = new TextEncoder();
 const samples: [string, string, number, string, string][] = [
   ["GET", "https://api.example.com/v1/users?page=2&sort=name", 200, "application/json", JSON.stringify({ users: [{ id: 1, name: "Ada", tags: ["admin"] }, { id: 2, name: "Linus", active: true }], total: 2 })],
   ["POST", "https://api.example.com/v1/login", 401, "application/json", '{"error":"invalid credentials"}'],
-  ["GET", "https://cdn.example.com/app.js", 200, "application/javascript", "console.log('hi')"],
+  ["GET", "wss://stream.example.com/live", 101, "", ""],
   ["GET", "https://www.example.org/feed.xml", 200, "application/xml", "<rss><channel><title>Feed</title><item><title>One</title></item></channel></rss>"],
   ["PUT", "https://api.example.com/v1/items/9", 500, "text/plain", "boom"],
   ["GET", "https://www.example.org/", 304, "text/html", ""],
@@ -21,7 +21,12 @@ const flows: Flow[] = samples.map(([method, url, status, ct, body], i) => {
     method, url, scheme: "https", host: u.host, path: u.pathname + u.search, http_version: "HTTP/1.1",
     request: { headers: [["host", u.host], ["cookie", "sid=abc123; theme=dark"], ["content-type", "application/x-www-form-urlencoded"]], body_size: method === "GET" ? 0 : 13 },
     status, response: { headers: [["content-type", ct], ["set-cookie", "sid=abc123; Path=/; HttpOnly"]], body_size: body.length },
-    state: status >= 500 ? "complete" : "complete", error: null,
+    state: "complete", error: null,
+    ws_messages: i === 2 ? [
+      { outgoing: true, time_ms: 1000, kind: "text", size: 17, data: '{"op":"subscribe"}' },
+      { outgoing: false, time_ms: 1042, kind: "text", size: 25, data: '{"event":"tick","v":42}' },
+      { outgoing: false, time_ms: 2100, kind: "binary", size: 3, data: "AQID" },
+    ] : [],
   };
 });
 const bodies = new Map(samples.map((s, i) => [i + 1, enc.encode(s[4])]));
@@ -33,7 +38,7 @@ const summary = (f: Flow): FlowSummary => ({
   scheme: f.scheme, http_version: f.id % 2 ? "HTTP/2.0" : "HTTP/1.1", client_ip: f.id === 6 ? "192.168.1.40" : "127.0.0.1",
   client_app: f.id === 6 ? null : f.id % 3 ? "Google Chrome" : "curl", request_type: null,
   status: f.status, state: f.state, content_type: f.response?.headers[0][1] ?? null, request_size: f.request.body_size,
-  response_size: f.response?.body_size ?? null, error: f.error, pinned: pinned.has(f.id), tags: f.id === 2 ? ["Map Local /login"] : [],
+  response_size: f.response?.body_size ?? null, error: f.error, pinned: pinned.has(f.id), tags: f.id === 2 ? ["Map Local /login"] : [], ws_count: f.ws_messages.length,
 });
 
 mockIPC((cmd, args) => {

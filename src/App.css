@@ -192,3 +192,13 @@ button.lan { font-variant-numeric: tabular-nums; font-weight: 600; }
 .diff .add { background: color-mix(in srgb, var(--ok) 18%, transparent); display: block; }
 .diff .del { background: color-mix(in srgb, var(--err) 18%, transparent); display: block; }
 details summary { cursor: pointer; color: var(--accent); }
+
+.ws { font: 12px/1.5 ui-monospace, Menlo, monospace; }
+.ws-row { display: flex; gap: 10px; padding: 2px 10px; border-bottom: 1px solid var(--border); cursor: pointer; white-space: nowrap; }
+.ws-row:hover, .ws-row.open { background: var(--bg-3); }
+.ws-row.out .ws-dir { color: var(--accent); }
+.ws-row.in .ws-dir { color: var(--ok); }
+.ws-time { color: var(--muted); width: 70px; }
+.ws-kind { width: 50px; color: var(--muted); }
+.ws-size { width: 60px; text-align: right; }
+.ws-data { flex: 1; overflow: hidden; text-overflow: ellipsis; }

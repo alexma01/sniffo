@@ -2,19 +2,19 @@
 
 use crate::{
     ca::RootCa,
-    flow::{Flow, FlowId, FlowState, FlowSummary, Headers, Message, headers_from, now_ms},
+    flow::{Flow, FlowId, FlowState, FlowSummary, Headers, Message, WsMessage, headers_from, now_ms},
     client::ClientApps,
     rules::{Plan, Rules},
 };
 use bytes::{Bytes, BytesMut};
 use http_body_util::{BodyExt, BodyDataStream};
 use hudsucker::{
-    Body, HttpContext, HttpHandler, Proxy, RequestOrResponse,
+    Body, HttpContext, HttpHandler, Proxy, RequestOrResponse, WebSocketContext, WebSocketHandler,
     certificate_authority::RcgenAuthority,
     futures::Stream,
     hyper::{HeaderMap, Method, Request, Response, StatusCode, Uri, header::{HeaderName, HeaderValue}},
     rustls::{ClientConfig, RootCertStore, crypto::aws_lc_rs, pki_types::{CertificateDer, pem::PemObject}},
-    tokio_tungstenite::Connector,
+    tokio_tungstenite::{Connector, tungstenite::Message as WsMsg},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -127,7 +127,13 @@ struct Inner {
     rules: RwLock<Arc<Rules>>,
     paused: Mutex<HashMap<FlowId, (BreakpointHit, oneshot::Sender<Decision>)>>,
     apps: ClientApps,
+    /// (client address, ws/wss URI) -> flow of the upgrade request, to attach frames to it.
+    websockets: Mutex<HashMap<(SocketAddr, String), FlowId>>,
 }
+
+/// Frames are kept per connection up to this count; older ones are dropped.
+pub const MAX_WS_MESSAGES: usize = 10_000;
+const MAX_WS_FRAME_STORED: usize = 256 * 1024;
 
 impl Inner {
     fn update(&self, id: FlowId, f: impl FnOnce(&mut Flow)) {
@@ -174,6 +180,7 @@ impl Default for Engine {
                 rules: RwLock::default(),
                 paused: Mutex::default(),
                 apps: ClientApps::default(),
+                websockets: Mutex::default(),
             }),
         }
     }
@@ -307,6 +314,7 @@ impl Engine {
             .with_ca(authority)
             .with_http_connector(https)
             .with_websocket_connector(Connector::Rustls(Arc::new(tls)))
+            .with_websocket_handler(Frames { engine: self.inner.clone() })
             .with_http_handler(Capture { engine: self.inner.clone(), id: None, is_head: false, break_response: false, download_bps: None, ca: Arc::new(ca.clone()), proxy_port: addr.port(), lookup: None })
             .with_graceful_shutdown(async { let _ = rx.await; })
             .build()
@@ -527,6 +535,21 @@ impl HttpHandler for Capture {
             return self.local_response(id, StatusCode::FORBIDDEN, h, Bytes::from_static(b"Blocked by Sniffo"), None).into();
         }
 
+        if parts.headers.get("upgrade").and_then(|v| v.to_str().ok()).is_some_and(|v| v.eq_ignore_ascii_case("websocket"))
+        {
+            // hudsucker answers the upgrade itself (no handle_response), so record the 101 here.
+            let scheme = if parts.uri.scheme_str() == Some("https") { "wss" } else { "ws" };
+            let ws_uri = format!("{scheme}://{}{}", parts.uri.authority().map(|a| a.as_str()).unwrap_or(""), parts.uri.path_and_query().map(|p| p.as_str()).unwrap_or("/"));
+            self.engine.websockets.lock().unwrap().insert((ctx.client_addr, ws_uri), id);
+            self.engine.update(id, |f| {
+                f.status = Some(101);
+                f.ttfb_ms = Some(now_ms().saturating_sub(f.started_ms));
+                f.response = Some(Message { headers: vec![("upgrade".into(), "websocket".into())], ..Default::default() });
+                f.state = FlowState::Complete;
+            });
+            return Request::from_parts(parts, Body::from(body)).into();
+        }
+
         let mut body = body;
         if plan.break_request {
             let headers = headers_from(&parts.headers);
@@ -650,6 +673,49 @@ impl HttpHandler for Capture {
 
     async fn should_intercept_tls(&mut self, _ctx: &HttpContext, hello: hudsucker::rustls::server::ClientHello<'_>) -> bool {
         hello.server_name().is_some_and(|sni| self.engine.ssl.read().unwrap().should_decrypt(sni))
+    }
+}
+
+/// Records WebSocket frames on the flow of their upgrade request; frames pass through unchanged.
+#[derive(Clone)]
+struct Frames {
+    engine: Arc<Inner>,
+}
+
+impl WebSocketHandler for Frames {
+    async fn handle_message(&mut self, ctx: &WebSocketContext, msg: WsMsg) -> Option<WsMsg> {
+        let (key, outgoing) = match ctx {
+            WebSocketContext::ClientToServer { src, dst, .. } => ((*src, dst.to_string()), true),
+            WebSocketContext::ServerToClient { src, dst, .. } => ((*dst, src.to_string()), false),
+        };
+        let id = self.engine.websockets.lock().unwrap().get(&key).copied();
+        if let Some(id) = id {
+            let (kind, size, data) = match &msg {
+                WsMsg::Text(t) => ("text", t.len(), t.as_str().chars().take(MAX_WS_FRAME_STORED).collect()),
+                WsMsg::Binary(b) => {
+                    use base64::Engine as _;
+                    ("binary", b.len(), base64::engine::general_purpose::STANDARD.encode(&b[..b.len().min(MAX_WS_FRAME_STORED)]))
+                }
+                WsMsg::Ping(p) => ("ping", p.len(), String::new()),
+                WsMsg::Pong(p) => ("pong", p.len(), String::new()),
+                WsMsg::Close(c) => ("close", 0, c.as_ref().map(|c| format!("{} {}", u16::from(c.code), c.reason)).unwrap_or_default()),
+                WsMsg::Frame(f) => ("frame", f.len(), String::new()),
+            };
+            let closed = kind == "close";
+            self.engine.update(id, |f| {
+                if f.ws_messages.len() >= MAX_WS_MESSAGES {
+                    f.ws_messages.remove(0);
+                }
+                f.ws_messages.push(WsMessage { outgoing, time_ms: now_ms(), kind, size, data });
+                if closed {
+                    f.duration_ms = Some(now_ms().saturating_sub(f.started_ms));
+                }
+            });
+            if closed {
+                self.engine.websockets.lock().unwrap().remove(&key);
+            }
+        }
+        Some(msg)
     }
 }
 

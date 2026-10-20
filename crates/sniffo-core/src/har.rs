@@ -1,6 +1,6 @@
 //! HAR 1.2 import/export. HAR is also Sniffo's session file format.
 
-use crate::flow::{Flow, FlowState, Headers, Message};
+use crate::flow::{Flow, FlowState, Headers, Message, WsMessage};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use serde_json::{Value, json};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -67,6 +67,13 @@ pub fn export(flows: &[Flow]) -> Value {
                 "timings": { "send": 0, "wait": ttfb, "receive": total.saturating_sub(ttfb) },
                 "_client": f.client_app.clone().unwrap_or_else(|| f.client_addr.clone()),
                 "_pinned": f.pinned, "_tags": f.tags,
+                // Chrome DevTools' convention for WebSocket frames.
+                "_webSocketMessages": f.ws_messages.iter().map(|m| json!({
+                    "type": if m.outgoing { "send" } else { "receive" },
+                    "time": m.time_ms as f64 / 1000.0,
+                    "opcode": match m.kind { "text" => 1, "binary" => 2, "close" => 8, "ping" => 9, "pong" => 10, _ => 0 },
+                    "data": m.data,
+                })).collect::<Vec<_>>(),
             })
         })
         .collect();
@@ -126,6 +133,16 @@ pub fn import(data: &str) -> Result<Vec<Flow>, String> {
                 response,
                 pinned: e["_pinned"].as_bool().unwrap_or(false),
                 tags: e["_tags"].as_array().into_iter().flatten().filter_map(|t| t.as_str().map(str::to_owned)).collect(),
+                ws_messages: e["_webSocketMessages"].as_array().into_iter().flatten().map(|m| {
+                    let data = m["data"].as_str().unwrap_or("").to_owned();
+                    WsMessage {
+                        outgoing: m["type"] == "send",
+                        time_ms: (m["time"].as_f64().unwrap_or(0.0) * 1000.0) as u64,
+                        kind: match m["opcode"].as_u64() { Some(2) => "binary", Some(8) => "close", Some(9) => "ping", Some(10) => "pong", _ => "text" },
+                        size: data.len(),
+                        data,
+                    }
+                }).collect(),
             })
         })
         .collect())
