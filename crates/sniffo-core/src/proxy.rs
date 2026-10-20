@@ -13,7 +13,7 @@ use http_body_util::{BodyExt, BodyDataStream};
 use hudsucker::{
     Body, HttpContext, HttpHandler, Proxy, RequestOrResponse, WebSocketContext, WebSocketHandler,
     certificate_authority::RcgenAuthority,
-    futures::Stream,
+    futures::{Sink, SinkExt, Stream, StreamExt},
     hyper::{HeaderMap, Method, Request, Response, StatusCode, Uri, header::{HeaderName, HeaderValue}},
     rustls::{ClientConfig, RootCertStore, crypto::aws_lc_rs, pki_types::{CertificateDer, pem::PemObject}},
     tokio_tungstenite::{Connector, tungstenite::Message as WsMsg},
@@ -28,7 +28,7 @@ use std::{
     task::{Context, Poll, ready},
     time::Duration,
 };
-use tokio::{net::TcpListener, sync::{broadcast, oneshot}, task::JoinHandle, time::Sleep};
+use tokio::{net::TcpListener, sync::{broadcast, mpsc, oneshot}, task::JoinHandle, time::Sleep};
 
 /// Bodies above this size are forwarded intact but stored truncated.
 pub const MAX_STORED_BODY: usize = 32 * 1024 * 1024;
@@ -142,6 +142,8 @@ struct Inner {
     apps: ClientApps,
     /// (client address, ws/wss URI) -> flow of the upgrade request, to attach frames to it.
     websockets: Mutex<HashMap<(SocketAddr, String), FlowId>>,
+    /// (flow, client -> server) -> live forwarder of that direction, for injecting messages.
+    ws_inject: Mutex<HashMap<(FlowId, bool), mpsc::UnboundedSender<WsMsg>>>,
     /// `sharedState` visible to every script.
     shared_state: Mutex<serde_json::Value>,
 }
@@ -224,6 +226,7 @@ impl Default for Engine {
                 paused: Mutex::default(),
                 apps: ClientApps::default(),
                 websockets: Mutex::default(),
+                ws_inject: Mutex::default(),
                 shared_state: Mutex::new(serde_json::json!({})),
             }),
         }
@@ -325,6 +328,19 @@ impl Engine {
     pub fn resume(&self, id: FlowId, decision: Decision) -> bool {
         let Some((_, tx)) = self.inner.paused.lock().unwrap().remove(&id) else { return false };
         tx.send(decision).is_ok()
+    }
+
+    /// Sends a message on a live WebSocket as if `to_server` ? the client : the server sent it.
+    /// `binary` messages are given base64-encoded.
+    pub fn send_ws(&self, id: FlowId, to_server: bool, data: String, binary: bool) -> Result<(), String> {
+        let msg = if binary {
+            use base64::Engine as _;
+            WsMsg::binary(base64::engine::general_purpose::STANDARD.decode(data.trim()).map_err(|e| format!("invalid base64: {e}"))?)
+        } else {
+            WsMsg::text(data)
+        };
+        let tx = self.inner.ws_inject.lock().unwrap().get(&(id, to_server)).cloned();
+        tx.ok_or("WebSocket connection is closed")?.send(msg).map_err(|_| "WebSocket connection is closed".into())
     }
 
     pub async fn start(&self, listener: TcpListener, ca: &RootCa, opts: StartOptions) -> Result<ProxyHandle, String> {
@@ -892,46 +908,84 @@ impl HttpHandler for Capture {
     }
 }
 
-/// Records WebSocket frames on the flow of their upgrade request; frames pass through unchanged.
+/// Records WebSocket frames on the flow of their upgrade request and forwards messages injected via `Engine::send_ws`.
 #[derive(Clone)]
 struct Frames {
     engine: Arc<Inner>,
 }
 
+impl Frames {
+    fn record(&self, id: FlowId, outgoing: bool, msg: &WsMsg, injected: bool) {
+        let (kind, size, data) = match msg {
+            WsMsg::Text(t) => ("text", t.len(), t.as_str().chars().take(MAX_WS_FRAME_STORED).collect()),
+            WsMsg::Binary(b) => {
+                use base64::Engine as _;
+                ("binary", b.len(), base64::engine::general_purpose::STANDARD.encode(&b[..b.len().min(MAX_WS_FRAME_STORED)]))
+            }
+            WsMsg::Ping(p) => ("ping", p.len(), String::new()),
+            WsMsg::Pong(p) => ("pong", p.len(), String::new()),
+            WsMsg::Close(c) => ("close", 0, c.as_ref().map(|c| format!("{} {}", u16::from(c.code), c.reason)).unwrap_or_default()),
+            WsMsg::Frame(f) => ("frame", f.len(), String::new()),
+        };
+        self.engine.update(id, |f| {
+            if f.ws_messages.len() >= MAX_WS_MESSAGES {
+                f.ws_messages.remove(0);
+            }
+            f.ws_messages.push(WsMessage { outgoing, time_ms: now_ms(), kind, size, data, injected });
+            if kind == "close" {
+                f.duration_ms = Some(now_ms().saturating_sub(f.started_ms));
+            }
+        });
+    }
+}
+
 impl WebSocketHandler for Frames {
-    async fn handle_message(&mut self, ctx: &WebSocketContext, msg: WsMsg) -> Option<WsMsg> {
-        let (key, outgoing) = match ctx {
+    async fn handle_websocket(
+        self,
+        ctx: WebSocketContext,
+        mut stream: impl Stream<Item = Result<WsMsg, hudsucker::tokio_tungstenite::tungstenite::Error>> + Unpin + Send + 'static,
+        mut sink: impl Sink<WsMsg, Error = hudsucker::tokio_tungstenite::tungstenite::Error> + Unpin + Send + 'static,
+    ) {
+        let (key, outgoing) = match &ctx {
             WebSocketContext::ClientToServer { src, dst, .. } => ((*src, dst.to_string()), true),
             WebSocketContext::ServerToClient { src, dst, .. } => ((*dst, src.to_string()), false),
         };
         let id = self.engine.websockets.lock().unwrap().get(&key).copied();
-        if let Some(id) = id {
-            let (kind, size, data) = match &msg {
-                WsMsg::Text(t) => ("text", t.len(), t.as_str().chars().take(MAX_WS_FRAME_STORED).collect()),
-                WsMsg::Binary(b) => {
-                    use base64::Engine as _;
-                    ("binary", b.len(), base64::engine::general_purpose::STANDARD.encode(&b[..b.len().min(MAX_WS_FRAME_STORED)]))
-                }
-                WsMsg::Ping(p) => ("ping", p.len(), String::new()),
-                WsMsg::Pong(p) => ("pong", p.len(), String::new()),
-                WsMsg::Close(c) => ("close", 0, c.as_ref().map(|c| format!("{} {}", u16::from(c.code), c.reason)).unwrap_or_default()),
-                WsMsg::Frame(f) => ("frame", f.len(), String::new()),
+        let mut injected = match id {
+            Some(id) => {
+                let (tx, rx) = mpsc::unbounded_channel();
+                self.engine.ws_inject.lock().unwrap().insert((id, outgoing), tx);
+                Some(rx)
+            }
+            None => None,
+        };
+        loop {
+            let (msg, is_injected) = tokio::select! {
+                m = stream.next() => match m {
+                    Some(Ok(m)) => (m, false),
+                    Some(Err(e)) => {
+                        tracing::debug!("WebSocket message error: {e}");
+                        let _ = sink.send(WsMsg::Close(None)).await;
+                        break;
+                    }
+                    None => break,
+                },
+                Some(m) = async { injected.as_mut()?.recv().await } => (m, true),
             };
-            let closed = kind == "close";
-            self.engine.update(id, |f| {
-                if f.ws_messages.len() >= MAX_WS_MESSAGES {
-                    f.ws_messages.remove(0);
-                }
-                f.ws_messages.push(WsMessage { outgoing, time_ms: now_ms(), kind, size, data });
+            let closed = msg.is_close();
+            if let Some(id) = id {
+                self.record(id, outgoing, &msg, is_injected);
                 if closed {
-                    f.duration_ms = Some(now_ms().saturating_sub(f.started_ms));
+                    self.engine.websockets.lock().unwrap().remove(&key);
                 }
-            });
-            if closed {
-                self.engine.websockets.lock().unwrap().remove(&key);
+            }
+            if let Err(e) = sink.send(msg).await {
+                tracing::debug!("WebSocket send error: {e}");
             }
         }
-        Some(msg)
+        if let Some(id) = id {
+            self.engine.ws_inject.lock().unwrap().remove(&(id, outgoing));
+        }
     }
 }
 

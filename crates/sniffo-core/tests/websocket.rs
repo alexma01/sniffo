@@ -59,3 +59,40 @@ async fn records_websocket_frames_on_upgrade_flow() {
     }
     panic!("frames not recorded: {:?}", s.engine.flow(1).map(|f| f.ws_messages));
 }
+
+#[tokio::test]
+async fn injects_messages_into_live_websocket() {
+    let up = echo_server().await;
+    let s = start(vec![]).await;
+
+    let mut tcp = TcpStream::connect(s.proxy.addr).await.unwrap();
+    tcp.write_all(format!("CONNECT {up} HTTP/1.1\r\nHost: {up}\r\n\r\n").as_bytes()).await.unwrap();
+    let mut buf = [0u8; 1024];
+    tcp.read(&mut buf).await.unwrap();
+    let (mut ws, _) = client_async(format!("ws://{up}/chat"), tcp).await.unwrap();
+    // Round-trip once so both forwarders are running before injecting.
+    ws.send(Message::text("hi")).await.unwrap();
+    ws.next().await.unwrap().unwrap();
+
+    s.engine.send_ws(1, true, "injected".into(), false).unwrap();
+    assert_eq!(ws.next().await.unwrap().unwrap().into_text().unwrap().as_str(), "injected");
+    s.engine.send_ws(1, false, "AQID".into(), true).unwrap();
+    assert_eq!(ws.next().await.unwrap().unwrap().into_data().as_ref(), &[1u8, 2, 3]);
+    assert!(s.engine.send_ws(1, false, "not base64!".into(), true).is_err());
+
+    let frames: Vec<_> = s.engine.flow(1).unwrap().ws_messages.iter().map(|m| (m.outgoing, m.data.clone(), m.injected)).collect();
+    assert_eq!(&frames[2..], &[
+        (true, "injected".into(), true),
+        (false, "injected".into(), false),
+        (false, "AQID".into(), true),
+    ]);
+
+    ws.close(None).await.unwrap();
+    for _ in 0..100 {
+        if s.engine.send_ws(1, true, "late".into(), false).is_err() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("injection channel not cleaned up after close");
+}

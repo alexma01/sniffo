@@ -25,9 +25,10 @@ const flows: Flow[] = samples.map(([method, url, status, ct, body], i) => {
     status, response: { headers: [["content-type", ct], ["set-cookie", "sid=abc123; Path=/; HttpOnly"]], body_size: body.length },
     state: "complete", error: null,
     ws_messages: i === 2 ? [
-      { outgoing: true, time_ms: 1000, kind: "text", size: 17, data: '{"op":"subscribe"}' },
-      { outgoing: false, time_ms: 1042, kind: "text", size: 25, data: '{"event":"tick","v":42}' },
-      { outgoing: false, time_ms: 2100, kind: "binary", size: 3, data: "AQID" },
+      { outgoing: true, time_ms: 1000, kind: "text", size: 17, data: '{"op":"subscribe"}', injected: false },
+      { outgoing: false, time_ms: 1042, kind: "text", size: 25, data: '{"event":"tick","v":42}', injected: false },
+      { outgoing: false, time_ms: 2100, kind: "binary", size: 3, data: "AQID", injected: false },
+      { outgoing: true, time_ms: 2500, kind: "text", size: 12, data: '{"op":"ping"}', injected: true },
     ] : [],
     graphql: url.endsWith("/graphql") ? "query GetUser" : null,
   };
@@ -71,6 +72,13 @@ mockIPC((cmd, args) => {
     case "set_reverse": return a.reverse.map(() => null);
     case "get_proto_schemas": return { files: ["/Users/me/protos/user.proto"], messages: ["demo.User", "demo.UserList"] };
     case "decode_proto": return [{ id: 7, name: "Ada", status: "ACTIVE" }];
+    case "send_ws_message": {
+      const f = flows.find((f) => f.id === a.id)!;
+      if (a.binary && !/^[A-Za-z0-9+/=\s]*$/.test(a.data)) throw "invalid base64";
+      f.ws_messages.push({ outgoing: a.toServer, time_ms: Date.now() - f.started_ms, kind: a.binary ? "binary" : "text", size: a.data.length, data: a.data, injected: true });
+      emit("flows", [{ type: "upsert", data: summary(f) }]);
+      return;
+    }
     case "get_ssl_proxying": return { enabled: true, include: ["*"], exclude: [] };
     default: return null;
   }

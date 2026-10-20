@@ -30,7 +30,7 @@ export interface FlowSummary {
   graphql: string | null;
 }
 
-export interface WsMessage { outgoing: boolean; time_ms: number; kind: string; size: number; data: string }
+export interface WsMessage { outgoing: boolean; time_ms: number; kind: string; size: number; data: string; injected: boolean }
 
 export interface Message {
   headers: Headers;
@@ -148,6 +148,7 @@ export const api = {
   importRules: (path: string) => invoke<number>("import_rules", { path }),
   listBreakpoints: () => invoke<BreakpointHit[]>("list_breakpoints"),
   resume: (id: number, decision: Decision) => invoke<boolean>("resume_breakpoint", { id, decision }),
+  sendWs: (id: number, toServer: boolean, data: string, binary: boolean) => invoke<void>("send_ws_message", { id, toServer, data, binary }),
   getSsl: () => invoke<SslProxying>("get_ssl_proxying"),
   setSsl: (ssl: SslProxying) => invoke<void>("set_ssl_proxying", { ssl }),
   onFlows: (cb: (events: FlowEvent[]) => void) => listen<FlowEvent[]>("flows", (e) => cb(e.payload)),

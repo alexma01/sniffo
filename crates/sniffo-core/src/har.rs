@@ -141,6 +141,7 @@ pub fn import(data: &str) -> Result<Vec<Flow>, String> {
                         kind: match m["opcode"].as_u64() { Some(2) => "binary", Some(8) => "close", Some(9) => "ping", Some(10) => "pong", _ => "text" },
                         size: data.len(),
                         data,
+                        injected: false,
                     }
                 }).collect(),
                 graphql: None,
