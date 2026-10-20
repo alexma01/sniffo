@@ -60,7 +60,8 @@ export const test = base.extend<{ sniffo: Sniffo }>({
     const bridge = `http://127.0.0.1:${bridgePort}`;
     const up = await startUpstream();
     const info = await (await fetch(`${bridge}/info`)).json();
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    // Chromium needs these for navigator.clipboard; WebKit has no such permissions to grant.
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
     const call = async (cmd: string, args: Record<string, unknown> = {}) => {
       const r = await (await fetch(`${bridge}/invoke/${cmd}`, { method: "POST", body: JSON.stringify(args) })).json();
       if ("err" in r) throw new Error(r.err);
@@ -68,7 +69,14 @@ export const test = base.extend<{ sniffo: Sniffo }>({
     };
     // Uncaught errors in the UI fail the test.
     const errors: string[] = [];
-    page.on("pageerror", (e) => errors.push(e.stack ?? String(e)));
+    let collecting = true;
+    page.on("pageerror", (e) => { if (collecting) errors.push(e.stack ?? String(e)); });
+    // Records what the app copies, through the real clipboard API: WebKit can't read the
+    // clipboard back under automation, but a write it refuses still fails (no toast).
+    await page.addInitScript(() => {
+      const write = navigator.clipboard.writeText.bind(navigator.clipboard);
+      navigator.clipboard.writeText = (text: string) => write(text).then(() => { (window as any).__copied = text; });
+    });
     await page.goto(`/?bridge=${encodeURIComponent(bridge)}&port=${port}`);
     // Launch = start the proxy and (default) take over the system proxy.
     await expect(page.locator(".statusbar")).toContainText(`Proxy 127.0.0.1:${port}`);
@@ -85,6 +93,7 @@ export const test = base.extend<{ sniffo: Sniffo }>({
       get: (path, opts = {}) => request(port, opts.method ?? "GET", `${up.http}${path}`, opts),
       url: (path) => `${up.http}${path}`,
     });
+    collecting = false; // requests cut off by closing the page aren't app errors
     await page.close();
     child.kill();
     await up.close();
@@ -98,3 +107,8 @@ export { expect };
 export const row = (page: Page, text: string) => page.locator(".flow-row:not(.head)", { has: page.locator(".c-path", { hasText: text }) });
 
 export const read = (path: string) => readFileSync(path, "utf8");
+
+/** What the app last copied: the clipboard itself where readable (Chromium), else what the
+ * real writeText accepted (WebKit). */
+export const copied = (page: Page) =>
+  page.evaluate(async () => { try { return await navigator.clipboard.readText(); } catch { return (window as any).__copied as string; } });

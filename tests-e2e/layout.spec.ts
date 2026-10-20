@@ -91,8 +91,10 @@ test("toasts disappear and totals add up", async ({ sniffo }) => {
   await expect(row(page, "/echo").locator(".c-reqsize")).toHaveText("2.0 KB");
 });
 
-test("real browser traffic shows its app icon (macOS)", async ({ sniffo, browser }) => {
+test("real browser traffic shows its app icon (macOS)", async ({ sniffo, browser, browserName }) => {
   test.skip(process.platform !== "darwin", "app icons come from macOS bundles");
+  // Needs a browser installed as an .app (Brave locally); Playwright's headless shell isn't one.
+  test.skip(browserName !== "chromium" || !!process.env.CI, "needs a browser installed as an .app");
   const { page } = sniffo;
   // A second browser context whose traffic goes through Sniffo, like a user's browser would.
   const client = await browser.newContext({ proxy: { server: `http://127.0.0.1:${sniffo.port}`, bypass: "<-loopback>" } });

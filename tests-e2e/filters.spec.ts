@@ -1,7 +1,7 @@
 // Filter bar, sidebar (domains, apps, devices, pins) and their menus.
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, read, row, test } from "./fixtures";
+import { copied, expect, read, row, test } from "./fixtures";
 import { request } from "./upstream";
 
 const paths = (page: import("@playwright/test").Page) => page.locator(".flow-row:not(.head) .c-path");
@@ -161,7 +161,7 @@ test("sidebar domain menu actions", async ({ sniffo }) => {
 
   await (await open()).locator("div", { hasText: /^Copy domain$/ }).click();
   await expect(page.locator(".toast")).toHaveText("Copied");
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("localhost");
+  expect(await copied(page)).toBe("localhost");
 
   for (const [label, type, title] of [["Breakpoint…", "breakpoint", "Breakpoint"], ["Map Remote…", "map_remote", "Map Remote"], ["Script…", "script", "Script"], ["Throttle…", "throttle", "Throttle"], ["Block…", "block", "Block"]] as const) {
     await (await open()).locator("div", { hasText: new RegExp(`^${label}$`) }).click();

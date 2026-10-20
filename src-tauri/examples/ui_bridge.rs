@@ -14,6 +14,13 @@ mod support;
 use serde_json::{Value, json};
 use std::{io::{BufReader, Write}, net::TcpListener, time::{Duration, Instant}};
 
+#[cfg(not(unix))]
+fn main() {
+    eprintln!("ui_bridge drives the fake OS tools, which are shell scripts: Linux and macOS only");
+    std::process::exit(1);
+}
+
+#[cfg(unix)]
 fn main() {
     let fakes = support::fakes();
     let port: u16 = std::env::args().nth(1).and_then(|p| p.parse().ok()).unwrap_or(0);

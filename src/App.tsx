@@ -203,7 +203,10 @@ export default function App() {
         return;
       }
       if (!mod) {
-        if ((e.key === "Backspace" || e.key === "Delete") && selected != null && !typing) remove([selected]);
+        if ((e.key === "Backspace" || e.key === "Delete") && selected != null && !typing) {
+          e.preventDefault(); // WebKit maps Backspace to "go back"
+          remove([selected]);
+        }
         return;
       }
       const k = e.key.toLowerCase();

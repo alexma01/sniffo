@@ -19,10 +19,15 @@ export default defineConfig({
   use: {
     baseURL: "http://localhost:1430",
     viewport: { width: 1500, height: 900 },
-    launchOptions: { executablePath },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
+  // The desktop app renders in WebKit on macOS (WKWebView) and Linux (WebKitGTK), in Chromium
+  // (WebView2) on Windows: the UI is checked on both engines.
+  projects: [
+    { name: "chromium", use: { browserName: "chromium", launchOptions: { executablePath } } },
+    { name: "webkit", use: { browserName: "webkit" } },
+  ],
   webServer: {
     command: "pnpm exec vite --port 1430 --strictPort",
     url: "http://localhost:1430",

@@ -152,7 +152,8 @@ test.describe("VPN overriding the system proxy (macOS)", () => {
     await page.route("**/invoke/proxy_status", async (route) => {
       const response = await route.fetch();
       const body = await response.json();
-      if (missing) body.ok.vpn = { state: "helper_missing" };
+      // After installing, pretend the helper now routes the VPN (the fake install creates nothing).
+      body.ok.vpn = missing ? { state: "helper_missing" } : { state: "applied" };
       await route.fulfill({ response, json: body });
     });
     await reapply(page);

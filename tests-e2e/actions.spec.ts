@@ -1,11 +1,11 @@
 // Flow context menu, keyboard shortcuts, Compose, Diff, File menu (sessions / HAR).
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, read, row, test } from "./fixtures";
+import { copied, expect, read, row, test } from "./fixtures";
 
 const paths = (page: import("@playwright/test").Page) => page.locator(".flow-row:not(.head) .c-path");
 const menu = (page: import("@playwright/test").Page, label: string | RegExp) => page.locator(".menu > div", { hasText: label });
-const clip = (page: import("@playwright/test").Page) => page.evaluate(() => navigator.clipboard.readText());
+const clip = copied;
 
 test("repeat, edit & repeat, pin, highlight, delete", async ({ sniffo }) => {
   const { page } = sniffo;

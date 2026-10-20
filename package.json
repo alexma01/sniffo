@@ -10,7 +10,7 @@
     "tauri": "tauri",
     "test:ui": "node tests-ui/snippets.test.ts && node tests-ui/protobuf.test.ts",
     "test:e2e": "playwright test",
-    "test": "pnpm test:ui && cargo test -p sniffo-core && cargo test -p sniffo && playwright test"
+    "test": "pnpm test:ui && cargo test -p sniffo-core && cargo test -p sniffo"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.21",

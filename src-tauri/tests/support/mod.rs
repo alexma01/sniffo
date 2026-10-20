@@ -9,7 +9,7 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use tauri::{Listener, Manager, ipc::{CallbackFn, InvokeBody, InvokeResponseBody}, test::MockRuntime, webview::InvokeRequest};
@@ -26,7 +26,7 @@ pub struct Fakes {
 /// answer like the real tools. Installed once per process, before anything runs a command.
 #[cfg(unix)]
 pub fn fakes() -> &'static Fakes {
-    static FAKES: OnceLock<Fakes> = OnceLock::new();
+    static FAKES: std::sync::OnceLock<Fakes> = std::sync::OnceLock::new();
     FAKES.get_or_init(|| {
         let dir = std::env::temp_dir().join(format!("sniffo-fakes-{}", std::process::id()));
         let bin = dir.join("bin");
@@ -266,7 +266,8 @@ pub fn wait<T>(what: &str, mut f: impl FnMut() -> Option<T>) -> T {
 /// process can't grab it while the proxy restarts on it.
 pub fn free_port() -> u16 {
     static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
-    let base = 20_000 + (std::process::id() % 400) as u16 * 40;
+    // Below 32768, where Linux starts handing out ephemeral ports (macOS: 49152).
+    let base = 20_000 + (std::process::id() % 100) as u16 * 40;
     loop {
         let port = base + NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 8_000;
         // Both: a socket on one address doesn't always block binding the other.
