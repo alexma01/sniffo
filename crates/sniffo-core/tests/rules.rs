@@ -207,3 +207,33 @@ async fn no_caching_strips_cache_headers() {
     let f = s.engine.flow(1).unwrap();
     assert!(!f.request.headers.iter().any(|(k, _)| k == "if-none-match"), "conditional header removed before forwarding");
 }
+
+/// An upstream answering with `Transfer-Encoding: chunked`; the edited response must carry a
+/// single framing header (strict clients like Node reject both at once).
+#[tokio::test]
+async fn edited_chunked_responses_are_reframed() {
+    use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpListener};
+    let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let up = l.local_addr().unwrap();
+    tokio::spawn(async move {
+        while let Ok((mut s, _)) = l.accept().await {
+            tokio::spawn(async move {
+                let mut buf = [0u8; 4096];
+                let _ = s.read(&mut buf).await;
+                let _ = s.write_all(b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ntransfer-encoding: chunked\r\n\r\n7\r\n{\"a\":1}\r\n0\r\n\r\n").await;
+            });
+        }
+    });
+    let s = start(vec![]).await;
+    let code = "function onResponse(c, req, res) { res.body.b = 2; return res; }";
+    s.engine.set_rules(rules("*", Action::Script { code: code.into() }));
+    let mut tcp = tokio::net::TcpStream::connect(s.proxy.addr).await.unwrap();
+    tcp.write_all(format!("GET http://{up}/x HTTP/1.1\r\nhost: {up}\r\nconnection: close\r\n\r\n").as_bytes()).await.unwrap();
+    let mut raw = String::new();
+    tcp.read_to_string(&mut raw).await.unwrap();
+    let (head, body) = raw.split_once("\r\n\r\n").unwrap();
+    let head = head.to_ascii_lowercase();
+    assert!(!(head.contains("transfer-encoding") && head.contains("content-length")), "both framing headers:\n{head}");
+    assert!(head.contains("content-length: 13"), "{head}");
+    assert_eq!(body, r#"{"a":1,"b":2}"#);
+}

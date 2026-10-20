@@ -424,7 +424,7 @@ export default function App() {
           <div onClick={async () => {
             const body = new TextDecoder().decode(await api.getBody(menuFlow.id, true));
             const flow = await api.getFlow(menuFlow.id);
-            const headers = (flow?.response?.headers ?? []).filter(([k]) => !["content-length", "content-encoding", "transfer-encoding"].includes(k.toLowerCase()));
+            const headers = (flow?.response?.headers ?? []).filter(([k]) => !["content-length", "content-encoding", "transfer-encoding", "connection", "keep-alive"].includes(k.toLowerCase()));
             setRulesDraft(newRule(menuFlow.url.split("?")[0] + "*", { type: "map_local", status: flow?.status ?? 200, headers, body, file: null }));
           }}>Map Local…</div>
           <div onClick={() => setRulesDraft(newRule(`${menuFlow.url.split("://")[0]}://${menuFlow.host}/*`, defaultAction("map_remote")))}>Map Remote…</div>

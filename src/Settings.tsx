@@ -2,6 +2,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import { api, NetworkOptions, ProtoSchemas, ProxyStatus, ReverseProxy, SslProxying } from "./api";
 
+export const SCHEMAS_CHANGED = "sniffo:schemas";
+
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
 
 export function Settings(props: { status: ProxyStatus | null; onClose: () => void; onChanged: () => void }) {
@@ -16,7 +18,10 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
   const [reverse, setReverse] = useState<ReverseProxy[]>([]);
   const [reverseErrors, setReverseErrors] = useState<(string | null)[]>([]);
   const [proto, setProto] = useState<ProtoSchemas | null>(null);
-  const setProtoFiles = (files: string[]) => api.setProtoFiles(files).then((p) => { setProto(p); setMsg(null); }, (e) => setMsg(String(e)));
+  const setProtoFiles = (files: string[]) => api.setProtoFiles(files).then((p) => {
+    setProto(p); setMsg(null);
+    window.dispatchEvent(new Event(SCHEMAS_CHANGED)); // open protobuf bodies reload their types
+  }, (e) => setMsg(String(e)));
 
   useEffect(() => {
     api.getSsl().then((s) => { setSsl(s); setInclude(s.include.join("\n")); setExclude(s.exclude.join("\n")); });
@@ -79,7 +84,7 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
             <label className="row"><input type="checkbox" checked={ssl.enabled} onChange={(e) => setSsl({ ...ssl, enabled: e.target.checked })} /> Decrypt HTTPS traffic</label>
           )}
           <div className="cols">
-            <label>Include hosts (one per line, <code>*</code> wildcard)
+            <label><span>Include hosts (one per line, <code>*</code> wildcard)</span>
               <textarea value={include} onChange={(e) => setInclude(e.target.value)} rows={6} />
             </label>
             <label>Exclude hosts (tunnelled untouched)

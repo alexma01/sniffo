@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, Flow, FlowSummary, formatBytes, header, Headers, WsMessage } from "./api";
 import { JsonTree } from "./JsonTree";
 import { decode, grpcFrames, toPlain } from "./protobuf";
+import { SCHEMAS_CHANGED } from "./Settings";
 
 type Tab = "headers" | "query" | "cookies" | "body" | "raw" | "timing" | "messages" | "graphql";
 
@@ -90,7 +91,12 @@ function ProtoBody({ flow, response, bytes, contentType }: { flow: Flow; respons
   const [decoded, setDecoded] = useState<unknown[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { api.getProtoSchemas().then((s) => setTypes(s.messages)); }, []);
+  useEffect(() => {
+    const load = () => api.getProtoSchemas().then((s) => setTypes(s.messages));
+    load();
+    window.addEventListener(SCHEMAS_CHANGED, load);
+    return () => window.removeEventListener(SCHEMAS_CHANGED, load);
+  }, []);
   useEffect(() => {
     setDecoded(null); setError(null);
     if (!type) return;

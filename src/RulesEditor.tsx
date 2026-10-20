@@ -153,7 +153,11 @@ export function RulesEditor(props: { draft?: Rule | null; onClose: () => void })
     api.getRules().then((r) => { setRules(r); setPatterns(r.allow_list.patterns.join("\n")); });
   }, []);
 
-  const persist = (next: Rules) => api.setRules(next).then(() => { setRules(next); setMsg(null); }, (e) => setMsg(String(e)));
+  // Local state first, so the next edit (e.g. blur then click) builds on this one.
+  const persist = (next: Rules) => {
+    setRules(next);
+    return api.setRules(next).then(() => setMsg(null), (e) => { setMsg(String(e)); api.getRules().then(setRules); });
+  };
 
   if (!rules) return null;
 

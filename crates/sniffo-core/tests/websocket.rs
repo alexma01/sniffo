@@ -137,3 +137,27 @@ async fn breakpoint_edits_or_drops_frames() {
     let frames: Vec<_> = s.engine.flow(hit.id).unwrap().ws_messages.iter().map(|m| m.data.clone()).collect();
     assert_eq!(frames, ["edited", "edited", "after", "after"]);
 }
+
+/// A WebSocket opened through CONNECT to a host with a DNS override reaches the overridden
+/// address (Sniffo dials it as a tunnel). Its frames aren't recorded: hudsucker's own WebSocket
+/// relay would dial the host directly, ignoring the override.
+#[tokio::test]
+async fn websocket_tunnel_to_overridden_host_connects() {
+    use sniffo_core::{StartOptions, net::NetworkOptions};
+    let up = echo_server().await;
+    let ca = sniffo_core::RootCa::generate().unwrap();
+    let engine = sniffo_core::Engine::default();
+    let net = NetworkOptions { dns: vec![("ws.test".into(), "127.0.0.1".into())], ..Default::default() };
+    let h = engine.start(TcpListener::bind("127.0.0.1:0").await.unwrap(), &ca, StartOptions { network: net, ..Default::default() }).await.unwrap();
+    let target = format!("ws.test:{}", up.port());
+    let mut tcp = TcpStream::connect(h.addr).await.unwrap();
+    tcp.write_all(format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n").as_bytes()).await.unwrap();
+    let mut buf = [0u8; 1024];
+    let n = tcp.read(&mut buf).await.unwrap();
+    assert!(String::from_utf8_lossy(&buf[..n]).starts_with("HTTP/1.1 200"));
+    let (mut ws, _) = client_async(format!("ws://{target}/chat"), tcp).await.unwrap();
+    ws.send(Message::text("over the override")).await.unwrap();
+    assert_eq!(ws.next().await.unwrap().unwrap().into_text().unwrap().as_str(), "over the override");
+    let f = &engine.summaries()[0];
+    assert_eq!((f.method.as_str(), f.host.as_str(), f.ws_count), ("CONNECT", "ws.test", 0));
+}

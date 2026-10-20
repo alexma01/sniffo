@@ -3,8 +3,8 @@ use serde::Deserialize;
 use sniffo_core::devices::{self, Device};
 use sniffo_core::net::NetworkOptions;
 use sniffo_core::{BreakpointHit, Decision, Engine, Flow, FlowEvent, FlowSummary, ProxyHandle, RootCa, Rules, SslProxying, StartOptions, system};
-use std::{path::PathBuf, sync::atomic::{AtomicBool, Ordering}, time::Duration};
-use tauri::{AppHandle, Emitter, Manager, RunEvent, State, ipc::Response};
+use std::{path::{Path, PathBuf}, sync::atomic::{AtomicBool, Ordering}, time::Duration};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, State, ipc::Response};
 use tokio::{net::TcpListener, sync::Mutex};
 
 const DEFAULT_PORT: u16 = 9191;
@@ -27,6 +27,8 @@ struct AppState {
     reverse: Mutex<Vec<ProxyHandle>>,
     proto_files: std::sync::Mutex<Vec<String>>,
     proto_pool: std::sync::Mutex<Option<prost_reflect::DescriptorPool>>,
+    /// PNG cache of client app icons.
+    icons_dir: PathBuf,
 }
 
 /// Persisted user configuration.
@@ -64,6 +66,53 @@ fn yes() -> bool {
 }
 
 impl AppState {
+    /// CA, saved settings and crash recovery of the system proxy, from the app data folder.
+    fn load(dir: &Path, icons_dir: PathBuf) -> std::io::Result<Self> {
+        let ca = RootCa::load_or_create(dir)?;
+        let snapshot_path = dir.join("system-proxy-snapshot.json");
+        if system::system_proxy_enabled(&snapshot_path) {
+            tracing::warn!("previous run left the system proxy on; restoring");
+            if let Err(e) = system::disable_system_proxy(&snapshot_path) {
+                tracing::error!("restoring system proxy: {e}");
+            }
+        }
+        let engine = Engine::default();
+        let settings_path = dir.join("settings.json");
+        let mut saved = Saved { allow_lan: true, auto_system_proxy: true, ..Default::default() };
+        if let Ok(data) = std::fs::read(&settings_path) {
+            match serde_json::from_slice::<Saved>(&data) {
+                Ok(s) => saved = s,
+                Err(e) => tracing::error!("ignoring unreadable {}: {e}", settings_path.display()),
+            }
+        }
+        engine.set_ssl_proxying(saved.ssl);
+        engine.set_rules(saved.rules);
+        let proto_pool = match saved.proto_files.is_empty() {
+            true => None,
+            false => sniffo_core::schema::load(&saved.proto_files.iter().map(PathBuf::from).collect::<Vec<_>>())
+                .inspect_err(|e| tracing::error!("protobuf schemas: {e}"))
+                .ok(),
+        };
+        Ok(AppState {
+            engine,
+            ca,
+            ca_path: dir.join("sniffo-ca.pem"),
+            snapshot_path,
+            settings_path,
+            allow_lan: AtomicBool::new(saved.allow_lan),
+            auto_system_proxy: AtomicBool::new(saved.auto_system_proxy),
+            want_system_proxy: AtomicBool::new(false),
+            vpn: std::sync::Mutex::new(system::VpnProxy::NotNeeded),
+            proxy: Mutex::new(None),
+            network: std::sync::Mutex::new(saved.network),
+            reverse_cfg: std::sync::Mutex::new(saved.reverse),
+            reverse: Mutex::new(vec![]),
+            proto_files: std::sync::Mutex::new(saved.proto_files),
+            proto_pool: std::sync::Mutex::new(proto_pool),
+            icons_dir,
+        })
+    }
+
     fn save(&self) -> Result<(), String> {
         let saved = Saved {
             allow_lan: self.allow_lan.load(Ordering::Relaxed),
@@ -112,6 +161,12 @@ async fn proxy_status(state: State<'_, AppState>) -> Result<ProxyStatus, String>
 
 #[tauri::command]
 async fn start_proxy(state: State<'_, AppState>, port: Option<u16>) -> Result<String, String> {
+    // The OS may let 0.0.0.0:P and 127.0.0.1:P coexist; a reverse proxy there would steal our
+    // traffic. Checked before the running proxy is stopped (reverse lock first, as start_reverse).
+    let wanted = port.unwrap_or(DEFAULT_PORT);
+    if state.reverse.lock().await.iter().any(|h| h.addr.port() == wanted) {
+        return Err(format!("cannot listen on port {wanted}: a reverse proxy uses it"));
+    }
     let mut proxy = state.proxy.lock().await;
     if let Some(p) = proxy.take() {
         p.stop().await;
@@ -259,6 +314,8 @@ fn get_network(state: State<'_, AppState>) -> NetworkOptions {
 /// Saves outgoing-connection options and restarts the proxy so they take effect.
 #[tauri::command]
 async fn set_network(state: State<'_, AppState>, network: NetworkOptions) -> Result<(), String> {
+    // A bad entry must not stop the running proxy or be saved for the next launch.
+    network.validate()?;
     *state.network.lock().unwrap() = network;
     state.save()?;
     let port = state.proxy.lock().await.as_ref().map(|p| p.addr.port());
@@ -287,10 +344,15 @@ async fn start_reverse(state: &AppState, entries: &[ReverseProxy]) -> Result<Vec
         h.stop().await;
     }
     let network = state.network.lock().unwrap().clone();
+    let proxy_port = state.proxy.lock().await.as_ref().map(|p| p.addr.port());
     let mut errors = vec![];
     for e in entries {
         if !e.enabled {
             errors.push(None);
+            continue;
+        }
+        if Some(e.port) == proxy_port {
+            errors.push(Some(format!("port {}: it's the proxy's own port", e.port)));
             continue;
         }
         let opts = StartOptions { network: network.clone(), reverse_target: Some(e.target.clone()), ..Default::default() };
@@ -309,9 +371,9 @@ async fn start_reverse(state: &AppState, entries: &[ReverseProxy]) -> Result<Vec
 /// PNG icon of a client app (macOS: from its bundle's .icns via sips), cached on disk.
 /// Empty response = no icon (CLI tools, LAN devices, other platforms).
 #[tauri::command]
-async fn app_icon(app: AppHandle, state: State<'_, AppState>, name: String) -> Result<Response, String> {
+async fn app_icon(state: State<'_, AppState>, name: String) -> Result<Response, String> {
     let Some(bundle) = state.engine.client_app_bundle(&name) else { return Ok(Response::new(vec![])) };
-    let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("icons");
+    let dir = state.icons_dir.clone();
     let key: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
     let png = dir.join(format!("{key}.png"));
     let bytes = tauri::async_runtime::spawn_blocking(move || -> Option<Vec<u8>> {
@@ -443,7 +505,12 @@ fn export_rules(state: State<'_, AppState>, path: String) -> Result<usize, Strin
 #[tauri::command]
 fn import_rules(state: State<'_, AppState>, path: String) -> Result<usize, String> {
     let data = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
-    let incoming: Rules = serde_json::from_slice(&data).map_err(|e| format!("not a Sniffo rules file: {e}"))?;
+    // Every field has a default, so check the shape: any other JSON would import "0 rules".
+    let value: serde_json::Value = serde_json::from_slice(&data).map_err(|e| format!("not a Sniffo rules file: {e}"))?;
+    if !value.get("rules").is_some_and(serde_json::Value::is_array) {
+        return Err("not a Sniffo rules file: no \"rules\" list".into());
+    }
+    let incoming: Rules = serde_json::from_value(value).map_err(|e| format!("not a Sniffo rules file: {e}"))?;
     let mut rules = state.engine.rules();
     let n = incoming.rules.len();
     let stamp = sniffo_core::flow::now_ms();
@@ -472,7 +539,7 @@ fn send_ws_message(state: State<'_, AppState>, id: u64, to_server: bool, data: S
 }
 
 /// Forwards engine events to the UI in batches so heavy traffic doesn't flood IPC.
-fn forward_events(app: AppHandle, engine: &Engine) {
+fn forward_events<R: Runtime>(app: AppHandle<R>, engine: &Engine) {
     let mut rx = engine.subscribe();
     tauri::async_runtime::spawn(async move {
         let mut batch: Vec<FlowEvent> = Vec::new();
@@ -493,50 +560,19 @@ fn forward_events(app: AppHandle, engine: &Engine) {
     });
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into())).init();
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
-            let dir = app.path().app_data_dir()?;
-            let ca = RootCa::load_or_create(&dir)?;
-            let snapshot_path = dir.join("system-proxy-snapshot.json");
-            if system::system_proxy_enabled(&snapshot_path) {
-                tracing::warn!("previous run left the system proxy on; restoring");
-                if let Err(e) = system::disable_system_proxy(&snapshot_path) {
-                    tracing::error!("restoring system proxy: {e}");
-                }
-            }
-            let engine = Engine::default();
-            let settings_path = dir.join("settings.json");
-            let (mut allow_lan, mut auto_system_proxy) = (true, true);
-            let (mut network, mut reverse_cfg, mut proto_files) = (NetworkOptions::default(), vec![], vec![]);
-            if let Ok(data) = std::fs::read(&settings_path) {
-                match serde_json::from_slice::<Saved>(&data) {
-                    Ok(saved) => {
-                        allow_lan = saved.allow_lan;
-                        auto_system_proxy = saved.auto_system_proxy;
-                        network = saved.network;
-                        reverse_cfg = saved.reverse;
-                        proto_files = saved.proto_files;
-                        engine.set_ssl_proxying(saved.ssl);
-                        engine.set_rules(saved.rules);
-                    }
-                    Err(e) => tracing::error!("ignoring unreadable {}: {e}", settings_path.display()),
-                }
-            }
-            forward_events(app.handle().clone(), &engine);
-            app.manage(AppState { engine, ca, ca_path: dir.join("sniffo-ca.pem"), snapshot_path, settings_path, allow_lan: AtomicBool::new(allow_lan), auto_system_proxy: AtomicBool::new(auto_system_proxy), want_system_proxy: AtomicBool::new(false), vpn: std::sync::Mutex::new(system::VpnProxy::NotNeeded), proxy: Mutex::new(None),
-                network: std::sync::Mutex::new(network), reverse_cfg: std::sync::Mutex::new(reverse_cfg.clone()), reverse: Mutex::new(vec![]),
-                proto_pool: std::sync::Mutex::new(match proto_files.is_empty() {
-                    true => None,
-                    false => sniffo_core::schema::load(&proto_files.iter().map(PathBuf::from).collect::<Vec<_>>())
-                        .inspect_err(|e| tracing::error!("protobuf schemas: {e}"))
-                        .ok(),
-                }),
-                proto_files: std::sync::Mutex::new(proto_files) });
+/// Commands, state and background tasks, shared by the desktop app, its tests and the UI test
+/// bridge. `data_dir` replaces the app data folder (CA, settings, system-proxy snapshot).
+pub fn setup<R: Runtime>(builder: tauri::Builder<R>, data_dir: Option<PathBuf>) -> tauri::Builder<R> {
+    builder
+        .setup(move |app| {
+            let (dir, icons) = match data_dir {
+                Some(d) => (d.clone(), d.join("icons")),
+                None => (app.path().app_data_dir()?, app.path().app_cache_dir()?.join("icons")),
+            };
+            let state = AppState::load(&dir, icons)?;
+            let reverse_cfg = state.reverse_cfg.lock().unwrap().clone();
+            forward_events(app.handle().clone(), &state.engine);
+            app.manage(state);
             // A panic can abort the process (tokio worker threads do) before the Exit handler runs:
             // undo the system proxy first so the user never loses network to a dead proxy.
             let snap = app.state::<AppState>().snapshot_path.clone();
@@ -569,20 +605,44 @@ pub fn run() {
                     errors.into_iter().flatten().for_each(|e| tracing::error!("reverse proxy: {e}"));
                 }
             });
+            // kill, logout, Ctrl+C or a `tauri dev` rebuild end the process without RunEvent::Exit:
+            // put the OS proxy back first, or the machine is left without network.
+            #[cfg(unix)]
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    use tokio::signal::unix::{SignalKind, signal};
+                    let (Ok(mut term), Ok(mut int), Ok(mut hup)) = (signal(SignalKind::terminate()), signal(SignalKind::interrupt()), signal(SignalKind::hangup())) else { return };
+                    tokio::select! { _ = term.recv() => {}, _ = int.recv() => {}, _ = hup.recv() => {} }
+                    restore_system_proxy(&handle);
+                    std::process::exit(0);
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, install_vpn_helper, list_devices, device_command, app_icon, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
             get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, export_rules, import_rules, get_proto_schemas, set_proto_files, decode_proto, list_breakpoints, resume_breakpoint, send_ws_message
         ])
+}
+
+/// Puts the OS proxy settings back (on quit; also used by the test bridge).
+pub fn restore_system_proxy<R: Runtime>(app: &AppHandle<R>) {
+    let state = app.state::<AppState>();
+    if let Err(e) = system::disable_system_proxy(&state.snapshot_path) {
+        tracing::error!("restoring system proxy on exit: {e}");
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into())).init();
+    setup(tauri::Builder::default().plugin(tauri_plugin_opener::init()).plugin(tauri_plugin_dialog::init()), None)
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
             if let RunEvent::Exit = event {
-                let state = app.state::<AppState>();
-                if let Err(e) = system::disable_system_proxy(&state.snapshot_path) {
-                    tracing::error!("restoring system proxy on exit: {e}");
-                }
+                restore_system_proxy(app);
             }
         });
 }

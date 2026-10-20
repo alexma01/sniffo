@@ -159,7 +159,7 @@ function Connected({ onWifi, port }: { onWifi: () => void; port: number }) {
             <span>{ICON[d.platform]}</span>
             <div className="grow">
               <div className="ellipsis"><b>{d.name}</b></div>
-              <div className="muted small">{KIND[d.platform]} · {d.os}{d.platform === "ios_device" || d.platform === "android" ? ` · ${d.state}` : ""}</div>
+              <div className="muted small">{[KIND[d.platform], d.os, d.platform === "ios_device" || d.platform === "android" ? d.state : ""].filter(Boolean).join(" · ")}</div>
             </div>
             <span className={`dot ${running(d) ? "on" : "off"}`} title={d.state} />
           </div>
@@ -169,7 +169,7 @@ function Connected({ onWifi, port }: { onWifi: () => void; port: number }) {
         {device && (
           <>
             <h4>{ICON[device.platform]} {device.name}</h4>
-            <p className="muted">{KIND[device.platform]} · {device.os} · {device.state} · <code className="small">{device.id}</code></p>
+            <p className="muted">{[KIND[device.platform], device.os, device.state].filter(Boolean).join(" · ")} · <code className="small">{device.id}</code></p>
             {device.platform === "ios_device" ? (
               <p>
                 {running(device) ? "Connected. " : "Not connected — plug it in with USB and unlock it. "}

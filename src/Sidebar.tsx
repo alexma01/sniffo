@@ -15,6 +15,18 @@ const load = <T,>(key: string, fallback: T): T => {
 const save = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* storage unavailable */ } };
 interface Target { host: string; x: number; y: number }
 
+// Module level: a component defined inside Sidebar would remount (losing focus and clicks) on every render.
+function Section({ title, count, open, onToggle, children }: { title: string; count: number; open: boolean; onToggle: () => void; children: ReactNode }) {
+  return (
+    <div className="side-section">
+      <div className="side-title acc" onClick={onToggle}>
+        <span>{open ? "▾" : "▸"} {title}</span> <span className="muted">{count}</span>
+      </div>
+      {open && children}
+    </div>
+  );
+}
+
 export function Sidebar(props: {
   flows: Map<number, FlowSummary>;
   filter: Filter;
@@ -99,14 +111,7 @@ export function Sidebar(props: {
   const isPinned = (host: string) => pins.some((p) => p.host === host);
   const togglePin = (host: string) => setPins((ps) => (isPinned(host) ? ps.filter((p) => p.host !== host) : [...ps, { host }]));
 
-  const Section = ({ id, title, count, children }: { id: string; title: string; count: number; children: ReactNode }) => (
-    <div className="side-section">
-      <div className="side-title acc" onClick={() => setCollapsed((c) => ({ ...c, [id]: !c[id] }))}>
-        <span>{collapsed[id] && !q ? "▸" : "▾"} {title}</span> <span className="muted">{count}</span>
-      </div>
-      {(!collapsed[id] || q) && children}
-    </div>
-  );
+  const sectionProps = (id: string) => ({ open: !collapsed[id] || !!q, onToggle: () => setCollapsed((c) => ({ ...c, [id]: !c[id] })) });
 
   const item = (host: string, keyPrefix: string) => (
     <div
@@ -141,7 +146,7 @@ export function Sidebar(props: {
         <span className="grow">All</span> <span className="muted">{flows.size}</span>
       </div>
 
-      <Section id="pinned" title="Pinned" count={pinList.length + (pinnedFlows ? 1 : 0)}>
+      <Section {...sectionProps("pinned")} title="Pinned" count={pinList.length + (pinnedFlows ? 1 : 0)}>
         <div className={`side-item ${filter.pinnedOnly ? "active" : ""}`} onClick={() => set({ host: null, pinnedOnly: !filter.pinnedOnly })}>
           <span className="grow">📌 Pinned flows</span> <span className="muted">{pinnedFlows}</span>
         </div>
@@ -149,11 +154,11 @@ export function Sidebar(props: {
         {!pinList.length && !q && <div className="muted side-hint">Right-click a domain → Pin</div>}
       </Section>
 
-      <Section id="mac" title="This Mac" count={macApps.length}>
+      <Section {...sectionProps("mac")} title="This Mac" count={macApps.length}>
         {macApps.map(([a, n]) => clientRow(a, n))}
       </Section>
 
-      <Section id="devices" title="Devices" count={devices.length}>
+      <Section {...sectionProps("devices")} title="Devices" count={devices.length}>
         {devices.map(([a, n]) => clientRow(a, n))}
         {!devices.length && !q && <div className="muted side-hint">Phones using this proxy appear here (Devices button in the toolbar)</div>}
       </Section>
@@ -168,7 +173,7 @@ export function Sidebar(props: {
         </div>
       )}
 
-      <Section id="domains" title="Domains" count={domainList.length}>
+      <Section {...sectionProps("domains")} title="Domains" count={domainList.length}>
         {domainList.map(([h]) => item(h, "dom:"))}
       </Section>
 

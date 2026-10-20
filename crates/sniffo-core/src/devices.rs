@@ -78,8 +78,9 @@ fn sdk_tool(dir: &str, name: &str) -> Option<PathBuf> {
     })
 }
 
+/// From PATH (normally /usr/bin), so tests can substitute it.
 fn xcrun() -> &'static Path {
-    Path::new("/usr/bin/xcrun")
+    Path::new("xcrun")
 }
 
 pub fn list() -> Vec<Device> {
@@ -233,7 +234,7 @@ fn ios_sim(udid: &str, cmd: &Command, ctx: &Context) -> Result<String, String> {
         }
         Command::Boot => {
             simctl(&["boot", udid])?;
-            let _ = run(Path::new("/usr/bin/open"), &["-a", "Simulator"]);
+            let _ = run(Path::new("open"), &["-a", "Simulator"]);
             Ok("Simulator booted".into())
         }
         Command::Shutdown => simctl(&["shutdown", udid]).map(|_| "Simulator shut down".into()),

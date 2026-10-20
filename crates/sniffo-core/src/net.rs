@@ -49,6 +49,23 @@ pub struct NetworkOptions {
     pub ignore_upstream_tls_errors: bool,
 }
 
+impl Upstream {
+    pub fn uri(&self) -> Result<hudsucker::hyper::Uri, String> {
+        if self.host.trim().is_empty() {
+            return Err("upstream proxy: enter its host".into());
+        }
+        format!("http://{}:{}", self.host.trim(), self.port).parse().map_err(|e| format!("upstream proxy address: {e}"))
+    }
+}
+
+impl NetworkOptions {
+    /// Errors a proxy started with these options would fail with: checked before saving them.
+    pub fn validate(&self) -> Result<(), String> {
+        OverrideResolver::new(&self.dns)?;
+        self.upstream.as_ref().map(Upstream::uri).transpose().map(drop)
+    }
+}
+
 /// System DNS, except for overridden hosts.
 #[derive(Clone)]
 pub struct OverrideResolver {

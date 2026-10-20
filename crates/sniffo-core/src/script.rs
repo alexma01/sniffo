@@ -54,7 +54,8 @@ pub fn run(code: &str, function: &str, args: &Value, shared: &mut Value) -> Outp
     let logs = Rc::new(RefCell::new(Vec::new()));
     let mut out = Output::default();
     let started = Instant::now();
-    let result = (|| -> rquickjs::Result<Option<String>> {
+    // Outer error: the engine (or the interrupt); inner error: what the script threw.
+    let result = (|| -> rquickjs::Result<Result<Option<String>, String>> {
         let rt = Runtime::new()?;
         rt.set_memory_limit(MEMORY_LIMIT);
         let deadline = started + TIMEOUT;
@@ -78,20 +79,21 @@ pub fn run(code: &str, function: &str, args: &Value, shared: &mut Value) -> Outp
         }
         ctx.with(|ctx| {
             let g = ctx.globals();
-            if let Ok(err) = g.get::<_, String>("__err") {
-                return Err(rquickjs::Error::new_from_js_message("script", "error", err));
-            }
-            Ok(g.get::<_, String>("__out").ok())
+            Ok(match g.get::<_, String>("__err") {
+                Ok(err) => Err(err),
+                Err(_) => Ok(g.get::<_, String>("__out").ok()),
+            })
         })
     })();
     match result {
-        Ok(Some(json)) => {
+        Ok(Err(thrown)) => out.error = Some(thrown),
+        Ok(Ok(Some(json))) => {
             if let Ok(v) = serde_json::from_str::<Value>(&json) {
                 *shared = v["shared"].clone();
                 out.value = Some(v["value"].clone()).filter(|v| !v.is_null());
             }
         }
-        Ok(None) => out.error = Some(format!("script did not finish within {} ms", TIMEOUT.as_millis())),
+        Ok(Ok(None)) => out.error = Some(format!("script did not finish within {} ms", TIMEOUT.as_millis())),
         // The interrupt surfaces as an opaque, uncatchable exception.
         Err(_) if started.elapsed() >= TIMEOUT => out.error = Some(format!("script interrupted after {} ms", TIMEOUT.as_millis())),
         Err(e) => out.error = Some(e.to_string()),
@@ -181,7 +183,8 @@ mod tests {
         assert_eq!(out.value.unwrap()["status"], 201, "async functions are awaited");
         assert!(run("function other() {}", "onRequest", &json!([]), &mut shared).value.is_none());
         assert!(run("function onRequest( {", "onRequest", &json!([]), &mut shared).error.unwrap().contains("SyntaxError"));
-        assert!(run("function onRequest() { throw new Error('boom') }", "onRequest", &json!([]), &mut shared).error.unwrap().contains("boom"));
+        let thrown = run("function onRequest() { throw new Error('boom') }", "onRequest", &json!([]), &mut shared).error.unwrap();
+        assert!(thrown.starts_with("Error: boom"), "the script's own message, unwrapped: {thrown}");
         let t = Instant::now();
         let out = run("function onRequest() { while (true) {} }", "onRequest", &json!([]), &mut shared);
         let err = out.error.unwrap();

@@ -388,10 +388,12 @@ impl Engine {
         // hyper-rustls handles https; the plain connector must let those URIs through.
         http.enforce_http(false);
 
+        let overrides: std::collections::HashSet<String> = opts.network.dns.iter().map(|(h, _)| h.trim().to_ascii_lowercase()).collect();
+        let via = |dial: Dialer, upstream: bool| (upstream || !overrides.is_empty()).then(|| Arc::new(TunnelVia { dial, upstream, overrides: overrides.clone() }));
         match &opts.network.upstream {
-            None => self.launch(listener, ca, &opts, tls.clone(), https(tls, http)).await,
+            None => self.launch(listener, ca, &opts, tls.clone(), https(tls, http.clone()), via(dialer(http), false)).await,
             Some(up) => {
-                let uri: Uri = format!("http://{}:{}", up.host, up.port).parse().map_err(|e| format!("upstream proxy address: {e}"))?;
+                let uri = up.uri()?;
                 match up.kind {
                     UpstreamKind::Http => {
                         let mut tunnel = Tunnel::new(uri, http);
@@ -400,21 +402,21 @@ impl Engine {
                             let token = base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", up.username, up.password));
                             tunnel = tunnel.with_auth(HeaderValue::from_str(&format!("Basic {token}")).map_err(|e| e.to_string())?);
                         }
-                        self.launch(listener, ca, &opts, tls.clone(), https(tls, tunnel)).await
+                        self.launch(listener, ca, &opts, tls.clone(), https(tls, tunnel.clone()), via(dialer(tunnel), true)).await
                     }
                     UpstreamKind::Socks5 => {
                         let mut socks = SocksV5::new(uri, http);
                         if !up.username.is_empty() {
                             socks = socks.with_auth(up.username.clone(), up.password.clone());
                         }
-                        self.launch(listener, ca, &opts, tls.clone(), https(tls, socks)).await
+                        self.launch(listener, ca, &opts, tls.clone(), https(tls, socks.clone()), via(dialer(socks), true)).await
                     }
                 }
             }
         }
     }
 
-    async fn launch<C>(&self, listener: TcpListener, ca: &RootCa, opts: &StartOptions, tls: ClientConfig, connector: C) -> Result<ProxyHandle, String>
+    async fn launch<C>(&self, listener: TcpListener, ca: &RootCa, opts: &StartOptions, tls: ClientConfig, connector: C, tunnel: Option<Arc<TunnelVia>>) -> Result<ProxyHandle, String>
     where
         C: hudsucker::hyper_util::client::legacy::connect::Connect + Clone + Send + Sync + 'static,
     {
@@ -445,6 +447,7 @@ impl Engine {
                 reverse,
                 no_caching: false,
                 connect: None,
+                tunnel,
             })
             .with_graceful_shutdown(async { let _ = rx.await; })
             .build()
@@ -460,6 +463,42 @@ impl Engine {
 
 fn https<C>(tls: ClientConfig, inner: C) -> hyper_rustls::HttpsConnector<C> {
     hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls).https_or_http().enable_http1().enable_http2().wrap_connector(inner)
+}
+
+trait TunnelIo: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> TunnelIo for T {}
+type Dialer = Arc<dyn Fn(Uri) -> Pin<Box<dyn Future<Output = Result<Box<dyn TunnelIo>, String>> + Send>> + Send + Sync>;
+
+/// Opens undecrypted CONNECT tunnels with the same connector as decrypted traffic, so DNS
+/// overrides and the upstream proxy apply to them too (hudsucker would dial the host directly).
+struct TunnelVia {
+    dial: Dialer,
+    upstream: bool,
+    /// Hosts with a DNS override (lowercase).
+    overrides: std::collections::HashSet<String>,
+}
+
+impl TunnelVia {
+    fn needed(&self, host: &str) -> bool {
+        self.upstream || self.overrides.contains(&host.to_ascii_lowercase())
+    }
+}
+
+fn dialer<S>(svc: S) -> Dialer
+where
+    S: tower_service::Service<Uri> + Clone + Send + Sync + 'static,
+    S::Response: hudsucker::hyper::rt::Read + hudsucker::hyper::rt::Write + Unpin + Send + 'static,
+    S::Future: Send,
+    S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    Arc::new(move |uri| {
+        let mut svc = svc.clone();
+        Box::pin(async move {
+            std::future::poll_fn(|cx| svc.poll_ready(cx)).await.map_err(|e| e.into().to_string())?;
+            let io = svc.call(uri).await.map_err(|e| e.into().to_string())?;
+            Ok(Box::new(hyper_util::rt::TokioIo::new(io)) as Box<dyn TunnelIo>)
+        })
+    })
 }
 
 pub struct ProxyHandle {
@@ -478,6 +517,9 @@ impl ProxyHandle {
         }
         if tokio::time::timeout(STOP_GRACE, &mut self.task).await.is_err() {
             self.task.abort();
+            // abort() only schedules cancellation: wait until the listener is dropped so a
+            // restart on the same port (allow LAN, network options) can bind it again.
+            let _ = (&mut self.task).await;
         }
     }
 }
@@ -502,6 +544,7 @@ struct Capture {
     lookup: Option<Arc<Mutex<Option<JoinHandle<()>>>>>,
     /// CONNECT request of this tunnel, recorded as a flow if its TLS is not decrypted.
     connect: Option<Arc<hudsucker::hyper::http::request::Parts>>,
+    tunnel: Option<Arc<TunnelVia>>,
 }
 
 const CERT_PAGE: &str = r#"<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -564,10 +607,23 @@ fn apply_body(headers: &mut HeaderMap, original: Bytes, edited: Option<String>) 
         None => original,
         Some(text) => {
             headers.remove("content-encoding");
+            // The new body has a known length: chunked framing from the original would conflict.
+            headers.remove("transfer-encoding");
             headers.insert("content-length", HeaderValue::from(text.len()));
             Bytes::from(text)
         }
     }
+}
+
+/// `https://h:443/p` -> `https://h/p` (and :80 for http); `None` when there's nothing to drop.
+fn without_default_port(uri: &Uri) -> Option<Uri> {
+    let default = match uri.scheme_str()? { "https" | "wss" => 443, "http" | "ws" => 80, _ => return None };
+    if uri.port_u16()? != default {
+        return None;
+    }
+    let mut parts = uri.clone().into_parts();
+    parts.authority = Some(uri.host()?.parse().ok()?);
+    Uri::from_parts(parts).ok()
 }
 
 fn map_remote(uri: &Uri, plan: &Plan) -> Option<Uri> {
@@ -687,10 +743,10 @@ impl Capture {
 
     /// A TLS tunnel passed through untouched: one row so it is visible and can be enabled for decryption.
     /// ponytail: no byte counts, hudsucker copies the tunnel internally; wrap the stream if they matter.
-    fn record_tunnel(&mut self, ctx: &HttpContext, parts: &hudsucker::hyper::http::request::Parts) {
+    fn record_tunnel(&mut self, ctx: &HttpContext, parts: &hudsucker::hyper::http::request::Parts) -> Option<FlowId> {
         let url = format!("https://{}", parts.uri);
         if !self.engine.rules.read().unwrap().plan("CONNECT", &url).record {
-            return;
+            return None;
         }
         let id = self.record(ctx, parts, &Bytes::new(), vec![]);
         self.engine.update(id, |f| {
@@ -699,6 +755,36 @@ impl Capture {
             f.path = String::new();
             f.state = FlowState::Complete;
         });
+        Some(id)
+    }
+
+    /// Undecrypted CONNECT through `via`: dial first (a failure is a 502 the client can see),
+    /// then pipe the upgraded connection.
+    async fn tunnel_via(&mut self, ctx: &HttpContext, req: Request<Body>, via: &TunnelVia) -> Response<Body> {
+        let (parts, body) = req.into_parts();
+        let id = self.record_tunnel(ctx, &parts);
+        let authority = parts.uri.authority().map(|a| a.to_string()).unwrap_or_default();
+        let target = match format!("http://{authority}").parse() {
+            Ok(t) => (via.dial)(t).await,
+            Err(e) => Err(format!("{e}")),
+        };
+        let mut server = match target {
+            Ok(s) => s,
+            Err(e) => {
+                let msg = format!("tunnel to {authority}: {e}");
+                if let Some(id) = id {
+                    self.engine.update(id, |f| { f.state = FlowState::Failed; f.error = Some(msg.clone()); });
+                }
+                return error_response(StatusCode::BAD_GATEWAY, msg);
+            }
+        };
+        let upgrade = hudsucker::hyper::upgrade::on(Request::from_parts(parts, body));
+        tokio::spawn(async move {
+            if let Ok(client) = upgrade.await {
+                let _ = tokio::io::copy_bidirectional(&mut hyper_util::rt::TokioIo::new(client), &mut server).await;
+            }
+        });
+        Response::new(Body::empty())
     }
 
     /// Records a response generated by the proxy itself (block, map local, abort).
@@ -723,6 +809,10 @@ impl Capture {
 impl HttpHandler for Capture {
     async fn handle_request(&mut self, ctx: &HttpContext, req: Request<Body>) -> RequestOrResponse {
         if req.method() == Method::CONNECT {
+            let host = req.uri().host().unwrap_or_default().to_owned();
+            if let Some(via) = self.tunnel.clone().filter(|t| t.needed(&host) && !self.engine.ssl.read().unwrap().should_decrypt(&host)) {
+                return self.tunnel_via(ctx, req, &via).await.into();
+            }
             let (parts, body) = req.into_parts();
             self.connect = Some(Arc::new(parts.clone()));
             return Request::from_parts(parts, body).into();
@@ -741,6 +831,11 @@ impl HttpHandler for Capture {
         }
         if parts.uri.authority().is_none() || parts.uri.host() == Some(CERT_HOST) {
             return cert_response(parts.uri.path(), &self.ca).into();
+        }
+        // Decrypted requests carry the CONNECT authority ("host:443"): rules like
+        // https://host/* and the recorded URL must see the URL as the client wrote it.
+        if let Some(uri) = without_default_port(&parts.uri) {
+            parts.uri = uri;
         }
         self.is_head = parts.method == Method::HEAD;
         let rules = self.engine.rules.read().unwrap().clone();
@@ -1036,9 +1131,11 @@ impl WebSocketHandler for Frames {
         mut stream: impl Stream<Item = Result<WsMsg, hudsucker::tokio_tungstenite::tungstenite::Error>> + Unpin + Send + 'static,
         mut sink: impl Sink<WsMsg, Error = hudsucker::tokio_tungstenite::tungstenite::Error> + Unpin + Send + 'static,
     ) {
+        // Same form as the recorded upgrade URL (default port dropped).
+        let norm = |u: &Uri| without_default_port(u).unwrap_or_else(|| u.clone()).to_string();
         let (key, outgoing) = match &ctx {
-            WebSocketContext::ClientToServer { src, dst, .. } => ((*src, dst.to_string()), true),
-            WebSocketContext::ServerToClient { src, dst, .. } => ((*dst, src.to_string()), false),
+            WebSocketContext::ClientToServer { src, dst, .. } => ((*src, norm(dst)), true),
+            WebSocketContext::ServerToClient { src, dst, .. } => ((*dst, norm(src)), false),
         };
         let id = self.engine.websockets.lock().unwrap().get(&key).copied();
         let url = id.and_then(|id| self.engine.flows.read().unwrap().get(&id).map(|f| f.url.clone())).unwrap_or_default();
@@ -1180,6 +1277,12 @@ mod tests {
     fn exclude_wins() {
         let ssl = SslProxying { enabled: true, include: vec!["*".into()], exclude: vec!["*.apple.com".into()] };
         assert!(ssl.should_decrypt("google.com"));
+        let u = |s: &str| without_default_port(&s.parse().unwrap()).map(|u| u.to_string());
+        assert_eq!(u("https://a.test:443/x?y=1"), Some("https://a.test/x?y=1".into()));
+        assert_eq!(u("http://a.test:80/"), Some("http://a.test/".into()));
+        assert_eq!(u("https://[::1]:443/"), Some("https://[::1]/".into()));
+        assert_eq!(u("https://a.test:8443/"), None);
+        assert_eq!(u("http://a.test/"), None);
         assert!(!ssl.should_decrypt("gs.apple.com"));
     }
 }

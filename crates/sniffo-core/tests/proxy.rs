@@ -137,7 +137,7 @@ async fn resolves_local_client_app() {
     let up = upstream_http().await;
     let s = start(vec![]).await;
     let status = tokio::process::Command::new("curl")
-        .args(["-s", "-o", "/dev/null", "-x", &format!("http://{}", s.proxy.addr), &format!("http://{up}/who")])
+        .args(["-s", "--noproxy", "", "-o", "/dev/null", "-x", &format!("http://{}", s.proxy.addr), &format!("http://{up}/who")])
         .status()
         .await
         .unwrap();
