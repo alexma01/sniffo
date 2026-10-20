@@ -8,7 +8,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test:ui": "node tests-ui/snippets.test.ts && node tests-ui/protobuf.test.ts"
+    "test:ui": "node tests-ui/snippets.test.ts && node tests-ui/protobuf.test.ts",
+    "test:e2e": "playwright test",
+    "test": "pnpm test:ui && cargo test -p sniffo-core && cargo test -p sniffo && playwright test"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.21",
@@ -21,6 +23,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@tauri-apps/cli": "^2",
     "@types/diff": "^8.0.0",
     "@types/qrcode": "^1.5.6",

@@ -42,5 +42,24 @@ jobs:
       - name: Core tests
         run: cargo test -p sniffo-core
 
-      - name: App compiles
-        run: cargo check -p sniffo
+      - name: IPC command tests (every command the UI calls)
+        run: cargo test -p sniffo
+
+      # The real app (commands, proxy, events) behind src-tauri/examples/ui_bridge.rs, driven
+      # through the React UI in Chromium. OS tools are fakes (shell scripts), hence not Windows.
+      - name: Browser for UI tests
+        if: runner.os != 'Windows'
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: UI end-to-end tests
+        if: runner.os != 'Windows'
+        run: pnpm exec playwright test
+
+      - name: UI test report
+        if: failure() && runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ matrix.os }}
+          path: |
+            target/playwright-report
+            target/playwright-results
