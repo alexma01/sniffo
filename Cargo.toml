@@ -1,0 +1,11 @@
+[workspace]
+resolver = "3"
+members = ["src-tauri", "crates/sniffo-core"]
+
+# See https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
