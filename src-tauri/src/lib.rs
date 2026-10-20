@@ -19,6 +19,8 @@ struct AppState {
     auto_system_proxy: AtomicBool,
     /// What the user asked for; a watchdog re-applies it (e.g. after a panic hook undid it).
     want_system_proxy: AtomicBool,
+    /// Last result of routing a VPN's own proxy entry through us (macOS).
+    vpn: std::sync::Mutex<system::VpnProxy>,
     proxy: Mutex<Option<ProxyHandle>>,
     network: std::sync::Mutex<NetworkOptions>,
     reverse_cfg: std::sync::Mutex<Vec<ReverseProxy>>,
@@ -84,6 +86,7 @@ struct ProxyStatus {
     port: Option<u16>,
     allow_lan: bool,
     auto_system_proxy: bool,
+    vpn: system::VpnProxy,
     lan: Vec<system::LanAddress>,
     ca_path: String,
     ca_trusted: bool,
@@ -99,6 +102,7 @@ async fn proxy_status(state: State<'_, AppState>) -> Result<ProxyStatus, String>
         port: proxy.as_ref().map(|p| p.addr.port()),
         allow_lan: state.allow_lan.load(Ordering::Relaxed),
         auto_system_proxy: state.auto_system_proxy.load(Ordering::Relaxed),
+        vpn: state.vpn.lock().unwrap().clone(),
         lan: system::lan_addresses(),
         ca_path: state.ca_path.display().to_string(),
         ca_trusted: system::ca_trusted(&state.ca_path),
@@ -144,10 +148,28 @@ async fn stop_proxy(state: State<'_, AppState>) -> Result<(), String> {
 async fn set_system_proxy(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
     state.want_system_proxy.store(enabled, Ordering::Relaxed);
     if !enabled {
+        *state.vpn.lock().unwrap() = system::VpnProxy::NotNeeded;
         return system::disable_system_proxy(&state.snapshot_path).map_err(|e| e.to_string());
     }
     let port = state.proxy.lock().await.as_ref().map(|p| p.addr.port()).ok_or("start the proxy first")?;
-    system::enable_system_proxy("127.0.0.1", port, &state.snapshot_path).map_err(|e| e.to_string())
+    system::enable_system_proxy("127.0.0.1", port, &state.snapshot_path).map_err(|e| e.to_string())?;
+    apply_vpn(&state, port).await;
+    Ok(())
+}
+
+/// VPNs can hide the system proxy; route their entry through us when the helper allows it.
+async fn apply_vpn(state: &AppState, port: u16) {
+    let result = tauri::async_runtime::spawn_blocking(move || system::apply_vpn_proxy(port)).await.unwrap_or(system::VpnProxy::NotNeeded);
+    *state.vpn.lock().unwrap() = result;
+}
+
+#[tauri::command]
+async fn install_vpn_helper(state: State<'_, AppState>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(system::install_vpn_helper).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+    if let Some(port) = state.proxy.lock().await.as_ref().map(|p| p.addr.port()) {
+        apply_vpn(&state, port).await;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -475,7 +497,7 @@ pub fn run() {
                 }
             }
             forward_events(app.handle().clone(), &engine);
-            app.manage(AppState { engine, ca, ca_path: dir.join("sniffo-ca.pem"), snapshot_path, settings_path, allow_lan: AtomicBool::new(allow_lan), auto_system_proxy: AtomicBool::new(auto_system_proxy), want_system_proxy: AtomicBool::new(false), proxy: Mutex::new(None),
+            app.manage(AppState { engine, ca, ca_path: dir.join("sniffo-ca.pem"), snapshot_path, settings_path, allow_lan: AtomicBool::new(allow_lan), auto_system_proxy: AtomicBool::new(auto_system_proxy), want_system_proxy: AtomicBool::new(false), vpn: std::sync::Mutex::new(system::VpnProxy::NotNeeded), proxy: Mutex::new(None),
                 network: std::sync::Mutex::new(network), reverse_cfg: std::sync::Mutex::new(reverse_cfg.clone()), reverse: Mutex::new(vec![]),
                 proto_pool: std::sync::Mutex::new(match proto_files.is_empty() {
                     true => None,
@@ -504,6 +526,8 @@ pub fn run() {
                             tracing::warn!("system proxy was reset (non-fatal panic?); re-applying");
                             let _ = system::enable_system_proxy("127.0.0.1", port, &state.snapshot_path);
                         }
+                        // VPN clients may rewrite their proxy entry (reconnects): put us back.
+                        apply_vpn(&state, port).await;
                     }
                 }
             });
@@ -517,7 +541,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, list_devices, device_command, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
+            proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, install_vpn_helper, list_devices, device_command, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
             get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, export_rules, import_rules, get_proto_schemas, set_proto_files, decode_proto, list_breakpoints, resume_breakpoint, send_ws_message
         ])
         .build(tauri::generate_context!())

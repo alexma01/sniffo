@@ -42,6 +42,8 @@ pub fn enable_system_proxy(host: &str, port: u16, snapshot_path: &Path) -> io::R
 }
 
 pub fn disable_system_proxy(snapshot_path: &Path) -> io::Result<()> {
+    // The VPN entry wins over System Settings, so it must go back first (no-op if untouched).
+    restore_vpn_proxy();
     let Ok(data) = fs::read(snapshot_path) else { return Ok(()) };
     let snap: Snapshot = serde_json::from_slice(&data)?;
     imp::restore(&snap)?;
@@ -301,5 +303,129 @@ mod lan_tests {
         assert!(super::lan_rank("en0", "192.168.1.12") < super::lan_rank("utun3", "10.8.0.2"));
         assert!(super::lan_rank("Wi-Fi", "172.20.1.4") < super::lan_rank("Wi-Fi", "100.64.0.1"));
         assert!(super::lan_addresses().iter().all(|a| a.ip != "127.0.0.1"));
+    }
+}
+
+/// Outcome of pointing a VPN's own proxy entry at Sniffo (macOS).
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case", tag = "state", content = "detail")]
+pub enum VpnProxy {
+    /// System Settings proxies are in effect; nothing to do.
+    NotNeeded,
+    /// A VPN overrode them and the helper pointed it back at us.
+    Applied,
+    /// A VPN overrides the proxy and the one-time helper isn't installed yet.
+    HelperMissing,
+    Failed(String),
+}
+
+// Like Proxyman's Helper Tool: VPN clients (Cato, GlobalProtect…) publish their own proxy
+// entry in the dynamic store, which wins over System Settings and needs root to change.
+// A root-owned script plus a sudoers rule limited to it is installed once, with the user's
+// approval in macOS's own password prompt; it only accepts `set <port>` and `restore`.
+#[cfg(target_os = "macos")]
+const VPN_HELPER_SCRIPT: &str = include_str!("macos-vpn-helper.sh");
+#[cfg(target_os = "macos")]
+const VPN_HELPER: &str = "/Library/PrivilegedHelperTools/dev.sniffo.vpn-proxy";
+#[cfg(target_os = "macos")]
+// sudo's #includedir silently skips file names containing a '.', so no dots here.
+const VPN_SUDOERS: &str = "/etc/sudoers.d/sniffo";
+
+/// HTTPS proxy macOS actually uses right now (after VPNs have had their say).
+#[cfg(target_os = "macos")]
+pub fn effective_proxy() -> Option<(String, u16)> {
+    parse_scutil_proxy(&run("scutil", &["--proxy"]).ok()?)
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn parse_scutil_proxy(out: &str) -> Option<(String, u16)> {
+    let get = |k: &str| out.lines().find_map(|l| l.trim().strip_prefix(k)?.trim().strip_prefix(':').map(|v| v.trim().to_owned()));
+    if get("HTTPSEnable")? != "1" {
+        return None;
+    }
+    Some((get("HTTPSProxy")?, get("HTTPSPort")?.parse().ok()?))
+}
+
+#[cfg(target_os = "macos")]
+pub fn vpn_helper_installed() -> bool {
+    Path::new(VPN_HELPER).exists() && Path::new(VPN_SUDOERS).exists()
+}
+
+/// One-time install; macOS shows its own administrator prompt (we never see the password).
+#[cfg(target_os = "macos")]
+pub fn install_vpn_helper() -> io::Result<()> {
+    let user = run("id", &["-un"])?.trim().to_owned();
+    if user.is_empty() || !user.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)) {
+        return Err(io::Error::other("unexpected user name"));
+    }
+    let dir = std::env::temp_dir().join(format!("sniffo-helper-{}", std::process::id()));
+    fs::create_dir_all(&dir)?;
+    let (script, rule) = (dir.join("helper.sh"), dir.join("sudoers"));
+    fs::write(&script, VPN_HELPER_SCRIPT)?;
+    fs::write(&rule, format!("{user} ALL=(root) NOPASSWD: {VPN_HELPER} set *, {VPN_HELPER} restore\n"))?;
+    let cmd = format!(
+        "/bin/mkdir -p /Library/PrivilegedHelperTools && /usr/bin/install -o root -g wheel -m 755 '{}' {VPN_HELPER} && /usr/sbin/visudo -cf '{}' && /usr/bin/install -o root -g wheel -m 440 '{}' {VPN_SUDOERS} && /bin/rm -f /etc/sudoers.d/dev.sniffo",
+        script.display(),
+        rule.display(),
+        rule.display()
+    );
+    let prompt = "Sniffo needs to install a small helper to route traffic through its proxy while a VPN is active. You are asked only once.";
+    let result = run("osascript", &["-e", &format!("do shell script \"{cmd}\" with administrator privileges with prompt \"{prompt}\"")]);
+    let _ = fs::remove_dir_all(&dir);
+    result.map(drop)
+}
+
+/// If a VPN hides the system proxy, point its entry at `port` (needs the helper).
+#[cfg(target_os = "macos")]
+pub fn apply_vpn_proxy(port: u16) -> VpnProxy {
+    let ours = || effective_proxy().is_some_and(|(h, p)| h == "127.0.0.1" && p == port);
+    if ours() {
+        return VpnProxy::NotNeeded;
+    }
+    if !vpn_helper_installed() {
+        return VpnProxy::HelperMissing;
+    }
+    match run("sudo", &["-n", VPN_HELPER, "set", &port.to_string()]) {
+        Ok(_) if ours() => VpnProxy::Applied,
+        Ok(_) => VpnProxy::Failed("the VPN keeps overriding the proxy".into()),
+        Err(e) => VpnProxy::Failed(e.to_string()),
+    }
+}
+
+/// Puts the VPN's original proxy entry back (no-op when nothing was changed).
+#[cfg(target_os = "macos")]
+pub fn restore_vpn_proxy() {
+    if vpn_helper_installed() {
+        if let Err(e) = run("sudo", &["-n", VPN_HELPER, "restore"]) {
+            tracing::error!("restoring VPN proxy entry: {e}");
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn apply_vpn_proxy(_port: u16) -> VpnProxy {
+    VpnProxy::NotNeeded
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn restore_vpn_proxy() {}
+
+#[cfg(not(target_os = "macos"))]
+pub fn vpn_helper_installed() -> bool {
+    false
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn install_vpn_helper() -> io::Result<()> {
+    Err(io::Error::other("only needed on macOS"))
+}
+
+#[cfg(test)]
+mod vpn_tests {
+    #[test]
+    fn parses_effective_proxy() {
+        let on = "<dictionary> {\n  FTPPassive : 1\n  HTTPSEnable : 1\n  HTTPSPort : 9191\n  HTTPSProxy : 127.0.0.1\n}\n";
+        assert_eq!(super::parse_scutil_proxy(on), Some(("127.0.0.1".into(), 9191)));
+        assert_eq!(super::parse_scutil_proxy("<dictionary> {\n  FTPPassive : 1\n}\n"), None);
     }
 }
