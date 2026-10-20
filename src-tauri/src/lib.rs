@@ -405,8 +405,13 @@ fn list_breakpoints(state: State<'_, AppState>) -> Vec<BreakpointHit> {
 }
 
 #[tauri::command]
-fn resume_breakpoint(state: State<'_, AppState>, id: u64, decision: Decision) -> bool {
-    state.engine.resume(id, decision)
+fn resume_breakpoint(state: State<'_, AppState>, id: u64, response: bool, decision: Decision) -> bool {
+    state.engine.resume(id, response, decision)
+}
+
+#[tauri::command]
+fn send_ws_message(state: State<'_, AppState>, id: u64, to_server: bool, data: String, binary: bool) -> Result<(), String> {
+    state.engine.send_ws(id, to_server, data, binary)
 }
 
 /// Forwards engine events to the UI in batches so heavy traffic doesn't flood IPC.
@@ -486,7 +491,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, list_devices, device_command, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
-            get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, export_rules, import_rules, get_proto_schemas, set_proto_files, decode_proto, list_breakpoints, resume_breakpoint
+            get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, export_rules, import_rules, get_proto_schemas, set_proto_files, decode_proto, list_breakpoints, resume_breakpoint, send_ws_message
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

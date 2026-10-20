@@ -65,8 +65,8 @@ function ActionForm({ action, onChange }: { action: Action; onChange: (a: Action
     case "breakpoint":
       return (
         <div className="row">
-          <label className="check"><input type="checkbox" checked={action.request} onChange={(e) => onChange({ ...action, request: e.target.checked })} /> Request</label>
-          <label className="check"><input type="checkbox" checked={action.response} onChange={(e) => onChange({ ...action, response: e.target.checked })} /> Response</label>
+          <label className="check"><input type="checkbox" checked={action.request} onChange={(e) => onChange({ ...action, request: e.target.checked })} /> Request <span className="muted">(+ WebSocket frames ↑)</span></label>
+          <label className="check"><input type="checkbox" checked={action.response} onChange={(e) => onChange({ ...action, response: e.target.checked })} /> Response <span className="muted">(+ WebSocket frames ↓)</span></label>
         </div>
       );
     case "map_local":

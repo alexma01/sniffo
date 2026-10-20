@@ -245,12 +245,17 @@ function Timing({ flow }: { flow: Flow }) {
   return <HeaderTable headers={rows} />;
 }
 
-function Messages({ messages }: { messages: WsMessage[] }) {
+function Messages({ flowId, messages }: { flowId: number; messages: WsMessage[] }) {
   const [open, setOpen] = useState<number | null>(null);
-  if (!messages.length) return <div className="muted pad">No frames yet</div>;
-  const t0 = messages[0].time_ms;
+  const [draft, setDraft] = useState({ toServer: true, binary: false, data: "" });
+  const [error, setError] = useState<string | null>(null);
+  const closed = messages.some((m) => m.kind === "close");
+  const send = () => api.sendWs(flowId, draft.toServer, draft.data, draft.binary).then(() => setError(null), (e) => setError(String(e)));
+  const format = () => { try { setDraft({ ...draft, data: JSON.stringify(JSON.parse(draft.data), null, 2) }); setError(null); } catch (e) { setError(String(e)); } };
+  const t0 = messages[0]?.time_ms ?? 0;
   return (
     <div className="ws">
+      {!messages.length && <div className="muted pad">No frames yet</div>}
       {messages.map((m, i) => (
         <div key={i}>
           <div className={`ws-row ${m.outgoing ? "out" : "in"} ${open === i ? "open" : ""}`} onClick={() => setOpen(open === i ? null : i)}>
@@ -258,12 +263,32 @@ function Messages({ messages }: { messages: WsMessage[] }) {
             <span className="ws-time">+{((m.time_ms - t0) / 1000).toFixed(3)}s</span>
             <span className="ws-kind">{m.kind}</span>
             <span className="ws-size">{formatBytes(m.size)}</span>
-            <span className="ws-data">{m.data}</span>
+            <span className="ws-data">{m.injected && <span className="badge warn" title="Sent from Sniffo">injected</span>}{m.data}</span>
           </div>
+          {open === i && (m.kind === "text" || m.kind === "binary") && !closed && (
+            <div className="seg"><button onClick={() => setDraft({ toServer: m.outgoing, binary: m.kind === "binary", data: m.data })}>Edit &amp; resend</button></div>
+          )}
           {open === i && m.kind === "text" && <BodyView bytes={new TextEncoder().encode(m.data)} />}
           {open === i && m.kind === "binary" && <BodyView bytes={Uint8Array.from(atob(m.data), (c) => c.charCodeAt(0))} />}
         </div>
       ))}
+      {!closed && (
+        <div className="ws-compose">
+          <div className="ws-compose-bar">
+            <button className={draft.toServer ? "active" : ""} onClick={() => setDraft({ ...draft, toServer: true })} title="Send to the server as if the client sent it">↑ Server</button>
+            <button className={!draft.toServer ? "active" : ""} onClick={() => setDraft({ ...draft, toServer: false })} title="Send to the client as if the server sent it">↓ Client</button>
+            <span className="spacer" />
+            <button className={!draft.binary ? "active" : ""} onClick={() => setDraft({ ...draft, binary: false })}>Text</button>
+            <button className={draft.binary ? "active" : ""} onClick={() => setDraft({ ...draft, binary: true })} title="Binary frame, payload as base64">Base64</button>
+            {!draft.binary && <button onClick={format} title="Format JSON">{"{ }"}</button>}
+            <button className="primary" disabled={!draft.data} onClick={send}>Send</button>
+          </div>
+          <textarea rows={3} value={draft.data} placeholder={draft.binary ? "base64 payload" : "text or JSON — ⌘↩ to send"}
+            onChange={(e) => setDraft({ ...draft, data: e.target.value })}
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && draft.data) send(); }} />
+          {error && <div className="err">{error}</div>}
+        </div>
+      )}
     </div>
   );
 }
@@ -309,7 +334,7 @@ function Pane(props: { title: string; flow: Flow; response: boolean }) {
         {tab === "timing" ? (
           <Timing flow={flow} />
         ) : tab === "messages" ? (
-          <Messages messages={flow.ws_messages} />
+          <Messages flowId={flow.id} messages={flow.ws_messages} />
         ) : tab === "graphql" ? (
           <GraphQL flow={flow} bytes={bytes} />
         ) : !msg ? (

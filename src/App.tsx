@@ -39,7 +39,7 @@ function useFlows() {
     const un = [api.onFlows(apply), api.onResync(reload)];
     return () => { un.forEach((p) => p.then((f) => f())); };
   }, []);
-  return { flows, hits, logs, clearLogs: () => setLogs([]), doneHit: (id: number) => setHits((h) => h.filter((x) => x.id !== id)) };
+  return { flows, hits, logs, clearLogs: () => setLogs([]), doneHit: (hit: BreakpointHit) => setHits((h) => h.filter((x) => x !== hit)) };
 }
 
 interface Menu { id: number; x: number; y: number }

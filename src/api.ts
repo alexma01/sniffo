@@ -30,7 +30,7 @@ export interface FlowSummary {
   graphql: string | null;
 }
 
-export interface WsMessage { outgoing: boolean; time_ms: number; kind: string; size: number; data: string }
+export interface WsMessage { outgoing: boolean; time_ms: number; kind: string; size: number; data: string; injected: boolean }
 
 export interface Message {
   headers: Headers;
@@ -100,7 +100,8 @@ export interface Rule { id: string; name: string; enabled: boolean; matcher: Mat
 export interface Rules { rules: Rule[]; allow_list: { enabled: boolean; patterns: string[] }; no_caching: boolean }
 
 export interface Editable { method: string; url: string; status: number; headers: Headers; body: string | null }
-export interface BreakpointHit { id: number; response: boolean; message: Editable }
+/** `ws` is set for a WebSocket frame (response = server -> client); binary bodies are base64. */
+export interface BreakpointHit { id: number; response: boolean; message: Editable; ws: "text" | "binary" | null }
 export type Decision = { type: "continue"; message: Editable } | { type: "abort" };
 
 export type Platform = "ios_simulator" | "ios_device" | "android" | "android_avd";
@@ -149,7 +150,8 @@ export const api = {
   exportRules: (path: string) => invoke<number>("export_rules", { path }),
   importRules: (path: string) => invoke<number>("import_rules", { path }),
   listBreakpoints: () => invoke<BreakpointHit[]>("list_breakpoints"),
-  resume: (id: number, decision: Decision) => invoke<boolean>("resume_breakpoint", { id, decision }),
+  resume: (id: number, response: boolean, decision: Decision) => invoke<boolean>("resume_breakpoint", { id, response, decision }),
+  sendWs: (id: number, toServer: boolean, data: string, binary: boolean) => invoke<void>("send_ws_message", { id, toServer, data, binary }),
   getSsl: () => invoke<SslProxying>("get_ssl_proxying"),
   setSsl: (ssl: SslProxying) => invoke<void>("set_ssl_proxying", { ssl }),
   onFlows: (cb: (events: FlowEvent[]) => void) => listen<FlowEvent[]>("flows", (e) => cb(e.payload)),

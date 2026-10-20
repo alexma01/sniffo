@@ -89,6 +89,8 @@ pub struct WsMessage {
     pub size: usize,
     /// Text frames as-is; binary frames base64 (truncated to keep memory bounded).
     pub data: String,
+    /// Sent by the user from Sniffo rather than by either peer.
+    pub injected: bool,
 }
 
 /// Lightweight row for the flow list (no bodies, no headers).

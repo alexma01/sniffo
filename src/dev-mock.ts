@@ -25,9 +25,10 @@ const flows: Flow[] = samples.map(([method, url, status, ct, body], i) => {
     status, response: { headers: [["content-type", ct], ["set-cookie", "sid=abc123; Path=/; HttpOnly"]], body_size: body.length },
     state: "complete", error: null,
     ws_messages: i === 2 ? [
-      { outgoing: true, time_ms: 1000, kind: "text", size: 17, data: '{"op":"subscribe"}' },
-      { outgoing: false, time_ms: 1042, kind: "text", size: 25, data: '{"event":"tick","v":42}' },
-      { outgoing: false, time_ms: 2100, kind: "binary", size: 3, data: "AQID" },
+      { outgoing: true, time_ms: 1000, kind: "text", size: 17, data: '{"op":"subscribe"}', injected: false },
+      { outgoing: false, time_ms: 1042, kind: "text", size: 25, data: '{"event":"tick","v":42}', injected: false },
+      { outgoing: false, time_ms: 2100, kind: "binary", size: 3, data: "AQID", injected: false },
+      { outgoing: true, time_ms: 2500, kind: "text", size: 12, data: '{"op":"ping"}', injected: true },
     ] : [],
     graphql: url.endsWith("/graphql") ? "query GetUser" : null,
   };
@@ -57,7 +58,9 @@ mockIPC((cmd, args) => {
     case "pin_flow": a.pinned ? pinned.add(a.id) : pinned.delete(a.id); emit("flows", [{ type: "upsert", data: summary(flows.find((f) => f.id === a.id)!) }]); return;
     case "get_rules": return rules;
     case "set_rules": rules = a.rules; return;
-    case "list_breakpoints": return [];
+    // Open http://localhost:1420/#ws-breakpoint to preview the WebSocket frame editor.
+    case "list_breakpoints": return location.hash === "#ws-breakpoint"
+      ? [{ id: 3, response: true, ws: "text", message: { method: "", url: "https://stream.example.com/live", status: 0, headers: [], body: '{"event":"tick","v":43}' } }] : [];
     case "list_devices": return [
       { id: "SIM1", name: "iPhone 18 Pro", platform: "ios_simulator", state: "Booted", os: "iOS 27.0", emulator: true },
       { id: "emulator-5554", name: "sdk gphone64 arm64", platform: "android", state: "device", os: "Android 15", emulator: true },
@@ -71,6 +74,13 @@ mockIPC((cmd, args) => {
     case "set_reverse": return a.reverse.map(() => null);
     case "get_proto_schemas": return { files: ["/Users/me/protos/user.proto"], messages: ["demo.User", "demo.UserList"] };
     case "decode_proto": return [{ id: 7, name: "Ada", status: "ACTIVE" }];
+    case "send_ws_message": {
+      const f = flows.find((f) => f.id === a.id)!;
+      if (a.binary && !/^[A-Za-z0-9+/=\s]*$/.test(a.data)) throw "invalid base64";
+      f.ws_messages.push({ outgoing: a.toServer, time_ms: Date.now() - f.started_ms, kind: a.binary ? "binary" : "text", size: a.data.length, data: a.data, injected: true });
+      emit("flows", [{ type: "upsert", data: summary(f) }]);
+      return;
+    }
     case "get_ssl_proxying": return { enabled: true, include: ["*"], exclude: [] };
     default: return null;
   }
