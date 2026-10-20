@@ -72,7 +72,8 @@ input { font: inherit; color: inherit; }
 .flow-scroll { flex: 1; overflow: auto; outline: none; }
 .flow-row { display: flex; align-items: center; gap: 8px; padding: 0 10px; white-space: nowrap; cursor: default; font-variant-numeric: tabular-nums; }
 .flow-row > span { overflow: hidden; text-overflow: ellipsis; }
-.flow-row.head { height: 24px; background: var(--bg-2); border-bottom: 1px solid var(--border); font-weight: 600; font-size: 12px; }
+.flow-row.head > span { overflow: visible; }
+.flow-row.head { height: 24px; background: var(--bg-2); border-bottom: 1px solid var(--border); font-weight: 600; font-size: 12px; position: sticky; top: 0; z-index: 2; }
 .flow-scroll .flow-row:nth-child(even) { background: color-mix(in srgb, var(--bg-2) 50%, transparent); }
 .flow-scroll .flow-row.selected { background: var(--sel); }
 .c-id, .c-time, .c-type, .c-reqtype, .c-version { color: var(--muted); }
