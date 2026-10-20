@@ -91,7 +91,15 @@ export interface Editable { method: string; url: string; status: number; headers
 export interface BreakpointHit { id: number; response: boolean; message: Editable }
 export type Decision = { type: "continue"; message: Editable } | { type: "abort" };
 
+export type Platform = "ios_simulator" | "ios_device" | "android" | "android_avd";
+export interface Device { id: string; name: string; platform: Platform; state: string; os: string; emulator: boolean }
+export type DeviceCommand =
+  | { type: "install_ca" } | { type: "install_system_ca" } | { type: "set_proxy" } | { type: "clear_proxy" }
+  | { type: "restart" } | { type: "boot" } | { type: "shutdown" } | { type: "open_url"; value: string };
+
 export const api = {
+  listDevices: () => invoke<Device[]>("list_devices"),
+  deviceCommand: (device: string, command: DeviceCommand) => invoke<string>("device_command", { device, command }),
   status: () => invoke<ProxyStatus>("proxy_status"),
   start: (port?: number) => invoke<string>("start_proxy", { port }),
   stop: () => invoke<void>("stop_proxy"),

@@ -171,3 +171,15 @@ button.lan { font-variant-numeric: tabular-nums; font-weight: 600; }
 .qr { text-align: center; padding-top: 20px; }
 .qr img { border-radius: 8px; background: white; padding: 6px; }
 .statusbar .warn { color: var(--warn); }
+
+.seg.flush { padding: 0 0 10px; }
+.dev-split { display: grid; grid-template-columns: 280px 1fr; gap: 14px; min-height: 320px; }
+.dev-list { border: 1px solid var(--border); border-radius: 8px; overflow: auto; max-height: 420px; }
+.dev-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--border); }
+.dev-item:hover { background: var(--bg-3); }
+.dev-item.active { background: var(--sel); }
+.dev-detail h4 { margin: 0 0 4px; }
+.dev-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.dev-log { margin-top: 10px; font: 12px/1.5 ui-monospace, Menlo, monospace; max-height: 140px; overflow: auto; }
+.small { font-size: 11px; }
+.warn { color: var(--warn); }

@@ -2,6 +2,7 @@
 
 pub mod ca;
 pub mod client;
+pub mod devices;
 pub mod flow;
 pub mod proxy;
 pub mod rules;

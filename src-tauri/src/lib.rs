@@ -1,5 +1,6 @@
 use serde::Serialize;
 use serde::Deserialize;
+use sniffo_core::devices::{self, Device};
 use sniffo_core::{BreakpointHit, Decision, Engine, Flow, FlowEvent, FlowSummary, ProxyHandle, RootCa, Rules, SslProxying, StartOptions, system};
 use std::{path::PathBuf, sync::atomic::{AtomicBool, Ordering}, time::Duration};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, ipc::Response};
@@ -127,6 +128,24 @@ async fn set_allow_lan(state: State<'_, AppState>, allow: bool) -> Result<(), St
 }
 
 #[tauri::command]
+async fn list_devices() -> Result<Vec<Device>, String> {
+    tauri::async_runtime::spawn_blocking(devices::list).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn device_command(state: State<'_, AppState>, device: String, command: devices::Command) -> Result<String, String> {
+    let port = state.proxy.lock().await.as_ref().map(|p| p.addr.port()).unwrap_or(DEFAULT_PORT);
+    let ca = state.ca_path.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let list = devices::list();
+        let d = list.iter().find(|d| d.id == device).ok_or("device not found (disconnected?)")?;
+        devices::execute(d, &command, &devices::Context { ca_pem: &ca, proxy_port: port })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 fn list_flows(state: State<'_, AppState>) -> Vec<FlowSummary> {
     state.engine.summaries()
 }
@@ -251,7 +270,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            proxy_status, start_proxy, stop_proxy, set_allow_lan, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
+            proxy_status, start_proxy, stop_proxy, set_allow_lan, list_devices, device_command, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
             get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, list_breakpoints, resume_breakpoint
         ])
         .build(tauri::generate_context!())

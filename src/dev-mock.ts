@@ -48,6 +48,13 @@ mockIPC((cmd, args) => {
     case "get_rules": return rules;
     case "set_rules": rules = a.rules; return;
     case "list_breakpoints": return [];
+    case "list_devices": return [
+      { id: "SIM1", name: "iPhone 18 Pro", platform: "ios_simulator", state: "Booted", os: "iOS 27.0", emulator: true },
+      { id: "emulator-5554", name: "sdk gphone64 arm64", platform: "android", state: "device", os: "Android 15", emulator: true },
+      { id: "PHONE", name: "iPhone 14 Ale", platform: "ios_device", state: "connected", os: "iOS 26.6.1", emulator: false },
+      { id: "Medium_Phone", name: "Medium Phone", platform: "android_avd", state: "Shutdown", os: "Android emulator", emulator: true },
+    ];
+    case "device_command": return "done (mock)";
     case "get_ssl_proxying": return { enabled: true, include: ["*"], exclude: [] };
     default: return null;
   }
