@@ -17,6 +17,8 @@ struct AppState {
     settings_path: PathBuf,
     allow_lan: AtomicBool,
     auto_system_proxy: AtomicBool,
+    /// What the user asked for; a watchdog re-applies it (e.g. after a panic hook undid it).
+    want_system_proxy: AtomicBool,
     proxy: Mutex<Option<ProxyHandle>>,
     network: std::sync::Mutex<NetworkOptions>,
     reverse_cfg: std::sync::Mutex<Vec<ReverseProxy>>,
@@ -129,6 +131,7 @@ async fn start_proxy(state: State<'_, AppState>, port: Option<u16>) -> Result<St
 
 #[tauri::command]
 async fn stop_proxy(state: State<'_, AppState>) -> Result<(), String> {
+    state.want_system_proxy.store(false, Ordering::Relaxed);
     // Never leave the OS pointing at a dead proxy.
     system::disable_system_proxy(&state.snapshot_path).map_err(|e| e.to_string())?;
     if let Some(p) = state.proxy.lock().await.take() {
@@ -139,6 +142,7 @@ async fn stop_proxy(state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 async fn set_system_proxy(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    state.want_system_proxy.store(enabled, Ordering::Relaxed);
     if !enabled {
         return system::disable_system_proxy(&state.snapshot_path).map_err(|e| e.to_string());
     }
@@ -471,7 +475,7 @@ pub fn run() {
                 }
             }
             forward_events(app.handle().clone(), &engine);
-            app.manage(AppState { engine, ca, ca_path: dir.join("sniffo-ca.pem"), snapshot_path, settings_path, allow_lan: AtomicBool::new(allow_lan), auto_system_proxy: AtomicBool::new(auto_system_proxy), proxy: Mutex::new(None),
+            app.manage(AppState { engine, ca, ca_path: dir.join("sniffo-ca.pem"), snapshot_path, settings_path, allow_lan: AtomicBool::new(allow_lan), auto_system_proxy: AtomicBool::new(auto_system_proxy), want_system_proxy: AtomicBool::new(false), proxy: Mutex::new(None),
                 network: std::sync::Mutex::new(network), reverse_cfg: std::sync::Mutex::new(reverse_cfg.clone()), reverse: Mutex::new(vec![]),
                 proto_pool: std::sync::Mutex::new(match proto_files.is_empty() {
                     true => None,
@@ -480,6 +484,29 @@ pub fn run() {
                         .ok(),
                 }),
                 proto_files: std::sync::Mutex::new(proto_files) });
+            // A panic can abort the process (tokio worker threads do) before the Exit handler runs:
+            // undo the system proxy first so the user never loses network to a dead proxy.
+            let snap = app.state::<AppState>().snapshot_path.clone();
+            let default_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |info| {
+                let _ = system::disable_system_proxy(&snap);
+                default_hook(info);
+            }));
+            let watchdog = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut tick = tokio::time::interval(Duration::from_secs(10));
+                loop {
+                    tick.tick().await;
+                    let state = watchdog.state::<AppState>();
+                    let port = state.proxy.lock().await.as_ref().map(|p| p.addr.port());
+                    if let (true, Some(port)) = (state.want_system_proxy.load(Ordering::Relaxed), port) {
+                        if !system::system_proxy_enabled(&state.snapshot_path) {
+                            tracing::warn!("system proxy was reset (non-fatal panic?); re-applying");
+                            let _ = system::enable_system_proxy("127.0.0.1", port, &state.snapshot_path);
+                        }
+                    }
+                }
+            });
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = handle.state::<AppState>();
