@@ -73,27 +73,37 @@ mod imp {
         ProxySetting { enabled: get("Enabled:") == "Yes", server: get("Server:").into(), port: get("Port:").parse().unwrap_or(0) }
     }
 
+    /// networksetup takes ~0.2 s per call and Macs have many services (VPNs, USB adapters…):
+    /// handle each service on its own thread instead of one after the other.
+    fn per_service<T: Send>(items: Vec<String>, f: impl Fn(&str) -> io::Result<T> + Sync) -> io::Result<Vec<T>> {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = items.iter().map(|s| scope.spawn(|| f(s))).collect();
+            handles.into_iter().map(|h| h.join().unwrap_or_else(|_| Err(io::Error::other("networksetup thread panicked")))).collect()
+        })
+    }
+
     pub fn read() -> io::Result<Snapshot> {
-        let mut entries = vec![];
-        for s in services()? {
-            let web = parse(&run("networksetup", &["-getwebproxy", &s])?);
-            let secure = parse(&run("networksetup", &["-getsecurewebproxy", &s])?);
-            entries.push((s, web, secure));
-        }
+        let entries = per_service(services()?, |s| {
+            let web = parse(&run("networksetup", &["-getwebproxy", s])?);
+            let secure = parse(&run("networksetup", &["-getsecurewebproxy", s])?);
+            Ok((s.to_owned(), web, secure))
+        })?;
         Ok(Snapshot { entries })
     }
 
     pub fn set(host: &str, port: u16) -> io::Result<()> {
         let p = port.to_string();
-        for s in services()? {
-            run("networksetup", &["-setwebproxy", &s, host, &p])?;
-            run("networksetup", &["-setsecurewebproxy", &s, host, &p])?;
-        }
-        Ok(())
+        per_service(services()?, |s| {
+            run("networksetup", &["-setwebproxy", s, host, &p])?;
+            run("networksetup", &["-setsecurewebproxy", s, host, &p]).map(drop)
+        })
+        .map(drop)
     }
 
     pub fn restore(snap: &Snapshot) -> io::Result<()> {
-        for (s, web, secure) in &snap.entries {
+        let names: Vec<String> = snap.entries.iter().map(|(s, _, _)| s.clone()).collect();
+        per_service(names, |s| {
+            let (_, web, secure) = snap.entries.iter().find(|(n, _, _)| n == s).expect("service from snapshot");
             for (setting, set, state) in [(web, "-setwebproxy", "-setwebproxystate"), (secure, "-setsecurewebproxy", "-setsecurewebproxystate")] {
                 if setting.enabled {
                     run("networksetup", &[set, s, &setting.server, &setting.port.to_string()])?;
@@ -101,8 +111,9 @@ mod imp {
                     run("networksetup", &[state, s, "off"])?;
                 }
             }
-        }
-        Ok(())
+            Ok(())
+        })
+        .map(drop)
     }
 
     pub fn trust_ca(cert_path: &Path) -> io::Result<()> {
