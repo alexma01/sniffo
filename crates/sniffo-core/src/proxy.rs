@@ -389,11 +389,7 @@ impl Engine {
         } else {
             // OS trust store first (corporate TLS inspection CAs live there), webpki as fallback.
             let mut roots = RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
-            let native = rustls_native_certs::load_native_certs();
-            for e in &native.errors {
-                tracing::warn!("system root store: {e}");
-            }
-            roots.add_parsable_certificates(native.certs);
+            roots.add_parsable_certificates(native_roots().iter().cloned());
             for pem in &opts.extra_upstream_roots {
                 for der in CertificateDer::pem_slice_iter(pem.as_bytes()) {
                     roots.add(der.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
@@ -404,6 +400,8 @@ impl Engine {
         let mut http = HttpConnector::new_with_resolver(OverrideResolver::new(&opts.network.dns)?);
         // hyper-rustls handles https; the plain connector must let those URIs through.
         http.enforce_http(false);
+        // Nagle + delayed ACK stalls small writes (TLS handshakes, h2 frames) by ~40ms.
+        http.set_nodelay(true);
 
         let overrides: std::collections::HashSet<String> = opts.network.dns.iter().map(|(h, _)| h.trim().to_ascii_lowercase()).collect();
         let ws_tls = Arc::new(tls.clone());
@@ -480,6 +478,18 @@ impl Engine {
         });
         Ok(ProxyHandle { addr, shutdown: Some(tx), task })
     }
+}
+
+/// The OS trust store: reading it walks the keychain (slow on macOS), so once per process.
+fn native_roots() -> &'static [CertificateDer<'static>] {
+    static ROOTS: std::sync::OnceLock<Vec<CertificateDer<'static>>> = std::sync::OnceLock::new();
+    ROOTS.get_or_init(|| {
+        let native = rustls_native_certs::load_native_certs();
+        for e in &native.errors {
+            tracing::warn!("system root store: {e}");
+        }
+        native.certs
+    })
 }
 
 fn https<C>(tls: ClientConfig, inner: C) -> hyper_rustls::HttpsConnector<C> {
@@ -806,6 +816,7 @@ impl Capture {
         let task = tokio::spawn(async move {
             // hudsucker connects only for TLS it doesn't decrypt; otherwise the relay just expires.
             let Ok(Ok((mut client, _))) = tokio::time::timeout(Duration::from_secs(30), relay.accept()).await else { return };
+            let _ = client.set_nodelay(true);
             let dialed = match format!("http://{authority}").parse() {
                 Ok(target) => (via.dial)(target).await,
                 Err(e) => Err(format!("{e}")),
@@ -1044,7 +1055,9 @@ impl HttpHandler for Capture {
             self.scripts = Arc::new(plan.scripts.clone());
         }
 
-        tokio::time::sleep(Duration::from_millis(plan.latency_ms)).await;
+        if plan.latency_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(plan.latency_ms)).await;
+        }
         throttle_bytes(body.len(), plan.upload_bps).await;
 
         if let Some((status, headers, text, file)) = plan.map_local {
@@ -1080,7 +1093,8 @@ impl HttpHandler for Capture {
         // Keep the client connection open until lsof has seen it (one-shot clients close right after).
         let lookup = self.lookup.take().and_then(|l| l.lock().unwrap().take());
         if let Some(task) = lookup {
-            let _ = tokio::time::timeout(Duration::from_millis(300), task).await;
+            // lsof usually takes ~30-50ms and runs alongside the upstream request; cap the stall.
+            let _ = tokio::time::timeout(Duration::from_millis(100), task).await;
         }
         let (mut parts, body) = res.into_parts();
 

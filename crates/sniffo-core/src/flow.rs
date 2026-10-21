@@ -167,6 +167,9 @@ pub fn graphql_operation(url: &str, request: &Message) -> Option<String> {
         let q = url.split_once('?')?.1;
         let param = |k: &str| q.split('&').find_map(|p| p.strip_prefix(k)?.strip_prefix('=')).map(|v| percent_decode(v, true));
         (param("query")?, param("operationName"))
+    } else if request.body.len() > 1 << 20 {
+        // Runs on every request before forwarding: never parse big uploads.
+        return None;
     } else {
         let v: serde_json::Value = serde_json::from_slice(&request.decoded_body()).ok()?;
         // Batched requests are arrays; label by the first operation.
