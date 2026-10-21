@@ -11,8 +11,13 @@ if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) {
   else await import("./dev-mock");
 }
 
+const params = new URLSearchParams(location.search);
+const theme = params.get("theme");
+if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+const Root = import.meta.env.DEV && params.has("gallery") ? (await import("./Gallery")).Gallery : App;
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <Root />
   </React.StrictMode>,
 );

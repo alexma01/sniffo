@@ -64,23 +64,26 @@ async function requestOf(id: number): Promise<Req> {
   return { method: flow?.method ?? "GET", url: flow?.url ?? "", headers: flow?.request.headers ?? [], body };
 }
 
+/** Dev only (?open=settings…): start with a dialog open, for the ?gallery page. */
+const OPEN = import.meta.env.DEV ? new URLSearchParams(location.search).get("open") : null;
+
 const HAR = [{ name: "HAR / Sniffo session", extensions: ["har"] }];
 
 export default function App() {
   const { flows, hits, logs, clearLogs, doneHit } = useFlows();
-  const [showConsole, setShowConsole] = useState(false);
-  const [palette, setPalette] = useState(false);
-  const [rulesDraft, setRulesDraft] = useState<Rule | null | undefined>(undefined);
+  const [showConsole, setShowConsole] = useState(OPEN === "console");
+  const [palette, setPalette] = useState(OPEN === "palette");
+  const [rulesDraft, setRulesDraft] = useState<Rule | null | undefined>(OPEN === "rules" ? null : undefined);
   const [status, setStatus] = useState<ProxyStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [filter, setFilter] = useState<Filter>(emptyFilter);
   const [searchBodies, setSearchBodies] = useState(false);
   const [follow, setFollow] = useState(true);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(OPEN === "settings");
   const [busy, setBusy] = useState(false);
-  const [showDevices, setShowDevices] = useState(false);
-  const [compose, setCompose] = useState<Req | null | undefined>(undefined);
+  const [showDevices, setShowDevices] = useState(OPEN === "devices");
+  const [compose, setCompose] = useState<Req | null | undefined>(OPEN === "compose" ? null : undefined);
   const [diffBase, setDiffBase] = useState<number | null>(null);
   const [diff, setDiff] = useState<[number, number] | null>(null);
   const [fileMenu, setFileMenu] = useState(false);
