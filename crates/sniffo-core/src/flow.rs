@@ -3,6 +3,7 @@
 use bytes::Bytes;
 use serde::Serialize;
 use std::{
+    collections::VecDeque,
     io::Read,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -73,8 +74,11 @@ pub struct Flow {
     pub pinned: bool,
     /// Names of the rules that acted on this flow.
     pub tags: Vec<String>,
-    /// Frames of a WebSocket connection (empty for plain HTTP).
-    pub ws_messages: Vec<WsMessage>,
+    /// Frames of a WebSocket connection (empty for plain HTTP); the newest MAX_WS_MESSAGES.
+    pub ws_messages: VecDeque<WsMessage>,
+    /// Older frames dropped from the front of `ws_messages`: frame `i` there is frame
+    /// `ws_dropped + i` of the connection.
+    pub ws_dropped: usize,
     /// "query GetUser" / "mutation Login" when the request is GraphQL.
     pub graphql: Option<String>,
 }
@@ -117,6 +121,7 @@ pub struct FlowSummary {
     pub error: Option<String>,
     pub pinned: bool,
     pub tags: Vec<String>,
+    /// Frames seen so far, including dropped ones.
     pub ws_count: usize,
     pub graphql: Option<String>,
 }
@@ -145,7 +150,7 @@ impl Flow {
             error: self.error.clone(),
             pinned: self.pinned,
             tags: self.tags.clone(),
-            ws_count: self.ws_messages.len(),
+            ws_count: self.ws_dropped + self.ws_messages.len(),
             graphql: self.graphql.clone(),
         }
     }

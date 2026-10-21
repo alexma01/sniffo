@@ -84,7 +84,9 @@ export function toPlain(fields: ProtoField[]): Record<string, unknown> {
   const groups = new Map<string, unknown[]>();
   for (const f of fields) {
     const v = Array.isArray(f.value) ? toPlain(f.value) : typeof f.value === "bigint" ? f.value.toString() : f.value;
-    groups.set(String(f.field), [...(groups.get(String(f.field)) ?? []), v]);
+    const k = String(f.field);
+    const g = groups.get(k);
+    if (g) g.push(v); else groups.set(k, [v]);
   }
   return Object.fromEntries([...groups].map(([k, vs]) => [k, vs.length === 1 ? vs[0] : vs]));
 }

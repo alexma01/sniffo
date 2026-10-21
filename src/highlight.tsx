@@ -1,7 +1,7 @@
 import { ReactNode, TextareaHTMLAttributes, useRef } from "react";
 
 // ponytail: regex tokenizer, JSON only; above LIMIT text stays plain so huge bodies render fast.
-const LIMIT = 200_000;
+const LIMIT = 50_000;
 const TOKEN = /("(?:\\.|[^"\\])*")(\s*:)?|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|\b(true|false|null)\b|([{}[\],:])/g;
 
 /** JSON (or JSON-like) text as spans coloured with the --syn-* theme tokens. */

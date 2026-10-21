@@ -280,6 +280,15 @@ impl Engine {
         self.inner.flows.read().unwrap().get(&id).cloned()
     }
 
+    /// WebSocket frames from number `from` on (counting dropped ones), and the number of the
+    /// first one returned: later than `from` when those frames were already dropped.
+    pub fn ws_messages(&self, id: FlowId, from: usize) -> Option<(usize, Vec<WsMessage>)> {
+        let flows = self.inner.flows.read().unwrap();
+        let f = flows.get(&id)?;
+        let start = from.max(f.ws_dropped);
+        Some((start, f.ws_messages.iter().skip(start - f.ws_dropped).cloned().collect()))
+    }
+
     /// One side of a flow without copying the rest (WebSocket frames, the other body).
     pub fn message(&self, id: FlowId, response: bool) -> Option<Message> {
         let flows = self.inner.flows.read().unwrap();
@@ -1218,9 +1227,10 @@ impl Frames {
         };
         self.engine.update(id, |f| {
             if f.ws_messages.len() >= MAX_WS_MESSAGES {
-                f.ws_messages.remove(0);
+                f.ws_messages.pop_front();
+                f.ws_dropped += 1;
             }
-            f.ws_messages.push(WsMessage { outgoing, time_ms: now_ms(), kind, size, data, injected });
+            f.ws_messages.push_back(WsMessage { outgoing, time_ms: now_ms(), kind, size, data, injected });
             if kind == "close" {
                 f.duration_ms = Some(now_ms().saturating_sub(f.started_ms));
             }

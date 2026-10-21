@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./icons";
 import { Logo } from "./Logo";
 import { Command, Palette } from "./Palette";
@@ -134,12 +134,19 @@ export default function App() {
     api.getSsl().then(setSsl);
     return api.status().then(setStatus);
   };
-  /** Same matching as the core (case-insensitive * wildcards; exclude wins). */
-  const decrypts = (host: string) => {
-    if (!ssl?.enabled) return false;
+  /** Same matching as the core (case-insensitive * wildcards; exclude wins). Compiled once per
+   *  settings change and cached per host: rows and sidebar call it on every render. */
+  const decrypts = useMemo(() => {
+    if (!ssl?.enabled) return () => false;
     const glob = (p: string) => new RegExp(`^${p.split("*").map((x) => x.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`, "i");
-    return ssl.include.some((p) => glob(p).test(host)) && !ssl.exclude.some((p) => glob(p).test(host));
-  };
+    const [include, exclude] = [ssl.include.map(glob), ssl.exclude.map(glob)];
+    const seen = new Map<string, boolean>();
+    return (host: string) => {
+      let v = seen.get(host);
+      if (v === undefined) seen.set(host, (v = include.some((r) => r.test(host)) && !exclude.some((r) => r.test(host))));
+      return v;
+    };
+  }, [ssl]);
   /** Proxyman-style per-host toggle: enable adds the host to Include; disable removes it, excluding it if a wildcard still matches. */
   const sslForHost = (host: string, on: boolean) => {
     if (!ssl) return;
@@ -151,6 +158,11 @@ export default function App() {
       .then(() => notify(on ? `SSL Proxying enabled for ${host}${ssl.enabled ? " — retry the request to see it decrypted" : " (SSL Proxying is off in Settings)"}` : `SSL Proxying disabled for ${host}`), fail)
       .finally(refresh);
   };
+  // Stable handlers so the memoized detail pane skips the re-render of every flow batch.
+  const sslRef = useRef(sslForHost);
+  sslRef.current = sslForHost;
+  const onSsl = useCallback((host: string, on: boolean) => sslRef.current(host, on), []);
+  const onPin = useCallback((id: number, pinned: boolean) => { api.pin(id, pinned); }, []);
   const start = () => api.start().then(() => setError(null), (e) => setError(String(e))).finally(refresh);
   /** First start of this app run: also take over the system proxy if the user wants that (default, like Proxyman). */
   const launch = () => api.start()
@@ -355,7 +367,7 @@ export default function App() {
           />
           <div className="split" onMouseDown={startSplit} title="Drag to resize" />
           {sel ? (
-            <FlowDetail summary={sel} onSsl={sslForHost} decrypts={decrypts} onPin={(id, pinned) => api.pin(id, pinned)} />
+            <FlowDetail summary={sel} onSsl={onSsl} decrypts={decrypts} onPin={onPin} />
           ) : (
             <div className="detail empty">
               {flows.size === 0 && <Logo size={104} tile />}

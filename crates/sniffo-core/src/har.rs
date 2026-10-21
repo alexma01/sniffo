@@ -144,6 +144,7 @@ pub fn import(data: &str) -> Result<Vec<Flow>, String> {
                         injected: false,
                     }
                 }).collect(),
+                ws_dropped: 0,
                 graphql: None,
             };
             Some(Flow { graphql: crate::flow::graphql_operation(&flow.url, &flow.request), ..flow })

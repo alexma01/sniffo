@@ -394,6 +394,26 @@ fn websocket_injection_needs_a_live_connection() {
 }
 
 #[test]
+fn websocket_frames_are_read_incrementally() {
+    let app = TestApp::new();
+    assert_eq!(app.ok("get_ws_messages", json!({ "id": 1, "from": 0 })), Value::Null);
+    let har = temp_dir("ws").join("ws.har");
+    let frames = json!([{ "type": "send", "time": 1, "opcode": 1, "data": "a" }, { "type": "receive", "time": 2, "opcode": 1, "data": "b" }]);
+    let entry = json!({ "startedDateTime": "2024-01-01T00:00:00.000Z", "time": 0,
+        "request": { "method": "GET", "url": "wss://x/ws", "httpVersion": "HTTP/1.1", "headers": [] },
+        "response": { "status": 101, "httpVersion": "HTTP/1.1", "headers": [], "content": { "size": 0 } },
+        "_webSocketMessages": frames });
+    std::fs::write(&har, json!({ "log": { "entries": [entry] } }).to_string()).unwrap();
+    assert_eq!(app.ok("import_har", json!({ "path": har, "replace": true })), json!(1));
+    let id = app.flows()[0]["id"].clone();
+    let all = app.ok("get_ws_messages", json!({ "id": id, "from": 0 }));
+    assert_eq!((all[0].clone(), all[1].as_array().unwrap().len()), (json!(0), 2));
+    let rest = app.ok("get_ws_messages", json!({ "id": id, "from": 1 }));
+    assert_eq!((rest[0].clone(), rest[1][0]["data"].clone()), (json!(1), json!("b")));
+    assert_eq!(app.ok("get_ws_messages", json!({ "id": id, "from": 2 }))[1], json!([]));
+}
+
+#[test]
 fn app_icon_is_empty_for_clients_without_a_bundle() {
     let app = TestApp::new();
     assert_eq!(app.raw("app_icon", json!({ "name": "curl" })).unwrap(), b"");

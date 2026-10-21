@@ -1,6 +1,6 @@
 import { diffLines } from "diff";
 import { backdrop } from "./backdrop";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, Flow } from "./api";
 
 /** Raw-ish text of one side of a flow, pretty-printing JSON so diffs line up. */
@@ -15,7 +15,8 @@ async function render(flow: Flow, response: boolean): Promise<string> {
 }
 
 function DiffView({ a, b }: { a: string; b: string }) {
-  const parts = diffLines(a, b);
+  // App re-renders on every flow batch; diff only when the texts change.
+  const parts = useMemo(() => diffLines(a, b), [a, b]);
   return (
     <pre className="code diff">
       {parts.map((p, i) => (

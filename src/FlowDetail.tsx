@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 
 import { Icon } from "./icons";
 import { api, Flow, FlowSummary, formatBytes, header, Headers, WsMessage } from "./api";
@@ -148,6 +148,22 @@ function GraphQL({ flow, bytes }: { flow: Flow; bytes: Uint8Array | null }) {
   );
 }
 
+/** Plain text bodies above this are cut until the user asks for all of it. */
+const TEXT_CAP = 256 * 1024;
+
+/** `text` up to TEXT_CAP, with a button that shows the rest. */
+function LongText({ text }: { text: string }) {
+  const [all, setAll] = useState(false);
+  if (all || text.length <= TEXT_CAP) return <pre className="code">{text}</pre>;
+  return (
+    <div>
+      <pre className="code">{text.slice(0, TEXT_CAP)}</pre>
+      <div className="seg"><button onClick={() => setAll(true)}>Show all ({formatBytes(text.length)})</button></div>
+    </div>
+  );
+}
+
+/** Decoding, parsing and pretty-printing run once per body (the pane re-renders on every flow update). */
 function BodyView({ bytes, contentType }: { bytes: Uint8Array | null; contentType?: string }) {
   const [mode, setMode] = useState<"tree" | "pretty">("tree");
   const [forceProto, setForceProto] = useState(false);
@@ -157,60 +173,62 @@ function BodyView({ bytes, contentType }: { bytes: Uint8Array | null; contentTyp
     return URL.createObjectURL(new Blob([bytes.slice()], { type: ct }));
   }, [bytes, ct]);
   useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+  const parts = useMemo(() => (bytes && ct.startsWith("multipart/") ? parseMultipart(bytes, contentType!) : null), [bytes, ct]);
+  const proto = useMemo(
+    () => (bytes?.length && (ct.includes("protobuf") || ct.startsWith("application/grpc") || forceProto) ? protobufView(bytes, ct.startsWith("application/grpc")) : null),
+    [bytes, ct, forceProto],
+  );
+  const text = useMemo(() => (bytes?.length && isText(bytes) ? new TextDecoder().decode(bytes) : null), [bytes]);
+  const hex = useMemo(() => (bytes?.length && text == null ? hexdump(bytes) : null), [bytes, text]);
+  const json = useMemo(() => {
+    if (text == null || !(ct.includes("json") || /^\s*[{[]/.test(text))) return null;
+    try { return { value: JSON.parse(text) as unknown }; } catch { return null; }
+  }, [text, ct]);
+  const pretty = useMemo(() => (json && mode === "pretty" ? highlightJson(JSON.stringify(json.value, null, 2)) : null), [json, mode]);
+  const xml = useMemo(() => (text != null && !json && ct.includes("xml") ? prettyXml(text) : null), [text, json, ct]);
 
   if (!bytes) return <div className="muted pad">Loading…</div>;
   if (!bytes.length) return <div className="muted pad">No body</div>;
   if (url) return <div className="pad"><img className="preview" src={url} /></div>;
 
-  if (ct.startsWith("multipart/")) {
-    const parts = parseMultipart(bytes, contentType!);
-    if (parts) {
-      return (
-        <div>
-          {parts.map((p, i) => (
-            <div key={i} className="part">
-              <HeaderTable headers={p.headers} />
-              <BodyView bytes={p.body} contentType={header(p.headers, "content-type")} />
-            </div>
-          ))}
-        </div>
-      );
-    }
+  if (parts) {
+    return (
+      <div>
+        {parts.map((p, i) => (
+          <div key={i} className="part">
+            <HeaderTable headers={p.headers} />
+            <BodyView bytes={p.body} contentType={header(p.headers, "content-type")} />
+          </div>
+        ))}
+      </div>
+    );
   }
-  if (ct.includes("protobuf") || ct.startsWith("application/grpc") || forceProto) {
-    const view = protobufView(bytes, ct.startsWith("application/grpc"));
-    if (view) return view;
-  }
-  if (!isText(bytes)) {
+  if (proto) return proto;
+  if (text == null) {
     return (
       <div>
         <div className="seg"><button onClick={() => setForceProto(true)}>Decode as Protobuf</button></div>
         {forceProto && <p className="err pad-s">Not a valid protobuf message</p>}
-        <pre className="code">{hexdump(bytes)}</pre>
+        <pre className="code">{hex}</pre>
       </div>
     );
   }
-  const text = new TextDecoder().decode(bytes);
 
   if (ct.includes("x-www-form-urlencoded")) {
     return <HeaderTable headers={[...new URLSearchParams(text).entries()]} />;
   }
-  if (ct.includes("json") || /^\s*[{[]/.test(text)) {
-    try {
-      const value = JSON.parse(text);
-      return (
-        <div>
-          <div className="seg">
-            <button className={mode === "tree" ? "active" : ""} onClick={() => setMode("tree")}>Tree</button>
-            <button className={mode === "pretty" ? "active" : ""} onClick={() => setMode("pretty")}>Pretty</button>
-          </div>
-          {mode === "tree" ? <JsonTree value={value} /> : <pre className="code">{highlightJson(JSON.stringify(value, null, 2))}</pre>}
+  if (json) {
+    return (
+      <div>
+        <div className="seg">
+          <button className={mode === "tree" ? "active" : ""} onClick={() => setMode("tree")}>Tree</button>
+          <button className={mode === "pretty" ? "active" : ""} onClick={() => setMode("pretty")}>Pretty</button>
         </div>
-      );
-    } catch { /* not JSON after all */ }
+        {mode === "tree" ? <JsonTree value={json.value} /> : <pre className="code">{pretty}</pre>}
+      </div>
+    );
   }
-  if (ct.includes("xml")) return <pre className="code">{prettyXml(text)}</pre>;
-  return <pre className="code">{text}</pre>;
+  return <LongText text={xml ?? text} />;
 }
 
 function HeaderTable({ headers }: { headers: Headers }) {
@@ -254,33 +272,53 @@ function Timing({ flow }: { flow: Flow }) {
   return <HeaderTable headers={rows} />;
 }
 
-function Messages({ flowId, messages }: { flowId: number; messages: WsMessage[] }) {
+/** One WebSocket frame; memoized so a new frame renders one row, not all of them. */
+const Frame = memo(function Frame({ m, n, t0, open, closed, onToggle, onEdit }: { m: WsMessage; n: number; t0: number; open: boolean; closed: boolean; onToggle: (n: number) => void; onEdit: (m: WsMessage) => void }) {
+  const bytes = useMemo(
+    () => (!open ? null : m.kind === "text" ? new TextEncoder().encode(m.data) : m.kind === "binary" ? Uint8Array.from(atob(m.data), (c) => c.charCodeAt(0)) : null),
+    [open, m],
+  );
+  return (
+    <div>
+      <div className={`ws-row ${m.outgoing ? "out" : "in"} ${open ? "open" : ""}`} onClick={() => onToggle(n)}>
+        <span className="ws-dir">{m.outgoing ? "↑" : "↓"}</span>
+        <span className="ws-time">+{((m.time_ms - t0) / 1000).toFixed(3)}s</span>
+        <span className="ws-kind">{m.kind}</span>
+        <span className="ws-size">{formatBytes(m.size)}</span>
+        <span className="ws-data">{m.injected && <span className="badge warn" title="Sent from Sniffo">injected</span>}{m.kind === "text" ? highlightMaybeJson(m.data) : m.data}</span>
+      </div>
+      {open && (m.kind === "text" || m.kind === "binary") && !closed && (
+        <div className="seg"><button onClick={() => onEdit(m)}>Edit &amp; resend</button></div>
+      )}
+      {bytes && <BodyView bytes={bytes} />}
+    </div>
+  );
+});
+
+/** Frames rendered at first (newest); older ones on request. */
+const FRAMES_SHOWN = 500;
+
+/** `dropped`: frames before messages[0] that are no longer kept (numbers rows stably). */
+function Messages({ flowId, messages, dropped }: { flowId: number; messages: WsMessage[]; dropped: number }) {
   const [open, setOpen] = useState<number | null>(null);
+  const [shown, setShown] = useState(FRAMES_SHOWN);
   const [draft, setDraft] = useState({ toServer: true, binary: false, data: "" });
   const [error, setError] = useState<string | null>(null);
   const closed = messages.some((m) => m.kind === "close");
   const send = () => api.sendWs(flowId, draft.toServer, draft.data, draft.binary).then(() => setError(null), (e) => setError(String(e)));
   const format = () => { try { setDraft({ ...draft, data: JSON.stringify(JSON.parse(draft.data), null, 2) }); setError(null); } catch (e) { setError(String(e)); } };
+  const onToggle = useCallback((n: number) => setOpen((o) => (o === n ? null : n)), []);
+  const onEdit = useCallback((m: WsMessage) => setDraft({ toServer: m.outgoing, binary: m.kind === "binary", data: m.data }), []);
   const t0 = messages[0]?.time_ms ?? 0;
+  const first = Math.max(0, messages.length - shown);
   return (
     <div className="ws">
       {!messages.length && <div className="muted pad">No frames yet</div>}
-      {messages.map((m, i) => (
-        <div key={i}>
-          <div className={`ws-row ${m.outgoing ? "out" : "in"} ${open === i ? "open" : ""}`} onClick={() => setOpen(open === i ? null : i)}>
-            <span className="ws-dir">{m.outgoing ? "↑" : "↓"}</span>
-            <span className="ws-time">+{((m.time_ms - t0) / 1000).toFixed(3)}s</span>
-            <span className="ws-kind">{m.kind}</span>
-            <span className="ws-size">{formatBytes(m.size)}</span>
-            <span className="ws-data">{m.injected && <span className="badge warn" title="Sent from Sniffo">injected</span>}{m.kind === "text" ? highlightMaybeJson(m.data) : m.data}</span>
-          </div>
-          {open === i && (m.kind === "text" || m.kind === "binary") && !closed && (
-            <div className="seg"><button onClick={() => setDraft({ toServer: m.outgoing, binary: m.kind === "binary", data: m.data })}>Edit &amp; resend</button></div>
-          )}
-          {open === i && m.kind === "text" && <BodyView bytes={new TextEncoder().encode(m.data)} />}
-          {open === i && m.kind === "binary" && <BodyView bytes={Uint8Array.from(atob(m.data), (c) => c.charCodeAt(0))} />}
-        </div>
-      ))}
+      {first > 0 && <div className="seg"><button onClick={() => setShown(shown + 2000)}>Show {Math.min(first, 2000)} earlier frames</button></div>}
+      {messages.slice(first).map((m, i) => {
+        const n = dropped + first + i;
+        return <Frame key={n} m={m} n={n} t0={t0} open={open === n} closed={closed} onToggle={onToggle} onEdit={onEdit} />;
+      })}
       {!closed && (
         <div className="ws-compose">
           <div className="ws-compose-bar">
@@ -311,7 +349,9 @@ function Pane(props: { title: string; flow: Flow; response: boolean }) {
   useEffect(() => {
     setBytes(null);
     if (!msg) return;
-    api.getBody(flow.id, response).then((b) => setBytes(new Uint8Array(b)));
+    let live = true;
+    api.getBody(flow.id, response).then((b) => { if (live) setBytes(new Uint8Array(b)); });
+    return () => { live = false; };
   }, [flow.id, response, flow.state, msg?.body_size]);
 
   const query = useMemo(() => {
@@ -328,6 +368,13 @@ function Pane(props: { title: string; flow: Flow; response: boolean }) {
     else if (!tabs.includes(tab)) setTab("body");
   }, [flow.id]);
   const firstLine = response ? `${flow.http_version} ${flow.status ?? ""}` : `${flow.method} ${flow.path} ${flow.http_version}`;
+  const raw = useMemo(() => {
+    if (tab !== "raw" || !msg) return null;
+    const body = !bytes ? "" : !isText(bytes) ? `<${formatBytes(bytes.length)} binary>`
+      : bytes.length > TEXT_CAP ? `${new TextDecoder().decode(bytes.subarray(0, TEXT_CAP))}\n… ${formatBytes(bytes.length - TEXT_CAP)} more (see Body)`
+      : new TextDecoder().decode(bytes);
+    return highlightHttp(firstLine + "\n" + msg.headers.map(([k, v]) => `${k}: ${v}`).join("\n") + "\n\n" + body);
+  }, [tab, msg, bytes, firstLine]);
 
   return (
     <section className="pane">
@@ -343,7 +390,7 @@ function Pane(props: { title: string; flow: Flow; response: boolean }) {
         {tab === "timing" ? (
           <Timing flow={flow} />
         ) : tab === "messages" ? (
-          <Messages flowId={flow.id} messages={flow.ws_messages} />
+          <Messages flowId={flow.id} messages={flow.ws_messages} dropped={flow.ws_dropped} />
         ) : tab === "graphql" ? (
           <GraphQL flow={flow} bytes={bytes} />
         ) : !msg ? (
@@ -359,10 +406,7 @@ function Pane(props: { title: string; flow: Flow; response: boolean }) {
             ? <ProtoBody flow={flow} response={response} bytes={bytes} contentType={header(msg.headers, "content-type")} />
             : <BodyView bytes={bytes} contentType={header(msg.headers, "content-type")} />
         ) : (
-          <pre className="code">
-            {highlightHttp(firstLine + "\n" + msg.headers.map(([k, v]) => `${k}: ${v}`).join("\n") + "\n\n" +
-              (bytes && isText(bytes) ? new TextDecoder().decode(bytes) : bytes ? `<${formatBytes(bytes.length)} binary>` : ""))}
-          </pre>
+          <pre className="code">{raw}</pre>
         )}
       </div>
     </section>
@@ -375,10 +419,35 @@ export function parentWildcard(host: string): string | null {
   return parts.length > 2 && !/^\d+$/.test(parts[parts.length - 1]) ? `*.${parts.slice(1).join(".")}` : null;
 }
 
-/** Refetches whenever the summary object changes (each upsert event replaces it). */
-export function FlowDetail({ summary, onSsl, onPin, decrypts }: { summary: FlowSummary; onSsl: (host: string, on: boolean) => void; onPin: (id: number, pinned: boolean) => void; decrypts: (host: string) => boolean }) {
+/** Same cap as the core (MAX_WS_MESSAGES). */
+const MAX_WS = 10_000;
+
+/** Refetches when the flow changes; new WebSocket frames are fetched on their own and appended. */
+export const FlowDetail = memo(function FlowDetail({ summary, onSsl, onPin, decrypts }: { summary: FlowSummary; onSsl: (host: string, on: boolean) => void; onPin: (id: number, pinned: boolean) => void; decrypts: (host: string) => boolean }) {
   const [flow, setFlow] = useState<Flow | null>(null);
-  useEffect(() => { api.getFlow(summary.id).then(setFlow); }, [summary]);
+  // Every upsert replaces the summary; a new frame (ws_count) or a pin needs no full refetch.
+  const { ws_count, pinned: _pinned, ...shown } = summary;
+  const key = JSON.stringify(shown);
+  useEffect(() => {
+    let live = true;
+    api.getFlow(summary.id).then((f) => { if (live) setFlow(f); });
+    return () => { live = false; };
+  }, [key]);
+  useEffect(() => {
+    if (!flow || flow.id !== summary.id) return;
+    const next = flow.ws_dropped + flow.ws_messages.length;
+    if (ws_count <= next) return;
+    let live = true;
+    api.getWsMessages(flow.id, next).then((r) => {
+      if (!live || !r) return;
+      const [start, frames] = r;
+      // Frames we missed were dropped in the core: start over from what it still has.
+      const merged = start === next ? flow.ws_messages.concat(frames) : frames;
+      const kept = merged.slice(-MAX_WS);
+      setFlow({ ...flow, ws_messages: kept, ws_dropped: (start === next ? flow.ws_dropped : start) + merged.length - kept.length });
+    });
+    return () => { live = false; };
+  }, [flow, ws_count]);
   if (!flow) return <div className="detail muted pad">Flow not found</div>;
   return (
     <div className="detail">
@@ -415,4 +484,4 @@ export function FlowDetail({ summary, onSsl, onPin, decrypts }: { summary: FlowS
       </div>
     </div>
   );
-}
+});

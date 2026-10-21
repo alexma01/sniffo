@@ -26,7 +26,7 @@ const flows: Flow[] = samples.map(([method, url, status, ct, body], i) => {
     id: i + 1, client_addr: "127.0.0.1:52000", started_ms: Date.now() - (6 - i) * 1000, ttfb_ms: null, duration_ms: null,
     method, url, scheme: "https", host: u.hostname, path: "", http_version: "HTTP/1.1",
     request: { headers: [["host", u.host], ["user-agent", "JetBrains Rider/2026.2"]], body_size: 0 },
-    status: null, response: null, state: "complete", error: null, ws_messages: [], graphql: null,
+    status: null, response: null, state: "complete", error: null, ws_messages: [], ws_dropped: 0, graphql: null,
   };
   return {
     id: i + 1, client_addr: "127.0.0.1:52000", started_ms: Date.now() - (6 - i) * 1000, ttfb_ms: 40 + i * 10, duration_ms: 60 + i * 15,
@@ -40,6 +40,7 @@ const flows: Flow[] = samples.map(([method, url, status, ct, body], i) => {
       { outgoing: false, time_ms: 2100, kind: "binary", size: 3, data: "AQID", injected: false },
       { outgoing: true, time_ms: 2500, kind: "text", size: 12, data: '{"op":"ping"}', injected: true },
     ] : [],
+    ws_dropped: 0,
     graphql: url.endsWith("/graphql") ? "query GetUser" : null,
   };
 });
@@ -62,6 +63,7 @@ mockIPC((cmd, args) => {
     case "proxy_status": return { running: true, address: "127.0.0.1:9191", port: 9191, allow_lan: true, auto_system_proxy: true, vpn: { state: "helper_missing" }, lan: [{ interface: "en0", ip: "192.168.1.12" }, { interface: "utun4", ip: "10.8.0.2" }], lan_name: "sniffo.local", ca_path: "~/sniffo-ca.pem", ca_trusted: false, system_proxy: false };
     case "list_flows": return flows.map(summary);
     case "get_flow": return flows.find((f) => f.id === a.id) ?? null;
+    case "get_ws_messages": { const f = flows.find((x) => x.id === a.id); return f ? [a.from, f.ws_messages.slice(a.from)] : null; }
     case "get_body": return a.response ? (bodies.get(a.id) ?? new Uint8Array()).buffer
       : flows.find((f) => f.id === a.id)?.graphql ? enc.encode('{"query":"query GetUser($id: ID!) {\\n  user(id: $id) { name }\\n}","variables":{"id":7}}').buffer
       : enc.encode("user=ada&remember=1").buffer;

@@ -55,6 +55,8 @@ export interface Flow {
   state: FlowState;
   error: string | null;
   ws_messages: WsMessage[];
+  /** Older frames dropped from the front of ws_messages. */
+  ws_dropped: number;
   graphql: string | null;
 }
 
@@ -145,6 +147,8 @@ export const api = {
   importHar: (path: string, replace: boolean) => invoke<number>("import_har", { path, replace }),
   listFlows: () => invoke<FlowSummary[]>("list_flows"),
   getFlow: (id: number) => invoke<Flow | null>("get_flow", { id }),
+  /** Frames from number `from` on: [number of the first returned, frames]. */
+  getWsMessages: (id: number, from: number) => invoke<[number, WsMessage[]] | null>("get_ws_messages", { id, from }),
   getBody: (id: number, response: boolean) => invoke<ArrayBuffer>("get_body", { id, response }),
   clear: () => invoke<void>("clear_flows"),
   remove: (ids: number[]) => invoke<void>("remove_flows", { ids }),

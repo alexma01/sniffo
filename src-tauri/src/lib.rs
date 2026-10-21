@@ -2,7 +2,7 @@ use serde::Serialize;
 use serde::Deserialize;
 use sniffo_core::devices::{self, Device};
 use sniffo_core::net::NetworkOptions;
-use sniffo_core::{BreakpointHit, Decision, Engine, Flow, FlowEvent, FlowSummary, ProxyHandle, RootCa, Rules, SslProxying, StartOptions, system};
+use sniffo_core::{BreakpointHit, Decision, Engine, Flow, FlowEvent, FlowSummary, ProxyHandle, RootCa, Rules, SslProxying, StartOptions, WsMessage, system};
 use std::{path::{Path, PathBuf}, sync::atomic::{AtomicBool, Ordering}, time::Duration};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, State, ipc::Response};
 use tokio::{net::TcpListener, sync::Mutex};
@@ -459,6 +459,12 @@ fn get_flow(state: State<'_, AppState>, id: u64) -> Option<Flow> {
     state.engine.flow(id)
 }
 
+/// New WebSocket frames for the open detail view: `(number of the first, frames)`.
+#[tauri::command(async)]
+fn get_ws_messages(state: State<'_, AppState>, id: u64, from: usize) -> Option<(usize, Vec<WsMessage>)> {
+    state.engine.ws_messages(id, from)
+}
+
 /// Decoded (Content-Encoding removed) body bytes; arrives in JS as an ArrayBuffer.
 #[tauri::command(async)]
 fn get_body(state: State<'_, AppState>, id: u64, response: bool) -> Response {
@@ -670,7 +676,7 @@ pub fn setup<R: Runtime>(builder: tauri::Builder<R>, data_dir: Option<PathBuf>) 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, install_vpn_helper, list_devices, device_command, app_icon, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_body, clear_flows, remove_flows, pin_flow, search_flows,
+            proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, install_vpn_helper, list_devices, device_command, app_icon, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_ws_messages, get_body, clear_flows, remove_flows, pin_flow, search_flows,
             get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, export_rules, import_rules, get_proto_schemas, set_proto_files, decode_proto, list_breakpoints, resume_breakpoint, send_ws_message
         ])
 }
