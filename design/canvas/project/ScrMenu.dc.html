@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sniffo flow context menu</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position: relative; width: 1280px; height: 800px; overflow: hidden; font-family: Inter, -apple-system, system-ui, sans-serif; font-size: 13px; line-height: 1.4; color: {{c.fg}};">
+  <dc-import name="Main" direction="signal" dark="{{dark}}" hint-size="1280px,800px"></dc-import>
+
+  <div role="menu" aria-label="Flow actions" style="position: absolute; left: 560px; top: 138px; width: 260px; padding: 5px; box-sizing: border-box; border-radius: 10px; background: {{c.modal}}; box-shadow: {{c.shadow}};">
+    <sc-for list="{{items}}" as="it" hint-placeholder-count="12">
+      <sc-if value="{{it.sep}}" hint-placeholder-val="{{false}}"><div style="height: 1px; margin: 5px 6px; background: {{c.border}};"></div></sc-if>
+      <sc-if value="{{it.swatches}}" hint-placeholder-val="{{false}}">
+        <div style="display: flex; gap: 7px; padding: 6px 10px;">
+          <sc-for list="{{swatches}}" as="s" hint-placeholder-count="6"><span style="width: 14px; height: 14px; border-radius: 50%; background: {{s}};"></span></sc-for>
+          <span style="width: 14px; height: 14px; border-radius: 50%; box-sizing: border-box; border: 1px solid {{c.border}};"></span>
+        </div>
+      </sc-if>
+      <sc-if value="{{it.item}}" hint-placeholder-val="{{true}}">
+        <div role="menuitem" style="display: flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 6px; background: {{it.bg}}; color: {{it.fg}};">
+          <span style="flex: 1;">{{it.label}}</span><span style="font-size: 12px; color: {{c.muted}};">{{it.key}}</span>
+        </div>
+      </sc-if>
+    </sc-for>
+  </div>
+
+  <div role="status" style="position: absolute; left: 50%; bottom: 44px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 10px; background: {{c.toastBg}}; color: {{c.toastFg}}; font-weight: 500; box-shadow: 0 8px 24px rgba(0,0,0,0.3);">
+    <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="fill: none; stroke: {{c.toastAccent}}; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round;"><path d="M5 12l5 5L20 7"></path></svg>
+    Copied as cURL
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":true},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? true;
+    const c = dark
+      ? { border: '#2a2b30', fg: '#ececef', muted: '#8d8f98', err: '#f87171', sel: 'rgba(198,242,78,0.14)', modal: '#202125', shadow: '0 14px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.08)', toastBg: '#ececef', toastFg: '#111214', toastAccent: '#4d7c0f' }
+      : { border: '#e1e1dc', fg: '#18181b', muted: '#686870', err: '#dc2626', sel: 'rgba(198,242,78,0.35)', modal: '#ffffff', shadow: '0 14px 40px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.07)', toastBg: '#18181b', toastFg: '#fbfbfa', toastAccent: '#c6f24e' };
+    const I = (label, key, extra) => Object.assign({ item: true, sep: false, swatches: false, label, key: key || '', bg: 'transparent', fg: c.fg }, extra || {});
+    const S = { item: false, sep: true, swatches: false };
+    const items = [
+      I('Repeat', '⌘R'), I('Edit & Repeat…', '⌘E'), I('Disable SSL Proxying for app.acme.test'),
+      S, I('Pin'), { item: false, sep: false, swatches: true },
+      I('Copy URL'), I('Copy as cURL', '⇧⌘C', { bg: c.sel }), I('Copy as fetch'), I('Copy as Python requests'), I('Export as HAR…'),
+      S, I('Mark for diff'), I('Show only app.acme.test'),
+      S, I('Breakpoint…'), I('Map Local…'), I('Map Remote…'), I('Script…'), I('Throttle host…'), I('Block host…'),
+      S, I('Delete', '⌫', { fg: c.err })
+    ];
+    const swatches = ['rgba(255,59,48,0.9)', 'rgba(255,149,0,0.9)', 'rgba(255,204,0,0.9)', 'rgba(52,199,89,0.9)', 'rgba(0,122,255,0.9)', 'rgba(175,82,222,0.9)'];
+    return { c, dark, items, swatches };
+  }
+}
+</script>
+</body>
+</html>

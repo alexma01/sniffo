@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sniffo compose request</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position: relative; width: 1280px; height: 800px; overflow: hidden; font-family: Inter, -apple-system, system-ui, sans-serif; font-size: 13px; line-height: 1.4; color: {{c.fg}};">
+  <dc-import name="Main" direction="signal" dark="{{dark}}" hint-size="1280px,800px"></dc-import>
+  <div style="position: absolute; inset: 0; background: {{c.scrim}}; display: flex; align-items: center; justify-content: center;">
+    <div role="dialog" aria-label="Compose request" style="width: 860px; display: flex; flex-direction: column; border-radius: 14px; overflow: hidden; background: {{c.modal}}; box-shadow: {{c.shadow}};">
+      <div style="padding: 16px 22px; border-bottom: 1px solid {{c.border}}; font-size: 17px; font-weight: 600;">Compose request</div>
+      <div style="padding: 18px 22px; display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: flex; gap: 8px;">
+          <label style="display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid {{c.border}}; background: {{c.field}}; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; color: {{c.ok}};">POST <span style="color: {{c.muted}};">▾</span></label>
+          <input type="text" aria-label="URL" value="https://app.acme.test/api/v2/reports" style="flex: 1; height: 34px; box-sizing: border-box; padding: 0 12px; border-radius: 8px; border: 1px solid {{c.focus}}; box-shadow: 0 0 0 3px {{c.ring}}; outline: none; background: {{c.field}}; color: {{c.fg}}; font: 12.5px 'JetBrains Mono', monospace;">
+          <button type="button" style="height: 34px; padding: 0 18px; border-radius: 8px; border: none; background: {{c.accent}}; color: {{c.onAccent}}; font: inherit; font-weight: 600;">Send  ⌘↵</button>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;">
+          <label style="display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{c.muted}};">Headers</span>
+            <div role="textbox" aria-multiline="true" aria-label="Headers" style="height: 168px; box-sizing: border-box; padding: 8px 0; border-radius: 8px; border: 1px solid {{c.border}}; background: {{c.field}}; font: 12px/1.6 'JetBrains Mono', monospace; overflow: hidden;">
+              <sc-for list="{{headLines}}" as="l" hint-placeholder-count="4">
+                <div style="display: flex; white-space: pre;"><span style="width: 30px; flex: none; padding-right: 10px; text-align: right; color: {{c.gutter}};">{{l.n}}</span><span><sc-for list="{{l.parts}}" as="p" hint-placeholder-count="3"><span style="color: {{p.color}};">{{p.t}}</span></sc-for></span></div>
+              </sc-for>
+            </div>
+          </label>
+          <label style="display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{c.muted}};">Body · JSON</span>
+            <div role="textbox" aria-multiline="true" aria-label="Body" style="height: 168px; box-sizing: border-box; padding: 8px 0; border-radius: 8px; border: 1px solid {{c.border}}; background: {{c.field}}; font: 12px/1.6 'JetBrains Mono', monospace; overflow: hidden;">
+              <sc-for list="{{bodyLines}}" as="l" hint-placeholder-count="7">
+                <div style="display: flex; white-space: pre;"><span style="width: 30px; flex: none; padding-right: 10px; text-align: right; color: {{c.gutter}};">{{l.n}}</span><span><sc-for list="{{l.parts}}" as="p" hint-placeholder-count="4"><span style="color: {{p.color}};">{{p.t}}</span></sc-for></span></div>
+              </sc-for>
+            </div>
+          </label>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 8px; border: 1px dashed {{c.border}}; color: {{c.muted}};">
+          <span style="color: {{c.accentText}}; font-weight: 500;">▸ Import from cURL</span><span>— paste a <span style="font-family: 'JetBrains Mono', monospace;">curl …</span> command to fill everything</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; color: {{c.ok}};">
+          <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round;"><path d="M5 12l5 5L20 7"></path></svg>
+          Sent — 201 Created. The request is in the list (#4223).
+        </div>
+      </div>
+      <div style="display: flex; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid {{c.border}};">
+        <button type="button" style="height: 30px; padding: 0 14px; border-radius: 8px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.fg}}; font: inherit; font-weight: 500;">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":true},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? true;
+    const c = dark
+      ? { field: '#1d1e22', raised: '#25262b', border: '#2a2b30', fg: '#ececef', muted: '#8d8f98', accent: '#c6f24e', onAccent: '#111214', accentText: '#c6f24e', ok: '#34d399', focus: '#c6f24e', ring: 'rgba(198,242,78,0.18)', scrim: 'rgba(0,0,0,0.5)', modal: '#1a1b1e', shadow: '0 24px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06)' }
+      : { field: '#f3f3f1', raised: '#ffffff', border: '#e1e1dc', fg: '#18181b', muted: '#686870', accent: '#c6f24e', onAccent: '#18181b', accentText: '#4d7c0f', ok: '#047857', focus: '#65a30d', ring: 'rgba(198,242,78,0.45)', scrim: 'rgba(20,20,22,0.28)', modal: '#ffffff', shadow: '0 24px 60px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)' };
+    Object.assign(c, dark
+      ? { synKey: '#93c5fd', synStr: '#c6f24e', synNum: '#fdba74', synBool: '#f0abfc', synPunct: '#6b6d76', gutter: '#4a4c53' }
+      : { synKey: '#1d4ed8', synStr: '#4d7c0f', synNum: '#c2410c', synBool: '#a21caf', synPunct: '#8a8a92', gutter: '#b4b4ae' });
+    const tok = (s) => {
+      const out = []; let last = 0; let m;
+      const re = /("(?:\\.|[^"\\])*")(\s*:)?|(-?\d+(?:\.\d+)?)|\b(true|false|null)\b|([{}\[\],:])/g;
+      while ((m = re.exec(s))) {
+        if (m.index > last) out.push({ t: s.slice(last, m.index), color: c.fg });
+        if (m[1]) { out.push({ t: m[1], color: m[2] ? c.synKey : c.synStr }); if (m[2]) out.push({ t: m[2], color: c.synPunct }); }
+        else if (m[3]) out.push({ t: m[3], color: c.synNum });
+        else if (m[4]) out.push({ t: m[4], color: c.synBool });
+        else out.push({ t: m[5], color: c.synPunct });
+        last = re.lastIndex;
+      }
+      if (last < s.length) out.push({ t: s.slice(last), color: c.fg });
+      return out;
+    };
+    const hdr = (s) => { const i = s.indexOf(':'); return [{ t: s.slice(0, i), color: c.synKey }, { t: ':', color: c.synPunct }, { t: s.slice(i + 1), color: c.fg }]; };
+    const headLines = ['accept: application/json', 'content-type: application/json', 'authorization: Bearer ••••••••••••', 'x-request-id: 6c1e0b9a-4f2d']
+      .map((s, i) => ({ n: i + 1, parts: hdr(s) }));
+    const bodyLines = ['{', '  "name": "Weekly traffic",', '  "range": "7d",', '  "limit": 500,', '  "includeBots": false,', '  "format": "csv"', '}']
+      .map((s, i) => ({ n: i + 1, parts: tok(s) }));
+    return { c, dark, headLines, bodyLines };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sniffo main window</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 800px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; background: {{c.bg}}; color: {{c.fg}}; font-family: Inter, -apple-system, system-ui, sans-serif; font-size: 13px; line-height: 1.4; font-variant-numeric: tabular-nums;">
+
+  <header style="height: 52px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 14px 0 16px; background: {{c.chrome}}; border-bottom: 1px solid {{c.border}};">
+    <div style="display: flex; gap: 8px;" aria-hidden="true">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #ff5f57;"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #febc2e;"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #28c840;"></span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 7px; margin-left: 10px; font-weight: 700; font-size: 14px; letter-spacing: -0.01em;">
+      <svg width="22" height="22" viewBox="10 14 80 70" aria-hidden="true"><path d="M29 37 Q35 28 41 37 M59 37 Q65 28 71 37" style="fill: none; stroke: {{c.fg}}; stroke-width: 6; stroke-linecap: round;"></path><circle cx="36" cy="64" r="10" style="fill: {{c.accent}};"></circle><circle cx="64" cy="64" r="10" style="fill: {{c.accent}};"></circle><circle cx="50" cy="58" r="17" style="fill: {{c.accent}};"></circle><ellipse cx="43" cy="70" rx="3.8" ry="2.4" fill="#111214"></ellipse><ellipse cx="57" cy="70" rx="3.8" ry="2.4" fill="#111214"></ellipse></svg>
+      <span>Sniffo</span>
+    </div>
+    <span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 8px; border-radius: 999px; background: {{c.okTint}}; color: {{c.ok}}; font-size: 12px; font-weight: 500;">
+      <span style="width: 7px; height: 7px; border-radius: 50%; background: {{c.ok}};"></span>Recording · 127.0.0.1:9191
+    </span>
+    <div style="flex: 1; display: flex; justify-content: center;">
+      <label style="display: flex; align-items: center; gap: 8px; width: 420px; height: 30px; box-sizing: border-box; padding: 0 8px 0 10px; border-radius: 8px; background: {{c.field}}; border: 1px solid {{c.border}}; color: {{c.muted}};">
+        <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;"><circle cx="11" cy="11" r="7"></circle><path d="M16.5 16.5L21 21"></path></svg>
+        <input type="text" placeholder="Search or run…" aria-label="Command palette" style="flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: {{c.fg}}; font: inherit;">
+        <kbd style="font-family: Inter, sans-serif; font-size: 11px; padding: 1px 6px; border-radius: 5px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.muted}};">⌘P</kbd>
+      </label>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 12px;">
+      <span style="color: {{c.muted}};">System proxy</span>
+      <button type="button" aria-label="System proxy on" style="width: 34px; height: 20px; padding: 2px; border-radius: 999px; border: none; background: {{c.accent}}; display: flex; justify-content: flex-end; cursor: pointer;">
+        <span style="width: 16px; height: 16px; border-radius: 50%; background: {{c.onAccent}};"></span>
+      </button>
+    </div>
+    <button type="button" style="height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.fg}}; font: inherit; font-weight: 500; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+      <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><rect x="7" y="2.5" width="10" height="19" rx="2.5"></rect><path d="M11 18h2"></path></svg>
+      Devices
+    </button>
+    <button type="button" style="height: 30px; padding: 0 12px; border-radius: 8px; border: none; background: {{c.accent}}; color: {{c.onAccent}}; font: inherit; font-weight: 600; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+      <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round;"><path d="M12 5v14M5 12h14"></path></svg>
+      Compose
+    </button>
+    <button type="button" aria-label="Settings" style="width: 30px; height: 30px; border-radius: 8px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.muted}}; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+      <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true" style="fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg>
+    </button>
+  </header>
+
+  <div style="flex: 1; display: flex; min-height: 0;">
+
+    <nav aria-label="Sources" style="width: 236px; flex: none; box-sizing: border-box; padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; background: {{c.sidebar}}; border-right: 1px solid {{c.border}}; overflow: hidden;">
+      <a href="#" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 10px; border-radius: 7px; color: {{c.fg}}; text-decoration: none; font-weight: 500;">
+        <span style="width: 18px; height: 18px; border-radius: 5px; background: {{c.raised}}; border: 1px solid {{c.border}}; box-sizing: border-box;"></span>
+        <span style="flex: 1;">All traffic</span><span style="color: {{c.muted}}; font-size: 12px;">{{total}}</span>
+      </a>
+      <a href="#" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 10px; border-radius: 7px; color: {{c.fg}}; text-decoration: none; font-weight: 500;">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style="fill: none; stroke: {{c.muted}}; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><path d="M12 3v18M7 8l5-5 5 5"></path></svg>
+        <span style="flex: 1;">Pinned</span><span style="color: {{c.muted}}; font-size: 12px;">6</span>
+      </a>
+
+      <div style="margin: 14px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{c.muted}};">This Mac</div>
+      <sc-for list="{{apps}}" as="it" hint-placeholder-count="5">
+        <a href="#" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 10px; border-radius: 7px; text-decoration: none; background: {{it.bg}}; color: {{it.fg}}; font-weight: {{it.weight}};">
+          <span style="width: 18px; height: 18px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #ffffff; background: {{it.tile}};">{{it.letter}}</span>
+          <span style="flex: 1;">{{it.name}}</span>
+          <svg width="34" height="12" viewBox="0 0 34 12" aria-hidden="true" style="fill: none; stroke: {{it.spark}}; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;"><path d="{{it.path}}"></path></svg>
+          <span style="width: 26px; text-align: right; color: {{c.muted}}; font-size: 12px;">{{it.count}}</span>
+        </a>
+      </sc-for>
+
+      <div style="margin: 14px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{c.muted}};">Devices</div>
+      <a href="#" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 10px; border-radius: 7px; color: {{c.fg}}; text-decoration: none;">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style="fill: none; stroke: {{c.muted}}; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><rect x="7" y="2.5" width="10" height="19" rx="2.5"></rect><path d="M11 18h2"></path></svg>
+        <span style="flex: 1;">iPhone di Ale</span>
+        <span style="width: 7px; height: 7px; border-radius: 50%; background: {{c.ok}};"></span>
+        <span style="width: 26px; text-align: right; color: {{c.muted}}; font-size: 12px;">57</span>
+      </a>
+      <a href="#" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 10px; border-radius: 7px; color: {{c.fg}}; text-decoration: none;">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style="fill: none; stroke: {{c.muted}}; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><rect x="4" y="3" width="16" height="18" rx="2.5"></rect><path d="M10 18h4"></path></svg>
+        <span style="flex: 1;">Pixel 8 · emulator</span>
+        <span style="width: 7px; height: 7px; border-radius: 50%; background: {{c.muted}};"></span>
+        <span style="width: 26px; text-align: right; color: {{c.muted}}; font-size: 12px;">12</span>
+      </a>
+
+      <div style="margin: 14px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{c.muted}};">Domains</div>
+      <sc-for list="{{domains}}" as="d" hint-placeholder-count="5">
+        <a href="#" style="display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 10px; border-radius: 7px; color: {{c.fg}}; text-decoration: none; font-size: 12.5px;">
+          <span style="width: 18px; display: flex; justify-content: center;"><span style="width: 6px; height: 6px; border-radius: 2px; background: {{d.dot}};"></span></span>
+          <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{d.host}}</span>
+          <span style="color: {{c.muted}}; font-size: 12px;">{{d.count}}</span>
+        </a>
+      </sc-for>
+    </nav>
+
+    <main style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+
+      <div style="height: 40px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-bottom: 1px solid {{c.border}}; background: {{c.bg}};">
+        <sc-for list="{{chips}}" as="ch" hint-placeholder-count="7">
+          <button type="button" style="height: 24px; padding: 0 10px; border-radius: 999px; font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid {{ch.border}}; background: {{ch.bg}}; color: {{ch.fg}};">{{ch.label}}</button>
+        </sc-for>
+        <span style="width: 1px; height: 16px; background: {{c.border}}; margin: 0 6px;"></span>
+        <sc-for list="{{codes}}" as="ch" hint-placeholder-count="4">
+          <button type="button" style="height: 24px; padding: 0 10px; border-radius: 999px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid {{c.border}}; background: transparent; color: {{ch.fg}};">{{ch.label}}</button>
+        </sc-for>
+        <span style="flex: 1;"></span>
+        <button type="button" style="height: 24px; padding: 0 9px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; cursor: pointer; border: 1px solid {{c.border}}; background: transparent; color: {{c.muted}};">.*</button>
+        <button type="button" style="height: 24px; padding: 0 9px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer; border: 1px solid {{c.border}}; background: transparent; color: {{c.muted}};">Body</button>
+        <button type="button" style="height: 24px; padding: 0 9px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer; border: 1px solid {{c.border}}; background: transparent; color: {{c.muted}};">Auto-scroll</button>
+      </div>
+
+      <sc-if value="{{isEmpty}}" hint-placeholder-val="{{false}}">
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px;">
+          <div style="width: 112px; height: 112px; border-radius: 26px; overflow: hidden; background: #17181b; box-shadow: 0 12px 30px rgba(0,0,0,0.25), inset 0 0 0 1px rgba(255,255,255,0.07);">
+            <svg width="112" height="112" viewBox="0 0 100 100" aria-hidden="true">
+              <path d="M14 97 C24 91 34 86 42 77" style="fill: none; stroke: #c6f24e; stroke-width: 4; stroke-linecap: round; stroke-dasharray: 0.1 8; opacity: 0.7;"></path>
+              <path d="M86 97 C76 91 66 86 58 77" style="fill: none; stroke: #c6f24e; stroke-width: 4; stroke-linecap: round; stroke-dasharray: 0.1 8; opacity: 0.7;"></path>
+              <path d="M29 37 Q35 28 41 37 M59 37 Q65 28 71 37" style="fill: none; stroke: #ececef; stroke-width: 4; stroke-linecap: round;"></path>
+              <circle cx="36" cy="64" r="9" fill="#c6f24e"></circle><circle cx="64" cy="64" r="9" fill="#c6f24e"></circle><circle cx="50" cy="58" r="16" fill="#c6f24e"></circle>
+              <ellipse cx="44" cy="51" rx="4.5" ry="2.5" fill="#ffffff" opacity="0.55" transform="rotate(-30 44 51)"></ellipse>
+              <ellipse cx="43" cy="70" rx="3.6" ry="2.3" fill="#111214"></ellipse><ellipse cx="57" cy="70" rx="3.6" ry="2.3" fill="#111214"></ellipse>
+            </svg>
+          </div>
+          <div style="font-size: 18px; font-weight: 600; letter-spacing: -0.01em;">Waiting for traffic…</div>
+          <div style="max-width: 420px; color: {{c.muted}};">Sniffo is listening on 127.0.0.1:9191 and the system proxy is on. Open a browser or an app on this Mac, or connect a phone.</div>
+          <div style="display: flex; gap: 8px; margin-top: 6px;">
+            <button type="button" style="height: 30px; padding: 0 14px; border-radius: 8px; border: none; background: {{c.accent}}; color: {{c.onAccent}}; font: inherit; font-weight: 600; cursor: pointer;">Connect a device…</button>
+            <button type="button" style="height: 30px; padding: 0 14px; border-radius: 8px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.fg}}; font: inherit; font-weight: 500; cursor: pointer;">Compose request</button>
+            <button type="button" style="height: 30px; padding: 0 14px; border-radius: 8px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.fg}}; font: inherit; font-weight: 500; cursor: pointer;">Open HAR…</button>
+          </div>
+        </div>
+      </sc-if>
+      <sc-if value="{{hasFlows}}" hint-placeholder-val="{{true}}">
+      <div style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
+      <div style="height: 30px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 12px; font-size: 11.5px; font-weight: 600; color: {{c.muted}}; border-bottom: 1px solid {{c.border}}; background: {{c.chrome}};">
+        <span style="width: 34px;">#</span>
+        <span style="width: 58px;">Method</span>
+        <span style="width: 40px;">Code</span>
+        <span style="width: 170px;">Host</span>
+        <span style="flex: 1;">Path</span>
+        <span style="width: 70px;">Type</span>
+        <span style="width: 60px; text-align: right;">Size</span>
+        <span style="width: 60px; text-align: right;">Time</span>
+        <span style="width: 120px;">Timeline</span>
+      </div>
+
+      <div style="flex: none;">
+        <sc-for list="{{rows}}" as="r" hint-placeholder-count="12">
+          <div style="height: 29px; display: flex; align-items: center; gap: 12px; padding: 0 12px; white-space: nowrap; background: {{r.bg}}; box-shadow: {{r.ring}};">
+            <span style="width: 34px; color: {{c.muted}}; font-size: 12px;">{{r.id}}</span>
+            <span style="width: 58px;"><span style="display: inline-block; padding: 1px 6px; border-radius: 5px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em; color: {{r.mFg}}; background: {{r.mBg}};">{{r.method}}</span></span>
+            <span style="width: 40px; font-weight: 600; color: {{r.sFg}};">{{r.code}}</span>
+            <span style="width: 170px; overflow: hidden; text-overflow: ellipsis;">{{r.host}}</span>
+            <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {{r.pFg}};"><sc-if value="{{r.tunnel}}" hint-placeholder-val="{{false}}"><span style="display: inline-block; padding: 0 8px; border-radius: 999px; border: 1px solid {{c.warn}}; color: {{c.warn}}; font-family: Inter, sans-serif; font-size: 11px; font-weight: 500;">Enable SSL Proxying</span></sc-if><sc-if value="{{r.plain}}" hint-placeholder-val="{{true}}">{{r.path}}</sc-if></span>
+            <span style="width: 70px; color: {{c.muted}}; font-size: 12px;">{{r.type}}</span>
+            <span style="width: 60px; text-align: right; font-size: 12px;">{{r.size}}</span>
+            <span style="width: 60px; text-align: right; font-size: 12px; color: {{c.muted}};">{{r.dur}}</span>
+            <span style="width: 120px; height: 6px; position: relative; border-radius: 3px; background: {{c.track}};">
+              <span style="position: absolute; top: 0; bottom: 0; left: {{r.bl}}%; width: {{r.bw}}%; border-radius: 3px; background: {{r.bar}};"></span>
+            </span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="height: 6px; flex: none; border-top: 1px solid {{c.border}}; background: {{c.chrome}};"></div>
+
+      <div style="height: 40px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid {{c.border}};">
+        <span style="padding: 1px 6px; border-radius: 5px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600; color: {{sel.mFg}}; background: {{sel.mBg}};">{{sel.method}}</span>
+        <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', monospace; font-size: 12px;">{{sel.url}}</span>
+        <span style="font-size: 12px; font-weight: 600; color: {{sel.codeFg}};">{{sel.code}}</span>
+        <span style="font-size: 12px; color: {{c.muted}};">{{sel.meta}}</span>
+        <button type="button" style="height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.fg}}; font: inherit; font-size: 12px; cursor: pointer;">Copy cURL</button>
+        <button type="button" style="height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.fg}}; font: inherit; font-size: 12px; cursor: pointer;">Repeat</button>
+      </div>
+
+      <sc-if value="{{isJson}}" hint-placeholder-val="{{true}}">
+      <div style="flex: 1; min-height: 0; display: flex;">
+        <section style="flex: 1; min-width: 0; display: flex; flex-direction: column; border-right: 1px solid {{c.border}};">
+          <div style="height: 36px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: {{c.chrome}}; border-bottom: 1px solid {{c.border}};">
+            <strong style="font-weight: 600;">Request</strong>
+            <div style="display: flex; padding: 2px; border-radius: 7px; background: {{c.field}};">
+              <button type="button" style="height: 22px; padding: 0 10px; border: none; border-radius: 5px; font: inherit; font-size: 12px; font-weight: 500; background: {{c.raised}}; color: {{c.fg}}; box-shadow: {{c.segShadow}}; cursor: pointer;">Headers</button>
+              <button type="button" style="height: 22px; padding: 0 10px; border: none; border-radius: 5px; font: inherit; font-size: 12px; background: transparent; color: {{c.muted}}; cursor: pointer;">Query</button>
+              <button type="button" style="height: 22px; padding: 0 10px; border: none; border-radius: 5px; font: inherit; font-size: 12px; background: transparent; color: {{c.muted}}; cursor: pointer;">Cookies</button>
+              <button type="button" style="height: 22px; padding: 0 10px; border: none; border-radius: 5px; font: inherit; font-size: 12px; background: transparent; color: {{c.muted}}; cursor: pointer;">Raw</button>
+            </div>
+          </div>
+          <div style="padding: 6px 0; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.7;">
+            <sc-for list="{{headers}}" as="h" hint-placeholder-count="6">
+              <div style="display: flex; gap: 14px; padding: 0 12px;">
+                <span style="width: 130px; flex: none; color: {{c.synKey}};">{{h.k}}</span>
+                <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{h.v}}</span>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+        <section style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+          <div style="height: 36px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: {{c.chrome}}; border-bottom: 1px solid {{c.border}};">
+            <strong style="font-weight: 600;">Response</strong>
+            <div style="display: flex; padding: 2px; border-radius: 7px; background: {{c.field}};">
+              <button type="button" style="height: 22px; padding: 0 10px; border: none; border-radius: 5px; font: inherit; font-size: 12px; background: transparent; color: {{c.muted}}; cursor: pointer;">Headers</button>
+              <button type="button" style="height: 22px; padding: 0 10px; border: none; border-radius: 5px; font: inherit; font-size: 12px; font-weight: 500; background: {{c.raised}}; color: {{c.fg}}; box-shadow: {{c.segShadow}}; cursor: pointer;">JSON</button>
+              <button type="button" style="height: 22px; padding: 0 10px; border: none; border-radius: 5px; font: inherit; font-size: 12px; background: transparent; color: {{c.muted}}; cursor: pointer;">Raw</button>
+              <button type="button" style="height: 22px; padding: 0 10px; border: none; border-radius: 5px; font: inherit; font-size: 12px; background: transparent; color: {{c.muted}}; cursor: pointer;">Timing</button>
+            </div>
+          </div>
+          <div style="padding: 6px 12px; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.7; white-space: pre;">
+            <sc-for list="{{json}}" as="ln" hint-placeholder-count="9">
+              <div style="padding-left: {{ln.indent}}px;"><sc-for list="{{ln.parts}}" as="p" hint-placeholder-count="2"><span style="color: {{p.color}};">{{p.t}}</span></sc-for></div>
+            </sc-for>
+          </div>
+        </section>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{isWs}}" hint-placeholder-val="{{false}}">
+      <div style="flex: 1; min-height: 0; display: flex;">
+        <section style="width: 38%; flex: none; display: flex; flex-direction: column; border-right: 1px solid {{c.border}};">
+          <div style="height: 36px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: {{c.chrome}}; border-bottom: 1px solid {{c.border}};">
+            <strong style="font-weight: 600;">Request</strong>
+            <div style="display: flex; padding: 2px; border-radius: 7px; background: {{c.field}};">
+              <button type="button" style="height: 22px; padding: 0 10px; border: none; border-radius: 5px; font: inherit; font-size: 12px; font-weight: 500; background: {{c.raised}}; color: {{c.fg}}; box-shadow: {{c.segShadow}};">Headers</button>
+              <button type="button" style="height: 22px; padding: 0 10px; border: none; border-radius: 5px; font: inherit; font-size: 12px; background: transparent; color: {{c.muted}};">Raw</button>
+            </div>
+          </div>
+          <div style="padding: 6px 0; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.7;">
+            <sc-for list="{{wsHeaders}}" as="h" hint-placeholder-count="6">
+              <div style="display: flex; gap: 14px; padding: 0 12px;">
+                <span style="width: 150px; flex: none; color: {{c.synKey}};">{{h.k}}</span>
+                <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{h.v}}</span>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+        <section style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+          <div style="height: 36px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: {{c.chrome}}; border-bottom: 1px solid {{c.border}};">
+            <strong style="font-weight: 600;">Response</strong>
+            <div style="display: flex; padding: 2px; border-radius: 7px; background: {{c.field}};">
+              <button type="button" style="height: 22px; padding: 0 10px; border: none; border-radius: 5px; font: inherit; font-size: 12px; font-weight: 500; background: {{c.raised}}; color: {{c.fg}}; box-shadow: {{c.segShadow}};">Messages</button>
+              <button type="button" style="height: 22px; padding: 0 10px; border: none; border-radius: 5px; font: inherit; font-size: 12px; background: transparent; color: {{c.muted}};">Headers</button>
+              <button type="button" style="height: 22px; padding: 0 10px; border: none; border-radius: 5px; font: inherit; font-size: 12px; background: transparent; color: {{c.muted}};">Timing</button>
+            </div>
+            <span style="flex: 1;"></span>
+            <span style="font-size: 12px; color: {{c.muted}};">48 frames · open 2m 14s</span>
+          </div>
+          <div style="flex: 1; min-height: 0; overflow: hidden; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5;">
+            <sc-for list="{{wsMsgs}}" as="m" hint-placeholder-count="7">
+              <div style="display: flex; gap: 10px; padding: 3px 12px; white-space: nowrap; border-bottom: 1px solid {{c.border}}; background: {{m.bg}};">
+                <span style="width: 14px; color: {{m.dirFg}}; font-weight: 600;">{{m.dir}}</span>
+                <span style="width: 92px; color: {{c.muted}};">{{m.time}}</span>
+                <span style="width: 46px; color: {{c.muted}};">{{m.kind}}</span>
+                <span style="width: 56px; text-align: right;">{{m.size}}</span>
+                <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;"><sc-for list="{{m.parts}}" as="p" hint-placeholder-count="5"><span style="color: {{p.color}};">{{p.t}}</span></sc-for></span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="flex: none; display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-top: 1px solid {{c.border}}; background: {{c.chrome}};">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <div style="display: flex; padding: 2px; border-radius: 7px; background: {{c.field}};">
+                <button type="button" style="height: 22px; padding: 0 10px; border: none; border-radius: 5px; font: inherit; font-size: 12px; font-weight: 500; background: {{c.raised}}; color: {{c.fg}}; box-shadow: {{c.segShadow}};">↑ To server</button>
+                <button type="button" style="height: 22px; padding: 0 10px; border: none; border-radius: 5px; font: inherit; font-size: 12px; background: transparent; color: {{c.muted}};">↓ To client</button>
+              </div>
+              <span style="font-size: 12px; color: {{c.muted}};">Text</span>
+              <span style="flex: 1;"></span>
+              <button type="button" style="height: 26px; padding: 0 12px; border-radius: 7px; border: none; background: {{c.accent}}; color: {{c.onAccent}}; font: inherit; font-size: 12px; font-weight: 600;">Send frame</button>
+            </div>
+            <textarea aria-label="Frame to send" rows="2" style="resize: none; box-sizing: border-box; width: 100%; padding: 6px 8px; border-radius: 7px; border: 1px solid {{c.border}}; background: {{c.field}}; color: {{c.fg}}; font: 12px/1.5 'JetBrains Mono', monospace;">{"type":"ping","ts":1729433112}</textarea>
+          </div>
+        </section>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{isSsl}}" hint-placeholder-val="{{false}}">
+      <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 14px;">
+        <div style="display: flex; gap: 14px; padding: 16px 18px; border-radius: 12px; border: 1px solid {{c.warnLine}}; background: {{c.warnTint}};">
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" style="flex: none; margin-top: 1px; fill: none; stroke: {{c.warn}}; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><rect x="5" y="11" width="14" height="10" rx="2.5"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <div style="font-weight: 600; font-size: 14px;">Encrypted — SSL Proxying is not enabled for <span style="font-family: 'JetBrains Mono', monospace;">api.spotify.com</span></div>
+            <div style="color: {{c.muted}}; max-width: 640px;">Sniffo only sees an HTTPS tunnel to this host. Enable SSL Proxying to decrypt it with the Sniffo Root CA, then repeat the request. Apps that pin their certificate can't be decrypted by any proxy.</div>
+            <div style="display: flex; gap: 8px; margin-top: 6px;">
+              <button type="button" style="height: 28px; padding: 0 12px; border-radius: 8px; border: none; background: {{c.accent}}; color: {{c.onAccent}}; font: inherit; font-weight: 600;">Enable for api.spotify.com</button>
+              <button type="button" style="height: 28px; padding: 0 12px; border-radius: 8px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.fg}}; font: inherit; font-weight: 500;">Enable for all hosts</button>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top: 14px; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.8; color: {{c.muted}};">
+          <div><span style="color: {{c.accentText}};">CONNECT</span> api.spotify.com:443 HTTP/1.1</div>
+          <div>Tunnel open 12.4s · ↑ 3.1 KB · ↓ 41.8 KB · TLS 1.3</div>
+        </div>
+      </div>
+      </sc-if>
+      </div>
+      </sc-if>
+    </main>
+  </div>
+
+  <sc-if value="{{showConsole}}" hint-placeholder-val="{{false}}">
+  <div style="height: 150px; flex: none; display: flex; flex-direction: column; border-top: 1px solid {{c.border}}; background: {{c.bg}};">
+    <div style="height: 30px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: {{c.chrome}}; border-bottom: 1px solid {{c.border}}; font-size: 12px;">
+      <strong style="font-weight: 600;">Console</strong><span style="color: {{c.muted}};">script output</span>
+      <span style="flex: 1;"></span>
+      <button type="button" style="border: none; background: none; padding: 0; color: {{c.accentText}}; font: inherit; font-size: 12px;">Clear</button>
+    </div>
+    <div style="flex: 1; overflow: hidden; padding: 4px 12px; font: 12px/1.6 'JetBrains Mono', monospace;">
+      <sc-for list="{{logs}}" as="l" hint-placeholder-count="4">
+        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: {{l.fg}};"><span style="color: {{c.muted}};">{{l.time}} [{{l.rule}}] </span>{{l.text}}</div>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+  <footer style="height: 28px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 14px; font-size: 11.5px; white-space: nowrap; background: {{c.chrome}}; border-top: 1px solid {{c.border}};">
+    <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: {{c.ok}};"></span>Proxy 127.0.0.1:9191</span>
+    <span><span style="color: {{c.muted}};">LAN</span> 192.168.1.23:9191</span>
+    <span><span style="color: {{c.muted}};">Certificate</span> <span style="color: {{c.ok}};">Trusted</span></span>
+    <span><span style="color: {{c.muted}};">SSL proxying</span> 4 hosts</span>
+    <span><span style="color: {{c.muted}};">Rules</span> 2 active</span>
+    <span style="flex: 1;"></span>
+    <span><span style="color: {{c.muted}};">Errors</span> <span style="color: {{c.err}};">3</span></span>
+    <span><span style="color: {{c.muted}};">↑</span> 1.2 MB <span style="color: {{c.muted}};">↓</span> 18.4 MB</span>
+    <span>{{flowCount}}</span>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"direction":{"editor":null,"default":"signal"},"dark":{"editor":"boolean","default":true,"section":"Theme"},"view":{"editor":"enum","options":["json","empty","ws","ssl"],"default":"json","section":"Screen"},"showConsole":{"editor":"boolean","default":false,"section":"Screen"},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dir = this.props.direction ?? 'signal';
+    const dark = this.props.dark ?? true;
+    const PAL = {
+      signal: {
+        dark: { bg: '#111214', chrome: '#17181b', sidebar: '#141517', field: '#1d1e22', raised: '#25262b', border: '#2a2b30', fg: '#ececef', muted: '#8d8f98', accent: '#c6f24e', onAccent: '#111214', accentText: '#c6f24e', ok: '#34d399' },
+        light: { bg: '#fbfbfa', chrome: '#f3f3f1', sidebar: '#efefec', field: '#e9e9e5', raised: '#ffffff', border: '#e1e1dc', fg: '#18181b', muted: '#686870', accent: '#c6f24e', onAccent: '#18181b', accentText: '#4d7c0f', ok: '#047857' }
+      },
+      ember: {
+        dark: { bg: '#161412', chrome: '#1c1916', sidebar: '#1a1714', field: '#221e1a', raised: '#2b2622', border: '#332d28', fg: '#f2ede8', muted: '#9c9289', accent: '#ff7a45', onAccent: '#1a0f08', accentText: '#ff9466' },
+        light: { bg: '#fcfaf7', chrome: '#f6f2ec', sidebar: '#f2ece4', field: '#ebe4da', raised: '#ffffff', border: '#e6ded3', fg: '#1f1a16', muted: '#72675d', accent: '#ff7a45', onAccent: '#1f1a16', accentText: '#c2410c' }
+      },
+      tide: {
+        dark: { bg: '#0e1316', chrome: '#131a1e', sidebar: '#11181c', field: '#182227', raised: '#1d2a30', border: '#24323a', fg: '#e6eef1', muted: '#87979f', accent: '#2dd4bf', onAccent: '#062a26', accentText: '#5eead4' },
+        light: { bg: '#f8fafb', chrome: '#f0f4f6', sidebar: '#eaf0f3', field: '#e1e9ed', raised: '#ffffff', border: '#d7e1e6', fg: '#10191e', muted: '#5d6d75', accent: '#2dd4bf', onAccent: '#062a26', accentText: '#0f766e' }
+      }
+    };
+    const SEM = {
+      dark: { ok: '#4ade80', warn: '#fbbf24', err: '#f87171', redirect: '#a78bfa', info: '#60a5fa' },
+      light: { ok: '#15803d', warn: '#a16207', err: '#dc2626', redirect: '#7c3aed', info: '#2563eb' }
+    };
+    const mode = dark ? 'dark' : 'light';
+    const base = (PAL[dir] || PAL.signal)[mode];
+    const c = Object.assign({}, SEM[mode], base);
+    const rgba = (hex, a) => {
+      const h = hex.replace('#', '').slice(0, 6);
+      const n = parseInt(h, 16);
+      return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+    };
+    const tint = dark ? 0.15 : 0.11;
+    c.okTint = rgba(c.ok, tint);
+    c.infoTint = rgba(c.info, tint);
+    c.track = rgba(c.fg, dark ? 0.07 : 0.06);
+    c.segShadow = dark ? '0 1px 2px rgba(0,0,0,0.4)' : '0 1px 2px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(0,0,0,0.06)';
+    Object.assign(c, dark
+      ? { synKey: '#93c5fd', synStr: '#c6f24e', synNum: '#fdba74', synBool: '#f0abfc', synPunct: '#6b6d76' }
+      : { synKey: '#1d4ed8', synStr: '#4d7c0f', synNum: '#c2410c', synBool: '#a21caf', synPunct: '#8a8a92' });
+    const tok = (s) => {
+      const out = []; let last = 0; let m;
+      const re = /("(?:\\.|[^"\\])*")(\s*:)?|(-?\d+(?:\.\d+)?)|\b(true|false|null)\b|([{}\[\],:])/g;
+      while ((m = re.exec(s))) {
+        if (m.index > last) out.push({ t: s.slice(last, m.index), color: c.fg });
+        if (m[1]) { out.push({ t: m[1], color: m[2] ? c.synKey : c.synStr }); if (m[2]) out.push({ t: m[2], color: c.synPunct }); }
+        else if (m[3]) out.push({ t: m[3], color: c.synNum });
+        else if (m[4]) out.push({ t: m[4], color: c.synBool });
+        else out.push({ t: m[5], color: c.synPunct });
+        last = re.lastIndex;
+      }
+      if (last < s.length) out.push({ t: s.slice(last), color: c.fg });
+      return out;
+    };
+    const selBg = rgba(c.accent, dark ? 0.14 : 0.24);
+    const zebra = rgba(c.fg, dark ? 0.025 : 0.022);
+
+    const methodColor = { GET: c.info, POST: c.ok, PUT: c.warn, PATCH: c.warn, DELETE: c.err };
+    const statusColor = (code) => {
+      if (code === '…') return c.muted;
+      const n = Number(code);
+      if (n < 200) return c.redirect;
+      if (n < 300) return c.ok;
+      if (n < 400) return c.redirect;
+      if (n < 500) return c.warn;
+      return c.err;
+    };
+    const view = this.props.view ?? 'json';
+    const isEmpty = view === 'empty';
+    const selId = view === 'ws' ? 4214 : view === 'ssl' ? 4220 : 4211;
+    const RAW = [
+      [4207, 'GET', '200', 'api.github.com', '/repos/acme/web/pulls?state=open', 'json', '4.2 KB', '182 ms', 0, 22],
+      [4208, 'POST', '201', 'api.stripe.com', '/v1/payment_intents', 'json', '1.1 KB', '341 ms', 6, 38],
+      [4209, 'GET', '304', 'fonts.gstatic.com', '/s/inter/v13/UcC73FwrK3iLTeHuS_fvQtMwCp50KnMa1ZL7.woff2', 'font', '—', '12 ms', 12, 3],
+      [4211, 'GET', '200', 'app.acme.test', '/api/v2/sessions/8f2c/flows?limit=50', 'json', '18.7 KB', '96 ms', 18, 12],
+      [4212, 'PATCH', '200', 'api.linear.app', '/graphql', 'json', '2.3 KB', '214 ms', 22, 26],
+      [4213, 'GET', '404', 'cdn.jsdelivr.net', '/npm/missing-lib@1.0.0/dist/index.js', 'js', '0.3 KB', '58 ms', 30, 8],
+      [4214, 'GET', '101', 'realtime.acme.test', '/ws?session=8f2c', 'ws', '—', 'open', 34, 66],
+      [4220, 'CONNECT', '', 'api.spotify.com', '', 'tunnel', '41.8 KB', '12.4 s', 36, 64],
+      [4215, 'DELETE', '204', 'api.github.com', '/repos/acme/web/labels/wontfix', '—', '0 B', '120 ms', 40, 15],
+      [4216, 'POST', '500', 'sentry.io', '/api/4507/envelope/', 'text', '0.1 KB', '1.2 s', 44, 52],
+      [4217, 'GET', '301', 'acme.test', '/', 'html', '0.2 KB', '44 ms', 52, 6],
+      [4218, 'GET', '200', 'i.imgur.com', '/a8Fk2.png', 'png', '212 KB', '402 ms', 56, 40],
+      [4219, 'PUT', '…', 'uploads.acme.test', '/v1/blobs/af93', '—', '—', '…', 70, 30]
+    ];
+    const rows = RAW.map((r, i) => {
+      const selected = r[0] === selId;
+      const m = methodColor[r[1]] || c.muted;
+      const s = statusColor(r[2]);
+      const failed = r[2] === '500' || r[2] === '404';
+      return {
+        id: r[0], method: r[1], code: r[2], host: r[3], path: r[4], type: r[5], size: r[6], dur: r[7],
+        bl: r[8], bw: r[9], tunnel: r[1] === 'CONNECT', plain: r[1] !== 'CONNECT',
+        mFg: m, mBg: rgba(m, tint),
+        sFg: s,
+        pFg: failed ? s : c.fg,
+        bar: r[2] === '…' ? rgba(c.fg, 0.25) : (selected ? c.accent : rgba(s, dark ? 0.75 : 0.65)),
+        bg: selected ? selBg : (i % 2 ? zebra : 'transparent'),
+        ring: selected ? 'inset 0 0 0 1px ' + rgba(c.accent, dark ? 0.45 : 0.7) : 'none'
+      };
+    });
+
+    const spark = (pts) => 'M' + pts.map((y, i) => (i * 33 / (pts.length - 1)).toFixed(1) + ' ' + y).join(' L');
+    const apps = [
+      { name: 'Chrome', letter: 'C', tile: '#3b82f6', count: 342, pts: [9, 7, 8, 4, 6, 3, 5, 2], active: true },
+      { name: 'Safari', letter: 'S', tile: '#0ea5e9', count: 88, pts: [8, 9, 6, 7, 5, 8, 6, 7] },
+      { name: 'Slack', letter: 'S', tile: '#a855f7', count: 41, pts: [10, 10, 7, 10, 10, 6, 10, 9] },
+      { name: 'Xcode', letter: 'X', tile: '#2563eb', count: 18, pts: [10, 10, 10, 8, 10, 10, 9, 10] },
+      { name: 'curl', letter: '$', tile: '#525252', count: 12, pts: [10, 4, 10, 10, 10, 10, 5, 10] }
+    ].map((a) => ({
+      name: a.name, letter: a.letter, tile: a.tile, count: a.count, path: spark(a.pts),
+      bg: a.active ? selBg : 'transparent',
+      fg: c.fg,
+      weight: a.active ? 600 : 400,
+      spark: a.active ? c.accentText : rgba(c.fg, 0.35)
+    }));
+
+    const domains = [
+      { host: 'api.github.com', count: 64, dot: c.ok },
+      { host: 'app.acme.test', count: 51, dot: c.accentText },
+      { host: 'api.stripe.com', count: 23, dot: c.ok },
+      { host: 'sentry.io', count: 19, dot: c.err },
+      { host: 'fonts.gstatic.com', count: 17, dot: c.muted },
+      { host: 'cdn.jsdelivr.net', count: 9, dot: c.warn }
+    ];
+
+    const chips = ['All', 'XHR', 'JSON', 'Doc', 'Img', 'Font', 'WS'].map((label, i) => ({
+      label,
+      bg: i === 0 ? c.accent : 'transparent',
+      fg: i === 0 ? c.onAccent : c.fg,
+      border: i === 0 ? c.accent : c.border
+    }));
+    const codes = [
+      { label: '2xx', fg: c.ok }, { label: '3xx', fg: c.redirect }, { label: '4xx', fg: c.warn }, { label: '5xx', fg: c.err }
+    ];
+
+    const headers = [
+      { k: 'Host', v: 'app.acme.test' },
+      { k: 'User-Agent', v: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0) Chrome/131.0' },
+      { k: 'Accept', v: 'application/json' },
+      { k: 'Authorization', v: 'Bearer ••••••••••••' },
+      { k: 'Accept-Encoding', v: 'gzip, deflate, br' },
+      { k: 'X-Request-Id', v: '6c1e0b9a-4f2d-4e8a-9b1c-2f7d3a0e5c44' },
+      { k: 'Connection', v: 'keep-alive' }
+    ];
+
+    const P = (t) => ({ t, color: c.synPunct });
+    const K = (t) => ({ t: '"' + t + '"', color: c.synKey });
+    const S = (t) => ({ t: '"' + t + '"', color: c.synStr });
+    const N = (t) => ({ t: String(t), color: c.synNum });
+    const B = (t) => ({ t: String(t), color: c.synBool });
+    const json = [
+      { indent: 0, parts: [P('{')] },
+      { indent: 16, parts: [K('session'), P(': '), S('8f2c'), P(',')] },
+      { indent: 16, parts: [K('total'), P(': '), N(540), P(',')] },
+      { indent: 16, parts: [K('next'), P(': '), S('c_9ad1'), P(',')] },
+      { indent: 16, parts: [K('flows'), P(': [')] },
+      { indent: 32, parts: [P('{')] },
+      { indent: 48, parts: [K('id'), P(': '), N(4211), P(',')] },
+      { indent: 48, parts: [K('method'), P(': '), S('GET'), P(',')] },
+      { indent: 48, parts: [K('cached'), P(': '), B(false), P(',')] },
+      { indent: 48, parts: [K('timing'), P(': { '), K('ttfb'), P(': '), N(41), P(', '), K('total'), P(': '), N(96), P(' }')] },
+      { indent: 32, parts: [P('},  … 49 more')] },
+      { indent: 16, parts: [P(']')] },
+      { indent: 0, parts: [P('}')] }
+    ];
+
+    c.warnTint = rgba(c.warn, dark ? 0.1 : 0.08);
+    c.warnLine = rgba(c.warn, 0.45);
+    const SEL = {
+      json: { method: 'GET', url: 'https://app.acme.test/api/v2/sessions/8f2c/flows?limit=50', code: '200 OK', codeFg: c.ok, meta: '18.7 KB · 96 ms' },
+      ws: { method: 'GET', url: 'wss://realtime.acme.test/ws?session=8f2c', code: '101 Switching Protocols', codeFg: c.redirect, meta: 'WebSocket · open' },
+      ssl: { method: 'CONNECT', url: 'api.spotify.com:443', code: 'Tunnel', codeFg: c.muted, meta: '41.8 KB · 12.4 s' }
+    };
+    const sel = Object.assign({}, SEL[view] || SEL.json);
+    sel.mFg = methodColor[sel.method] || c.muted;
+    sel.mBg = rgba(sel.mFg, tint);
+
+    const wsHeaders = [
+      { k: 'Upgrade', v: 'websocket' },
+      { k: 'Connection', v: 'Upgrade' },
+      { k: 'Sec-WebSocket-Key', v: 'dGhlIHNhbXBsZSBub25jZQ==' },
+      { k: 'Sec-WebSocket-Version', v: '13' },
+      { k: 'Sec-WebSocket-Extensions', v: 'permessage-deflate' },
+      { k: 'Origin', v: 'https://app.acme.test' }
+    ];
+    const W = [
+      ['↑', '14:02:11.204', 'text', '58 B', '{"type":"subscribe","channel":"flows:8f2c"}'],
+      ['↓', '14:02:11.239', 'text', '41 B', '{"type":"subscribed","channel":"flows:8f2c"}'],
+      ['↓', '14:02:12.880', 'text', '312 B', '{"type":"flow","id":4221,"method":"GET","status":200,"host":"api.github.com"}'],
+      ['↓', '14:02:13.017', 'text', '298 B', '{"type":"flow","id":4222,"method":"POST","status":201,"host":"api.stripe.com"}'],
+      ['↑', '14:02:20.000', 'text', '31 B', '{"type":"ping","ts":1729433140}'],
+      ['↓', '14:02:20.031', 'text', '31 B', '{"type":"pong","ts":1729433140}'],
+      ['↓', '14:02:24.512', 'binary', '1.2 KB', '0a 08 08 92 21 12 03 47 45 54 1a 0e 61 70 69 2e 67 69 74 68 75 62 2e 63 6f 6d …'],
+      ['↑', '14:02:31.400', 'text', '44 B', '{"type":"unsubscribe","channel":"flows:7a1e"}']
+    ];
+    const wsMsgs = W.map((m, i) => ({
+      dir: m[0], time: m[1], kind: m[2], size: m[3],
+      parts: m[2] === 'binary' ? [{ t: m[4], color: c.muted }] : tok(m[4]),
+      dirFg: m[0] === '↑' ? c.accentText : c.ok,
+      bg: i === 2 ? rgba(c.accent, dark ? 0.1 : 0.18) : 'transparent'
+    }));
+    const logs = [
+      { time: '14:01:58', rule: 'Add auth header', text: 'set Authorization for app.acme.test/api/v2/*', fg: c.fg },
+      { time: '14:02:03', rule: 'Mock flags', text: 'responded with features.json (200, 1.4 KB)', fg: c.fg },
+      { time: '14:02:12', rule: 'Mock flags', text: 'console.log: { beta: true, newOnboarding: false }', fg: c.fg },
+      { time: '14:02:19', rule: 'Rewrite prices', text: "TypeError: Cannot read properties of undefined (reading 'amount') at line 7", fg: c.err }
+    ];
+
+    return {
+      c, chips, codes, headers, json, sel, wsHeaders, wsMsgs, logs,
+      rows: isEmpty ? [] : rows,
+      apps: isEmpty ? [] : apps,
+      domains: isEmpty ? [] : domains,
+      isEmpty, hasFlows: !isEmpty,
+      isJson: view === 'json', isWs: view === 'ws', isSsl: view === 'ssl',
+      showConsole: this.props.showConsole ?? false,
+      total: isEmpty ? 0 : 540,
+      flowCount: isEmpty ? '0 flows' : '214 / 540 flows'
+    };
+  }
+}
+</script>
+</body>
+</html>

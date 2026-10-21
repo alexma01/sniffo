@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Sniffo app icon</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 560px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); font-family: Inter, -apple-system, system-ui, sans-serif;">
+  <sc-for list="{{halves}}" as="h" hint-placeholder-count="2">
+    <div style="display: flex; flex-direction: column; justify-content: center; gap: 36px; padding: 48px 56px; background: {{h.bg}}; color: {{h.fg}};">
+      <div style="font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.7;">{{h.label}}</div>
+      <div style="display: flex; align-items: flex-end; gap: 28px;">
+        <sc-for list="{{sizes}}" as="s" hint-placeholder-count="5">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
+            <div style="width: {{s.px}}px; height: {{s.px}}px; border-radius: {{s.r}}px; overflow: hidden; background: #17181b; box-shadow: {{s.shadow}};">
+              <svg width="{{s.px}}" height="{{s.px}}" viewBox="0 0 100 100" role="img" aria-label="Sniffo mascot icon">
+                <path d="M14 97 C24 91 34 86 42 77" style="fill: none; stroke: #c6f24e; stroke-width: 4; stroke-linecap: round; stroke-dasharray: 0.1 8; opacity: {{s.stream}};"></path>
+                <path d="M86 97 C76 91 66 86 58 77" style="fill: none; stroke: #c6f24e; stroke-width: 4; stroke-linecap: round; stroke-dasharray: 0.1 8; opacity: {{s.stream}};"></path>
+                <path d="M29 37 Q35 28 41 37 M59 37 Q65 28 71 37" style="fill: none; stroke: #ececef; stroke-width: {{s.eye}}; stroke-linecap: round;"></path>
+                <circle cx="36" cy="64" r="9" fill="#c6f24e"></circle>
+                <circle cx="64" cy="64" r="9" fill="#c6f24e"></circle>
+                <circle cx="50" cy="58" r="16" fill="#c6f24e"></circle>
+                <ellipse cx="44" cy="51" rx="4.5" ry="2.5" fill="#ffffff" opacity="{{s.shine}}" transform="rotate(-30 44 51)"></ellipse>
+                <ellipse cx="43" cy="70" rx="3.6" ry="2.3" fill="#111214"></ellipse>
+                <ellipse cx="57" cy="70" rx="3.6" ry="2.3" fill="#111214"></ellipse>
+              </svg>
+            </div>
+            <span style="font-size: 12px; opacity: 0.6; font-variant-numeric: tabular-nums;">{{s.px}}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <svg width="26" height="26" viewBox="10 14 80 70" aria-hidden="true"><path d="M29 37 Q35 28 41 37 M59 37 Q65 28 71 37" style="fill: none; stroke: {{h.fg}}; stroke-width: 6; stroke-linecap: round;"></path><circle cx="36" cy="64" r="10" fill="#c6f24e"></circle><circle cx="64" cy="64" r="10" fill="#c6f24e"></circle><circle cx="50" cy="58" r="17" fill="#c6f24e"></circle><ellipse cx="43" cy="70" rx="3.8" ry="2.4" fill="#111214"></ellipse><ellipse cx="57" cy="70" rx="3.8" ry="2.4" fill="#111214"></ellipse></svg>
+        <span style="font-size: 18px; font-weight: 700; letter-spacing: -0.01em;">Sniffo</span>
+        <span style="font-size: 12px; opacity: 0.6;">· logo in toolbar</span>
+      </div>
+    </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const sizes = [160, 96, 64, 32, 16].map((px) => ({
+      px, r: Math.round(px * 0.225),
+      stream: px >= 64 ? 0.7 : 0, eye: px >= 32 ? 4 : 5, shine: px >= 64 ? 0.55 : 0,
+      shadow: px >= 64 ? '0 12px 26px rgba(0,0,0,0.22), inset 0 0 0 1px rgba(255,255,255,0.06)' : 'inset 0 0 0 1px rgba(255,255,255,0.08)'
+    }));
+    const halves = [
+      { label: 'Su sfondo chiaro', bg: '#ececf0', fg: '#18181b' },
+      { label: 'Su sfondo scuro', bg: '#1c1c1e', fg: '#ececef' }
+    ];
+    return { sizes, halves };
+  }
+}
+</script>
+</body>
+</html>
