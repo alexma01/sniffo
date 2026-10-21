@@ -31,6 +31,8 @@ struct AppState {
     proto_pool: std::sync::Mutex<Option<prost_reflect::DescriptorPool>>,
     /// PNG cache of client app icons.
     icons_dir: PathBuf,
+    /// Last `ca_trusted` check: it spawns `security verify-cert` and the UI polls status.
+    ca_trusted: std::sync::Mutex<Option<(bool, std::time::Instant)>>,
 }
 
 /// Persisted user configuration.
@@ -113,6 +115,7 @@ impl AppState {
             proto_files: std::sync::Mutex::new(saved.proto_files),
             proto_pool: std::sync::Mutex::new(proto_pool),
             icons_dir,
+            ca_trusted: std::sync::Mutex::new(None),
         })
     }
 
@@ -149,18 +152,28 @@ struct ProxyStatus {
 
 #[tauri::command]
 async fn proxy_status(state: State<'_, AppState>) -> Result<ProxyStatus, String> {
-    let proxy = state.proxy.lock().await;
+    let port = state.proxy.lock().await.as_ref().map(|p| p.addr.port());
+    let cached = state.ca_trusted.lock().unwrap().filter(|(_, at)| at.elapsed() < Duration::from_secs(30)).map(|(t, _)| t);
+    let ca_trusted = match cached {
+        Some(t) => t,
+        None => {
+            let path = state.ca_path.clone();
+            let t = tauri::async_runtime::spawn_blocking(move || system::ca_trusted(&path)).await.unwrap_or(false);
+            *state.ca_trusted.lock().unwrap() = Some((t, std::time::Instant::now()));
+            t
+        }
+    };
     Ok(ProxyStatus {
-        running: proxy.is_some(),
-        address: proxy.as_ref().map(|p| format!("127.0.0.1:{}", p.addr.port())),
-        port: proxy.as_ref().map(|p| p.addr.port()),
+        running: port.is_some(),
+        address: port.map(|p| format!("127.0.0.1:{p}")),
+        port,
         allow_lan: state.allow_lan.load(Ordering::Relaxed),
         auto_system_proxy: state.auto_system_proxy.load(Ordering::Relaxed),
         vpn: state.vpn.lock().unwrap().clone(),
         lan: system::lan_addresses(),
         lan_name: state.lan_name.lock().unwrap().as_ref().map(|_| system::LAN_HOSTNAME),
         ca_path: state.ca_path.display().to_string(),
-        ca_trusted: system::ca_trusted(&state.ca_path),
+        ca_trusted,
         system_proxy: system::system_proxy_enabled(&state.snapshot_path),
     })
 }
@@ -207,7 +220,8 @@ async fn start_proxy(state: State<'_, AppState>, port: Option<u16>) -> Result<St
     }
     // Keep the OS pointed at us when the port changes (snapshot of the user's settings is kept).
     if system::system_proxy_enabled(&state.snapshot_path) {
-        system::enable_system_proxy("127.0.0.1", port, &state.snapshot_path).map_err(|e| e.to_string())?;
+        let snap = state.snapshot_path.clone();
+        blocking(move || system::enable_system_proxy("127.0.0.1", port, &snap)).await?;
     }
     Ok(addr)
 }
@@ -216,7 +230,8 @@ async fn start_proxy(state: State<'_, AppState>, port: Option<u16>) -> Result<St
 async fn stop_proxy(state: State<'_, AppState>) -> Result<(), String> {
     state.want_system_proxy.store(false, Ordering::Relaxed);
     // Never leave the OS pointing at a dead proxy.
-    system::disable_system_proxy(&state.snapshot_path).map_err(|e| e.to_string())?;
+    let snap = state.snapshot_path.clone();
+    blocking(move || system::disable_system_proxy(&snap)).await?;
     state.lan_name.lock().unwrap().take();
     if let Some(p) = state.proxy.lock().await.take() {
         p.stop().await;
@@ -229,10 +244,12 @@ async fn set_system_proxy(state: State<'_, AppState>, enabled: bool) -> Result<(
     state.want_system_proxy.store(enabled, Ordering::Relaxed);
     if !enabled {
         *state.vpn.lock().unwrap() = system::VpnProxy::NotNeeded;
-        return system::disable_system_proxy(&state.snapshot_path).map_err(|e| e.to_string());
+        let snap = state.snapshot_path.clone();
+        return blocking(move || system::disable_system_proxy(&snap)).await;
     }
     let port = state.proxy.lock().await.as_ref().map(|p| p.addr.port()).ok_or("start the proxy first")?;
-    system::enable_system_proxy("127.0.0.1", port, &state.snapshot_path).map_err(|e| e.to_string())?;
+    let snap = state.snapshot_path.clone();
+    blocking(move || system::enable_system_proxy("127.0.0.1", port, &snap)).await?;
     apply_vpn(&state, port).await;
     Ok(())
 }
@@ -255,7 +272,14 @@ async fn install_vpn_helper(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 async fn trust_ca(state: State<'_, AppState>) -> Result<(), String> {
     let path = state.ca_path.clone();
-    tauri::async_runtime::spawn_blocking(move || system::trust_ca(&path)).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())
+    let result = blocking(move || system::trust_ca(&path)).await;
+    state.ca_trusted.lock().unwrap().take();
+    result
+}
+
+/// Runs slow OS calls (networksetup, security…) off the async workers.
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> std::io::Result<T> + Send + 'static) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -306,7 +330,7 @@ async fn compose_request(state: State<'_, AppState>, method: String, url: String
 }
 
 /// Writes the given flows (all when `ids` is empty) as HAR; also used to save sessions.
-#[tauri::command]
+#[tauri::command(async)]
 fn export_har(state: State<'_, AppState>, path: String, ids: Vec<u64>) -> Result<usize, String> {
     let flows: Vec<_> = state.engine.all_flows().into_iter().filter(|f| ids.is_empty() || ids.contains(&f.id)).collect();
     let json = serde_json::to_vec_pretty(&sniffo_core::har::export(&flows)).map_err(|e| e.to_string())?;
@@ -315,7 +339,7 @@ fn export_har(state: State<'_, AppState>, path: String, ids: Vec<u64>) -> Result
 }
 
 /// Loads a HAR/session file; `replace` clears current flows first (opening a session).
-#[tauri::command]
+#[tauri::command(async)]
 fn import_har(state: State<'_, AppState>, path: String, replace: bool) -> Result<usize, String> {
     let data = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
     let flows = sniffo_core::har::import(&data)?;
@@ -424,29 +448,30 @@ async fn app_icon(state: State<'_, AppState>, name: String) -> Result<Response, 
     Ok(Response::new(bytes.unwrap_or_default()))
 }
 
-#[tauri::command]
+// `(async)`: a plain sync command runs on the UI thread and freezes the window while it works.
+#[tauri::command(async)]
 fn list_flows(state: State<'_, AppState>) -> Vec<FlowSummary> {
     state.engine.summaries()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_flow(state: State<'_, AppState>, id: u64) -> Option<Flow> {
     state.engine.flow(id)
 }
 
 /// Decoded (Content-Encoding removed) body bytes; arrives in JS as an ArrayBuffer.
-#[tauri::command]
+#[tauri::command(async)]
 fn get_body(state: State<'_, AppState>, id: u64, response: bool) -> Response {
-    let body = state.engine.flow(id).and_then(|f| if response { f.response } else { Some(f.request) });
+    let body = state.engine.message(id, response);
     Response::new(body.map(|m| m.decoded_body().to_vec()).unwrap_or_default())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn clear_flows(state: State<'_, AppState>) {
     state.engine.clear();
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn remove_flows(state: State<'_, AppState>, ids: Vec<u64>) {
     state.engine.remove(&ids);
 }
@@ -467,7 +492,7 @@ fn get_ssl_proxying(state: State<'_, AppState>) -> SslProxying {
     state.engine.ssl_proxying()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn set_ssl_proxying(state: State<'_, AppState>, ssl: SslProxying) -> Result<(), String> {
     state.engine.set_ssl_proxying(ssl);
     state.save()
@@ -478,7 +503,7 @@ fn get_rules(state: State<'_, AppState>) -> Rules {
     state.engine.rules()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn set_rules(state: State<'_, AppState>, rules: Rules) -> Result<(), String> {
     state.engine.set_rules(rules);
     state.save()
@@ -501,7 +526,7 @@ fn get_proto_schemas(state: State<'_, AppState>) -> ProtoSchemas {
 }
 
 /// Compiles the given schema files; nothing changes if any of them fails.
-#[tauri::command]
+#[tauri::command(async)]
 fn set_proto_files(state: State<'_, AppState>, files: Vec<String>) -> Result<ProtoSchemas, String> {
     let pool = if files.is_empty() { None } else { Some(sniffo_core::schema::load(&files.iter().map(PathBuf::from).collect::<Vec<_>>())?) };
     *state.proto_pool.lock().unwrap() = pool;
@@ -510,16 +535,15 @@ fn set_proto_files(state: State<'_, AppState>, files: Vec<String>) -> Result<Pro
     Ok(proto_schemas(&state))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn decode_proto(state: State<'_, AppState>, id: u64, response: bool, message_type: String) -> Result<Vec<serde_json::Value>, String> {
-    let flow = state.engine.flow(id).ok_or("flow not found")?;
-    let msg = if response { flow.response.ok_or("no response")? } else { flow.request };
+    let msg = state.engine.message(id, response).ok_or(if response { "no response" } else { "flow not found" })?;
     let grpc = msg.header("content-type").is_some_and(|c| c.starts_with("application/grpc"));
     let pool = state.proto_pool.lock().unwrap();
     sniffo_core::schema::decode(pool.as_ref().ok_or("no protobuf schemas loaded")?, &message_type, &msg.decoded_body(), grpc)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn export_rules(state: State<'_, AppState>, path: String) -> Result<usize, String> {
     let rules = state.engine.rules();
     std::fs::write(&path, serde_json::to_vec_pretty(&rules).map_err(|e| e.to_string())?).map_err(|e| format!("{path}: {e}"))?;
@@ -527,7 +551,7 @@ fn export_rules(state: State<'_, AppState>, path: String) -> Result<usize, Strin
 }
 
 /// Appends rules from a file exported by Sniffo (existing rules are kept).
-#[tauri::command]
+#[tauri::command(async)]
 fn import_rules(state: State<'_, AppState>, path: String) -> Result<usize, String> {
     let data = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
     // Every field has a default, so check the shape: any other JSON would import "0 rules".

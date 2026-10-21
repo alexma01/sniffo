@@ -280,6 +280,13 @@ impl Engine {
         self.inner.flows.read().unwrap().get(&id).cloned()
     }
 
+    /// One side of a flow without copying the rest (WebSocket frames, the other body).
+    pub fn message(&self, id: FlowId, response: bool) -> Option<Message> {
+        let flows = self.inner.flows.read().unwrap();
+        let f = flows.get(&id)?;
+        if response { f.response.clone() } else { Some(f.request.clone()) }
+    }
+
     /// Removes all unpinned flows.
     pub fn clear(&self) {
         let mut flows = self.inner.flows.write().unwrap();
