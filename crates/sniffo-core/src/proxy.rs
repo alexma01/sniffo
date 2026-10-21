@@ -157,6 +157,10 @@ struct Inner {
     shared_state: Mutex<serde_json::Value>,
     /// (client, local relay port) -> real authority of a CONNECT routed through a relay.
     relays: Mutex<HashMap<(SocketAddr, u16), String>>,
+    /// Undecrypted tunnels being relayed, by host: closed when SSL Proxying is enabled for
+    /// that host, so the client reconnects at once and its next connection is decrypted.
+    tunnels: Mutex<HashMap<u64, (String, tokio::task::AbortHandle)>>,
+    next_tunnel: AtomicU64,
 }
 
 /// Frames are kept per connection up to this count; older ones are dropped.
@@ -247,6 +251,8 @@ impl Default for Engine {
                 ws_inject: Mutex::default(),
                 shared_state: Mutex::new(serde_json::json!({})),
                 relays: Mutex::default(),
+                tunnels: Mutex::default(),
+                next_tunnel: AtomicU64::new(0),
             }),
         }
     }
@@ -332,6 +338,14 @@ impl Engine {
     }
 
     pub fn set_ssl_proxying(&self, ssl: SslProxying) {
+        let mut tunnels = self.inner.tunnels.lock().unwrap();
+        tunnels.retain(|_, (host, task)| {
+            let close = ssl.should_decrypt(host);
+            if close {
+                task.abort();
+            }
+            !close && !task.is_finished()
+        });
         *self.inner.ssl.write().unwrap() = ssl;
     }
 
@@ -393,7 +407,9 @@ impl Engine {
 
         let overrides: std::collections::HashSet<String> = opts.network.dns.iter().map(|(h, _)| h.trim().to_ascii_lowercase()).collect();
         let ws_tls = Arc::new(tls.clone());
-        let via = |dial: Dialer, upstream: bool| (upstream || !overrides.is_empty()).then(|| Arc::new(TunnelVia { dial, tls: ws_tls.clone(), upstream, overrides: overrides.clone() }));
+        // Every undecrypted tunnel goes through Sniffo's relay (see `relay_tunnel`); `needed` says
+        // when WebSockets must be relayed too.
+        let via = |dial: Dialer, upstream: bool| Some(Arc::new(TunnelVia { dial, tls: ws_tls.clone(), upstream, overrides: overrides.clone() }));
         match &opts.network.upstream {
             None => self.launch(listener, ca, &opts, tls.clone(), https(tls, http.clone()), via(dialer(http), false)).await,
             Some(up) => {
@@ -785,7 +801,9 @@ impl Capture {
         let slot: Arc<Mutex<Option<FlowId>>> = Arc::default();
         self.tunnel_flow = Some(slot.clone());
         let engine = self.engine.clone();
-        tokio::spawn(async move {
+        let key = self.engine.next_tunnel.fetch_add(1, Ordering::Relaxed);
+        let host = parts.uri.host().unwrap_or_default().to_owned();
+        let task = tokio::spawn(async move {
             // hudsucker connects only for TLS it doesn't decrypt; otherwise the relay just expires.
             let Ok(Ok((mut client, _))) = tokio::time::timeout(Duration::from_secs(30), relay.accept()).await else { return };
             let dialed = match format!("http://{authority}").parse() {
@@ -795,6 +813,7 @@ impl Capture {
             match dialed {
                 Ok(mut server) => {
                     let _ = tokio::io::copy_bidirectional(&mut client, &mut server).await;
+                    engine.tunnels.lock().unwrap().remove(&key);
                 }
                 Err(e) => {
                     let id = *slot.lock().unwrap();
@@ -804,6 +823,11 @@ impl Capture {
                 }
             }
         });
+        {
+            let mut tunnels = self.engine.tunnels.lock().unwrap();
+            tunnels.retain(|_, (_, t)| !t.is_finished());
+            tunnels.insert(key, (host, task.abort_handle()));
+        }
         parts.uri = format!("127.0.0.1:{port}").parse().map_err(|e| format!("{e}"))?;
         Ok(parts)
     }
@@ -885,7 +909,7 @@ impl HttpHandler for Capture {
             // Recorded (if tunnelled) under the host the client asked for.
             self.connect = Some(Arc::new(parts.clone()));
             let host = parts.uri.host().unwrap_or_default().to_owned();
-            if let Some(via) = self.tunnel.clone().filter(|t| t.needed(&host) && !self.engine.ssl.read().unwrap().should_decrypt(&host)) {
+            if let Some(via) = self.tunnel.clone().filter(|_| !self.engine.ssl.read().unwrap().should_decrypt(&host)) {
                 match self.relay_tunnel(ctx, parts.clone(), via).await {
                     Ok(relayed) => return Request::from_parts(relayed, body).into(),
                     Err(e) => tracing::warn!("tunnel relay for {host}: {e}"),

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { backdrop } from "./backdrop";
+import { CodeArea } from "./highlight";
 import { api } from "./api";
 import { headersToText, textToHeaders } from "./RulesEditor";
 import { parseCurl, Req } from "./snippets";
@@ -38,7 +40,7 @@ export function Compose({ initial, onClose }: { initial?: Req; onClose: () => vo
   };
 
   return (
-    <div className="modal-back" onClick={onClose}>
+    <div className="modal-back" {...backdrop(onClose)}>
       <div className="modal wide" onClick={(e) => e.stopPropagation()}>
         <h3>Compose request</h3>
         <div className="form">
@@ -50,8 +52,8 @@ export function Compose({ initial, onClose }: { initial?: Req; onClose: () => vo
             <input className="input wide grow" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
             <button className="primary" disabled={busy} onClick={send}>Send</button>
           </div>
-          <label>Headers <textarea rows={6} value={headers} onChange={(e) => setHeaders(e.target.value)} /></label>
-          <label>Body <textarea rows={8} value={body} onChange={(e) => setBody(e.target.value)} /></label>
+          <label>Headers <CodeArea kind="headers" rows={6} value={headers} onChange={(e) => setHeaders(e.target.value)} /></label>
+          <label>Body <CodeArea kind="json" rows={8} value={body} onChange={(e) => setBody(e.target.value)} /></label>
           <details>
             <summary>Import from cURL</summary>
             <textarea rows={4} value={curl} placeholder="curl 'https://…' -H '…'" onChange={(e) => setCurl(e.target.value)} />

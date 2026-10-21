@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CodeArea } from "./highlight";
 import { api, BreakpointHit, Editable } from "./api";
 import { headersToText, textToHeaders } from "./RulesEditor";
 
@@ -23,7 +24,7 @@ export function BreakpointEditor({ hits, onDone }: { hits: BreakpointHit[]; onDo
         <div className="form">
           <label>
             {hit.ws === "binary" ? "Binary frame (base64)" : "Text frame"}
-            <textarea rows={12} value={msg.body ?? ""} onChange={(e) => setMsg({ ...msg, body: e.target.value })} />
+            <CodeArea kind="json" rows={12} value={msg.body ?? ""} onChange={(e) => setMsg({ ...msg, body: e.target.value })} />
           </label>
         </div>
         <div className="row end">
@@ -50,13 +51,13 @@ export function BreakpointEditor({ hits, onDone }: { hits: BreakpointHit[]; onDo
               <label className="grow">URL <input className="input wide" value={msg.url} onChange={(e) => setMsg({ ...msg, url: e.target.value })} /></label>
             </div>
           )}
-          <label>Headers <textarea rows={8} value={headers} onChange={(e) => setHeaders(e.target.value)} /></label>
+          <label>Headers <CodeArea kind="headers" rows={8} value={headers} onChange={(e) => setHeaders(e.target.value)} /></label>
           <label>
             Body
             {msg.body == null ? (
               <p className="muted">Binary body — forwarded unchanged.</p>
             ) : (
-              <textarea rows={12} value={msg.body} onChange={(e) => setMsg({ ...msg, body: e.target.value })} />
+              <CodeArea kind="json" rows={12} value={msg.body} onChange={(e) => setMsg({ ...msg, body: e.target.value })} />
             )}
           </label>
         </div>

@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "./icons";
+import { Logo } from "./Logo";
+import { Command, Palette } from "./Palette";
 import { api, BreakpointHit, FlowEvent, ScriptLog, FlowSummary, formatBytes, ProxyStatus, Rule, Rules, SslProxying } from "./api";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { BreakpointEditor } from "./BreakpointEditor";
@@ -61,22 +64,26 @@ async function requestOf(id: number): Promise<Req> {
   return { method: flow?.method ?? "GET", url: flow?.url ?? "", headers: flow?.request.headers ?? [], body };
 }
 
+/** Dev only (?open=settings…): start with a dialog open, for the ?gallery page. */
+const OPEN = import.meta.env.DEV ? new URLSearchParams(location.search).get("open") : null;
+
 const HAR = [{ name: "HAR / Sniffo session", extensions: ["har"] }];
 
 export default function App() {
   const { flows, hits, logs, clearLogs, doneHit } = useFlows();
-  const [showConsole, setShowConsole] = useState(false);
-  const [rulesDraft, setRulesDraft] = useState<Rule | null | undefined>(undefined);
+  const [showConsole, setShowConsole] = useState(OPEN === "console");
+  const [palette, setPalette] = useState(OPEN === "palette");
+  const [rulesDraft, setRulesDraft] = useState<Rule | null | undefined>(OPEN === "rules" ? null : undefined);
   const [status, setStatus] = useState<ProxyStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [filter, setFilter] = useState<Filter>(emptyFilter);
   const [searchBodies, setSearchBodies] = useState(false);
   const [follow, setFollow] = useState(true);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(OPEN === "settings");
   const [busy, setBusy] = useState(false);
-  const [showDevices, setShowDevices] = useState(false);
-  const [compose, setCompose] = useState<Req | null | undefined>(undefined);
+  const [showDevices, setShowDevices] = useState(OPEN === "devices");
+  const [compose, setCompose] = useState<Req | null | undefined>(OPEN === "compose" ? null : undefined);
   const [diffBase, setDiffBase] = useState<number | null>(null);
   const [diff, setDiff] = useState<[number, number] | null>(null);
   const [fileMenu, setFileMenu] = useState(false);
@@ -193,13 +200,30 @@ export default function App() {
 
   const remove = (ids: number[]) => { api.remove(ids); if (selected != null && ids.includes(selected)) setSelected(null); };
 
+  // Proxyman-style shortcuts; the same list feeds the ⌘P palette.
+  const commands: (Command & { key?: string; shift?: boolean; inInput?: boolean })[] = [
+    { label: "Repeat selected flow", key: "r", shortcut: "⌘R", run: () => { if (selected != null) api.repeat(selected).then((st) => notify(`Repeated — ${st}`), fail); } },
+    { label: "Edit & Repeat selected flow…", key: "e", shortcut: "⌘E", run: () => { if (selected != null) requestOf(selected).then(setCompose); } },
+    { label: "Copy selected flow as cURL", key: "c", shift: true, shortcut: "⇧⌘C", run: () => { if (selected != null) requestOf(selected).then((r) => copy(toCurl(r), "as cURL")); } },
+    { label: "Compose request", key: "n", shortcut: "⌘N", run: () => setCompose(null) },
+    { label: "Clear session", key: "k", shortcut: "⌘K", run: () => { api.clear(); setSelected(null); } },
+    { label: "Filter flows", key: "f", shortcut: "⌘F", inInput: true, run: () => filterRef.current?.focus() },
+    { label: "Rules", key: "l", shortcut: "⌘L", run: () => setRulesDraft(null) },
+    { label: "Settings", key: ",", shortcut: "⌘,", run: () => setShowSettings(true) },
+    { label: "Devices…", run: () => setShowDevices(true) },
+    { label: "Export session as HAR…", key: "s", shortcut: "⌘S", inInput: true, run: () => exportHar() },
+    { label: "Open HAR…", key: "o", shortcut: "⌘O", inInput: true, run: () => importHar(true) },
+    { label: "Toggle console", run: () => setShowConsole((v) => !v) },
+    { label: "Search or run…", key: "p", shortcut: "⌘P", inInput: true, run: () => setPalette(true) },
+  ];
+
   useEffect(() => {
     const close = () => { setMenu(null); setFileMenu(false); };
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement;
       const mod = e.metaKey || e.ctrlKey;
       if (e.key === "Escape") {
-        setShowSettings(false); setShowDevices(false); setCompose(undefined); setDiff(null); setRulesDraft(undefined); setMenu(null);
+        setShowSettings(false); setShowDevices(false); setCompose(undefined); setDiff(null); setRulesDraft(undefined); setMenu(null); setPalette(false);
         return;
       }
       if (!mod) {
@@ -210,24 +234,11 @@ export default function App() {
         return;
       }
       const k = e.key.toLowerCase();
-      // Proxyman-style shortcuts; plain copy/paste/select-all stay native.
-      const actions: Record<string, () => void> = {
-        k: () => { api.clear(); setSelected(null); },
-        f: () => filterRef.current?.focus(),
-        n: () => setCompose(null),
-        r: () => { if (selected != null) api.repeat(selected).then((st) => notify(`Repeated — ${st}`), fail); },
-        e: () => { if (selected != null) requestOf(selected).then(setCompose); },
-        s: () => exportHar(),
-        o: () => importHar(true),
-        ",": () => setShowSettings(true),
-        l: () => setRulesDraft(null),
-      };
-      if (e.shiftKey && k === "c" && selected != null) {
+      const cmd = commands.find((c) => c.key === k && !c.shift === !e.shiftKey);
+      // Plain copy/paste/select-all stay native while typing; only a few shortcuts work from inputs.
+      if (cmd && !(typing && !cmd.inInput)) {
         e.preventDefault();
-        requestOf(selected).then((r) => copy(toCurl(r), "as cURL"));
-      } else if (!e.shiftKey && actions[k] && !(typing && k !== "f" && k !== "s" && k !== "o")) {
-        e.preventDefault();
-        actions[k]();
+        cmd.run();
       }
     };
     window.addEventListener("click", close);
@@ -239,11 +250,12 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="toolbar">
+      <header className="toolbar" data-tauri-drag-region>
+        <span className="brand"><Logo /> Sniffo</span>
         <span className={`dot ${status?.running ? "on" : "off"}`} title={status?.running ? `Listening on ${status.address}` : "Proxy stopped"} />
         {status?.running && (
           <button className="lan" onClick={() => setShowDevices(true)} title="Use this address on phones and tablets">
-            {status.allow_lan && status.lan[0] ? `📱 ${status.lan[0].ip}:${status.port}` : "📱 Devices"}
+            {status.allow_lan && status.lan[0] ? <><Icon name="phone" /> {status.lan[0].ip}:{status.port}</> : <><Icon name="phone" /> Devices</>}
           </button>
         )}
         {status?.running ? (
@@ -264,6 +276,8 @@ export default function App() {
           <button className="warn" onClick={() => setShowSettings(true)}>Certificate not trusted</button>
         )}
         <button onClick={() => { api.clear(); setSelected(null); }} title="Remove all unpinned flows (⌘K)">Clear</button>
+        <span className="spacer" />
+        <button className="palette-open" onClick={() => setPalette(true)}><Icon name="search" /> Search or run…<kbd>⌘P</kbd></button>
         <span className="spacer" />
         <button onClick={() => setCompose(null)} title="Compose a request (⌘N) · Edit & repeat selected (⌘E) · Repeat (⌘R) · Copy as cURL (⌘⇧C)">Compose</button>
         <div className="dropdown">
@@ -308,6 +322,11 @@ export default function App() {
       {compose !== undefined && <Compose initial={compose ?? undefined} onClose={() => setCompose(undefined)} />}
       {diff && <Diff left={diff[0]} right={diff[1]} onClose={() => setDiff(null)} />}
       {toast && <div className="toast">{toast}</div>}
+      {palette && (
+        <Palette commands={commands} flows={visible} onClose={() => setPalette(false)}
+          onHost={(host) => set({ host, pinnedOnly: false, client: null })}
+          onFlow={(id) => { setSelected(id); setFollow(false); }} />
+      )}
       {showDevices && <Devices status={status} onClose={() => setShowDevices(false)} onChanged={refresh} />}
       {showSettings && <Settings status={status} onClose={() => setShowSettings(false)} onChanged={refresh} />}
       {error && <div className="banner">{error}</div>}
@@ -332,15 +351,26 @@ export default function App() {
             follow={follow}
             colors={colors}
             onEnableSsl={(host) => sslForHost(host, true)}
+            decrypts={decrypts}
           />
           <div className="split" onMouseDown={startSplit} title="Drag to resize" />
           {sel ? (
-            <FlowDetail summary={sel} onSsl={sslForHost} onPin={(id, pinned) => api.pin(id, pinned)} />
+            <FlowDetail summary={sel} onSsl={sslForHost} decrypts={decrypts} onPin={(id, pinned) => api.pin(id, pinned)} />
           ) : (
-            <div className="detail empty muted">
-              {status?.running
-                ? `Set your HTTP/HTTPS proxy to ${status.address} and trust the CA at ${status.ca_path}`
-                : "Start the proxy to capture traffic"}
+            <div className="detail empty">
+              {flows.size === 0 && <Logo size={104} tile />}
+              {flows.size === 0 && <div className="empty-title">{status?.running ? "Waiting for traffic…" : "Proxy stopped"}</div>}
+              <div className="muted">
+                {status?.running
+                  ? `Set your HTTP/HTTPS proxy to ${status.address} and trust the CA at ${status.ca_path}`
+                  : "Start the proxy to capture traffic"}
+              </div>
+              {flows.size === 0 && status?.running && (
+                <div className="row">
+                  <button className="primary" onClick={() => setShowDevices(true)}>Connect a device…</button>
+                  <button onClick={() => setCompose(null)}>Compose request</button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -351,7 +381,7 @@ export default function App() {
             <strong>Script console</strong>
             <span className="spacer" />
             <button onClick={clearLogs}>Clear</button>
-            <button onClick={() => setShowConsole(false)}>✕</button>
+            <button onClick={() => setShowConsole(false)} aria-label="Close console"><Icon name="x" size={12} /></button>
           </div>
           <div className="console-body">
             {!logs.length && <div className="muted">console.log output and script errors appear here.</div>}
@@ -384,7 +414,7 @@ export default function App() {
         {rules?.allow_list.enabled && <span className="item warn">Allow list on</span>}
         {rules?.no_caching && <span className="item warn">No caching</span>}
         <span className="spacer" />
-        {stats.paused > 0 && <span className="item warn">⏸ {stats.paused} paused</span>}
+        {stats.paused > 0 && <span className="item warn"><Icon name="pause" size={11} /> {stats.paused} paused</span>}
         <button className={`linkish ${logs.some((l) => l.error) ? "err" : ""}`} onClick={() => setShowConsole(!showConsole)}>Console ({logs.length})</button>
         <span className="item"><span className="label">Errors</span> {stats.errors}</span>
         <span className="item"><span className="label">↑</span> {formatBytes(stats.up)} <span className="label">↓</span> {formatBytes(stats.down)}</span>
@@ -407,7 +437,7 @@ export default function App() {
             {Object.entries(HIGHLIGHTS).map(([name, c]) => (
               <span key={name} title={name} style={{ background: c.replace(/0\.2\d\)/, "0.9)") }} onClick={() => { highlight(menuFlow.id, c); setMenu(null); }} />
             ))}
-            <span title="No highlight" className="none" onClick={() => { highlight(menuFlow.id, null); setMenu(null); }}>✕</span>
+            <span title="No highlight" className="none" onClick={() => { highlight(menuFlow.id, null); setMenu(null); }}><Icon name="x" size={10} /></span>
           </div>
           <div onClick={() => copy(menuFlow.url, "URL")}>Copy URL</div>
           {!isTunnel(menuFlow) && <>

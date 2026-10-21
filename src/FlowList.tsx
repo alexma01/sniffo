@@ -1,10 +1,11 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { Icon } from "./icons";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { FlowSummary, formatBytes } from "./api";
 import { AppIcon } from "./AppIcon";
 import { clientDisplay, clientIconName, useClientsVersion } from "./clients";
 
-const ROW = 24;
+const ROW = 28;
 
 /** HTTPS tunnel passed through without decryption (SSL Proxying not enabled for its host). */
 export const isTunnel = (f: FlowSummary) => f.method === "CONNECT";
@@ -25,22 +26,26 @@ const time = (ms: number) => {
 };
 const ms = (v: number | null) => (v != null ? `${v} ms` : "");
 
-interface Column { id: string; label: string; width: number | "flex"; align?: "right"; cell: (f: FlowSummary) => ReactNode; title?: (f: FlowSummary) => string }
+/** What a cell needs besides its flow. */
+interface CellContext { decrypts: (host: string) => boolean }
+
+interface Column { id: string; label: string; width: number | "flex"; align?: "right"; cell: (f: FlowSummary, ctx: CellContext) => ReactNode; title?: (f: FlowSummary) => string }
 
 export const COLUMNS: Column[] = [
-  { id: "id", label: "#", width: 52, cell: (f) => (f.pinned ? "📌" : f.id) },
+  { id: "id", label: "#", width: 52, cell: (f) => (f.pinned ? <Icon name="pin" label="Pinned" /> : f.id) },
   { id: "time", label: "Time", width: 96, cell: (f) => time(f.started_ms) },
   { id: "client", label: "Client", width: 140, cell: (f) => <><AppIcon name={clientIconName(f)} />{clientDisplay(f)}</>, title: (f) => `${clientDisplay(f)} — ${f.client_ip}` },
-  { id: "method", label: "Method", width: 72, cell: (f) => <b>{f.method}</b> },
-  { id: "status", label: "Code", width: 46, cell: (f) => (f.state === "failed" ? "ERR" : f.state === "paused" ? "⏸" : isTunnel(f) ? "" : f.status ?? "…") },
-  { id: "tls", label: "🔒", width: 22, cell: (f) => (f.scheme === "https" || f.scheme === "wss" ? "🔒" : ""), title: (f) => f.scheme },
+  { id: "method", label: "Method", width: 72, cell: (f) => <span className={`method m-${f.method}`}>{f.method}</span> },
+  { id: "status", label: "Code", width: 46, cell: (f) => (f.state === "failed" ? "ERR" : f.state === "paused" ? <Icon name="pause" label="Paused" /> : isTunnel(f) ? "" : f.status ?? "…") },
+  { id: "tls", label: "TLS", width: 30, cell: (f) => (f.scheme === "https" || f.scheme === "wss" ? <Icon name="lock" label="TLS" /> : ""), title: (f) => f.scheme },
   { id: "host", label: "Host", width: 190, cell: (f) => f.host },
   {
     id: "path", label: "Path", width: "flex", title: (f) => f.error ?? f.url,
-    cell: (f) => (
+    cell: (f, ctx) => (
       <>
-        {f.state === "paused" && <span className="badge warn">⏸ paused</span>}
-        {isTunnel(f) && <button className="badge ssl-off" data-ssl-host={f.host} title={`Decrypt ${f.host}: Sniffo re-signs it with its own CA (the device must trust the Sniffo Root CA)`}>🔒 Enable SSL Proxying</button>}
+        {f.state === "paused" && <span className="badge warn"><Icon name="pause" size={10} /> paused</span>}
+        {isTunnel(f) && ctx.decrypts(f.host) && <span className="badge" title={`SSL Proxying is on for ${f.host}: this row is the old tunnel, new connections are decrypted`}><Icon name="unlock" size={10} /> SSL on</span>}
+        {isTunnel(f) && !ctx.decrypts(f.host) && <button className="badge ssl-off" data-ssl-host={f.host} title={`Decrypt ${f.host}: Sniffo re-signs it with its own CA (the device must trust the Sniffo Root CA)`}><Icon name="lock" size={10} /> Enable SSL Proxying</button>}
         {f.ws_count > 0 && <span className="badge">WS {f.ws_count}</span>}
         {f.graphql && <span className="badge gql">{f.graphql}</span>}
         {f.tags.map((t) => <span key={t} className="badge">{t}</span>)}
@@ -55,7 +60,20 @@ export const COLUMNS: Column[] = [
   { id: "size", label: "Size", width: 68, align: "right", cell: (f) => formatBytes(f.response_size) },
   { id: "ttfb", label: "TTFB", width: 64, align: "right", cell: (f) => ms(f.ttfb_ms) },
   { id: "duration", label: "Duration", width: 72, align: "right", cell: (f) => ms(f.duration_ms) },
+  { id: "timeline", label: "Timeline", width: 120, cell: (f) => <Timeline f={f} />, title: (f) => (f.duration_ms != null ? `TTFB ${f.ttfb_ms ?? "?"} ms · total ${f.duration_ms} ms` : "In progress") },
 ];
+
+// ponytail: per-row duration on a log scale up to 5 s, not a shared waterfall; enough to spot slow calls at a glance.
+const scale = (v: number) => Math.min(100, Math.max(3, (Math.log1p(v) / Math.log1p(5000)) * 100));
+
+/** Duration bar; the darker head is the time to first byte. */
+function Timeline({ f }: { f: FlowSummary }) {
+  if (isTunnel(f)) return null;
+  if (f.duration_ms == null) return <span className="tl"><span className="tl-bar pending" /></span>;
+  const total = scale(f.duration_ms);
+  const ttfb = f.ttfb_ms != null ? Math.min(100, (scale(f.ttfb_ms) / total) * 100) : 0;
+  return <span className="tl"><span className="tl-bar" style={{ width: `${total}%` }}><span className="tl-ttfb" style={{ width: `${ttfb}%` }} /></span></span>;
+}
 
 const DEFAULT_HIDDEN = ["reqtype", "ttfb"];
 
@@ -91,8 +109,10 @@ export function FlowList(props: {
   colors: Map<number, string>;
   /** Called by the inline "Enable SSL Proxying" badge on tunnel rows. */
   onEnableSsl: (host: string) => void;
+  /** Whether SSL Proxying now covers a host (tunnel rows recorded before it was enabled). */
+  decrypts: (host: string) => boolean;
 }) {
-  const { flows, selected, onSelect, onContextMenu, follow, colors, onEnableSsl } = props;
+  const { flows, selected, onSelect, onContextMenu, follow, colors, onEnableSsl, decrypts } = props;
   const [widths, setWidths] = useState<Record<string, number>>(() => load("sniffo.columnWidths", {}));
   useClientsVersion(); // client labels change when a device is renamed
   const parent = useRef<HTMLDivElement>(null);
@@ -190,7 +210,7 @@ export function FlowList(props: {
                 }}
                 onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(f.id, e.clientX, e.clientY); }}
               >
-                {cols.map((c) => <span key={c.id} className={`c-${c.id}`} style={style(c)} title={c.title?.(f)}>{c.cell(f)}</span>)}
+                {cols.map((c) => <span key={c.id} className={`c-${c.id}`} style={style(c)} title={c.title?.(f)}>{c.cell(f, { decrypts })}</span>)}
               </div>
             );
           })}
@@ -204,7 +224,7 @@ export function FlowList(props: {
                 const next = new Set(hidden);
                 if (next.has(c.id)) next.delete(c.id); else next.add(c.id);
                 setHidden(next);
-              }} /> {c.label === "🔒" ? "TLS" : c.label}
+              }} /> {c.label}
             </label>
           ))}
         </div>
