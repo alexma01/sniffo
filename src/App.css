@@ -321,3 +321,16 @@ button.pin.on, button.pin:hover { opacity: 1; filter: none; }
 .brand { display: flex; align-items: center; gap: 7px; margin-right: 4px; font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
 .logo.tile { border-radius: 24%; box-shadow: 0 12px 30px rgb(0 0 0 / 0.22); }
 .empty-title { font-size: 18px; font-weight: 600; color: var(--fg); }
+
+/* Settings: section list on the left, one section at a time on the right. */
+.modal.settings { width: min(880px, 94vw); height: min(620px, 88vh); padding: 0; display: flex; overflow: hidden; }
+.settings-nav { width: 200px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 18px 10px; background: var(--bg-2); border-right: 1px solid var(--border); }
+.settings-nav h3 { padding: 0 10px 10px; }
+.settings-nav button { text-align: left; height: 30px; padding: 0 10px; border: none; border-radius: 7px; background: transparent; font-weight: 400; }
+.settings-nav button:hover { background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.settings-nav button.active { background: var(--sel); font-weight: 600; }
+.settings-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.settings-body { flex: 1; overflow: auto; padding: 6px 24px 16px; }
+.settings-main > .row.end, .settings-main > p { margin: 0; padding: 12px 20px; }
+.settings-main > .row.end { border-top: 1px solid var(--border); }
+.settings-body section + section { border-top: 1px solid var(--border); margin-top: 14px; }

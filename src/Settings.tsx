@@ -5,6 +5,9 @@ import { api, NetworkOptions, ProtoSchemas, ProxyStatus, ReverseProxy, SslProxyi
 
 export const SCHEMAS_CHANGED = "sniffo:schemas";
 
+const SECTIONS = [["general", "General"], ["ssl", "SSL Proxying"], ["network", "Network"], ["protobuf", "Protobuf"], ["reverse", "Reverse proxy"]] as const;
+type Section = (typeof SECTIONS)[number][0];
+
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
 
 export function Settings(props: { status: ProxyStatus | null; onClose: () => void; onChanged: () => void }) {
@@ -14,6 +17,7 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
   const [exclude, setExclude] = useState("");
   const [port, setPort] = useState(status?.address?.split(":").pop() ?? "9191");
   const [msg, setMsg] = useState<string | null>(null);
+  const [tab, setTab] = useState<Section>("general");
   const [net, setNet] = useState<NetworkOptions | null>(null);
   const [dns, setDns] = useState("");
   const [reverse, setReverse] = useState<ReverseProxy[]>([]);
@@ -57,9 +61,16 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
 
   return (
     <div className="modal-back" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Settings</h3>
-
+      <div className="modal settings" onClick={(e) => e.stopPropagation()}>
+        <nav className="settings-nav" aria-label="Settings sections">
+          <h3>Settings</h3>
+          {SECTIONS.map(([id, label]) => (
+            <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>{label}</button>
+          ))}
+        </nav>
+        <div className="settings-main">
+        <div className="settings-body">
+        {tab === "general" && <>
         <section>
           <h4>Proxy</h4>
           <label className="row">Port <input className="input" value={port} onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))} /></label>
@@ -68,7 +79,6 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
             Enable the system proxy automatically when Sniffo starts (restored when it quits)
           </label>
         </section>
-
         <section>
           <h4>Root certificate</h4>
           <p className="muted">{status?.ca_path}</p>
@@ -78,7 +88,8 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
             <button onClick={() => api.revealCa()}>Show in folder</button>
           </div>
         </section>
-
+        </>}
+        {tab === "ssl" && <>
         <section>
           <h4>SSL proxying</h4>
           {ssl && (
@@ -93,7 +104,8 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
             </label>
           </div>
         </section>
-
+        </>}
+        {tab === "network" && <>
         <section>
           <h4>Upstream proxy</h4>
           {net && (
@@ -128,7 +140,8 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
             </>
           )}
         </section>
-
+        </>}
+        {tab === "protobuf" && <>
         <section>
           <h4>Protobuf schemas</h4>
           <p className="muted">Decode protobuf/gRPC bodies with your message types (<code>.proto</code> files, or <code>.desc</code>/<code>.pb</code> descriptor sets).</p>
@@ -147,7 +160,8 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
             {proto && proto.files.length > 0 && <span className="muted">{proto.messages.length} message types</span>}
           </div>
         </section>
-
+        </>}
+        {tab === "reverse" && <>
         <section>
           <h4>Reverse proxy</h4>
           <p className="muted">Point an app at <code>http://localhost:PORT</code> and Sniffo forwards to the target, recording everything.</p>
@@ -162,11 +176,13 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
           ))}
           <button onClick={() => setReverse([...reverse, { enabled: true, port: 9300 + reverse.length, target: "http://localhost:3000" }])}>Add reverse proxy</button>
         </section>
-
+        </>}
+        </div>
         {msg && <p className="muted">{msg}</p>}
         <div className="row end">
           <button onClick={onClose}>Cancel</button>
           <button className="primary" onClick={save}>Save</button>
+        </div>
         </div>
       </div>
     </div>
