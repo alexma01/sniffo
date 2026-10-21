@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./icons";
 import { Logo } from "./Logo";
 import { Command, Palette } from "./Palette";
@@ -26,6 +26,16 @@ function useFlows() {
     api.listBreakpoints().then(setHits);
     const reload = () => api.listFlows().then((list) => setFlows(new Map(list.map((f) => [f.id, f]))));
     reload();
+    // Each commit re-filters and re-counts every flow: past a few thousand flows, batches are
+    // pooled so that work runs at most every size/100 ms (≤250 ms) instead of every 50 ms.
+    let pending: FlowEvent[] = [];
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let size = 0;
+    const queue = (events: FlowEvent[]) => {
+      pending.push(...events);
+      if (timer) return;
+      timer = setTimeout(() => { timer = undefined; const e = pending; pending = []; apply(e); }, Math.min(250, size / 100));
+    };
     const apply = (events: FlowEvent[]) => {
       const newHits = events.flatMap((e) => (e.type === "breakpoint" ? [e.data] : []));
       if (newHits.length) setHits((h) => [...h, ...newHits]);
@@ -38,11 +48,12 @@ function useFlows() {
           else if (e.type === "removed") e.data.forEach((id) => next.delete(id));
           else if (e.type === "upsert") next.set(e.data.id, e.data);
         }
+        size = next.size;
         return next;
       });
     };
-    const un = [api.onFlows(apply), api.onResync(reload)];
-    return () => { un.forEach((p) => p.then((f) => f())); };
+    const un = [api.onFlows(queue), api.onResync(reload)];
+    return () => { clearTimeout(timer); un.forEach((p) => p.then((f) => f())); };
   }, []);
   return { flows, hits, logs, clearLogs: () => setLogs([]), doneHit: (hit: BreakpointHit) => setHits((h) => h.filter((x) => x !== hit)) };
 }
@@ -182,14 +193,26 @@ export default function App() {
     return () => clearInterval(t);
   }, []);
 
-  // Body search runs in the backend; debounce and re-run as new flows arrive.
+  // Body search runs in the backend: debounced while typing, then re-run at most every 2 s while
+  // new flows arrive (a debounce keyed on the flow count never fired under steady traffic).
+  const latestFlows = useRef(flows);
+  latestFlows.current = flows;
   useEffect(() => {
     if (!searchBodies || !filter.text) { set({ bodyHits: null }); return; }
-    const t = setTimeout(() => api.search(filter.text).then((ids) => set({ bodyHits: new Set(ids) })), 300);
-    return () => clearTimeout(t);
-  }, [searchBodies, filter.text, searchBodies && flows.size]);
+    let searched: typeof flows | null = null;
+    const run = () => {
+      if (searched === latestFlows.current) return;
+      searched = latestFlows.current;
+      api.search(filter.text).then((ids) => set({ bodyHits: new Set(ids) }));
+    };
+    const t = setTimeout(run, 300);
+    const i = setInterval(run, 2000);
+    return () => { clearTimeout(t); clearInterval(i); };
+  }, [searchBodies, filter.text]);
 
-  const predicate = useMemo(() => compile(filter), [filter]);
+  // Typing stays instant: the list re-filters in a background render.
+  const deferredFilter = useDeferredValue(filter);
+  const predicate = useMemo(() => compile(deferredFilter), [deferredFilter]);
   const visible = useMemo(
     () => (typeof predicate === "string" ? [] : [...flows.values()].filter(predicate)),
     [flows, predicate],

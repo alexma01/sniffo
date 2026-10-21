@@ -1,6 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Icon } from "./icons";
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { CSSProperties, memo, MutableRefObject, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { FlowSummary, formatBytes } from "./api";
 import { AppIcon } from "./AppIcon";
 import { clientDisplay, clientIconName, useClientsVersion } from "./clients";
@@ -20,10 +20,9 @@ function statusClass(f: FlowSummary) {
   return "s-ok";
 }
 
-const time = (ms: number) => {
-  const d = new Date(ms);
-  return d.toLocaleTimeString([], { hour12: false }) + "." + String(d.getMilliseconds()).padStart(3, "0");
-};
+// One formatter for every cell: toLocaleTimeString builds a new one per call.
+const HMS = new Intl.DateTimeFormat([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+const time = (ms: number) => HMS.format(ms) + "." + String(ms % 1000).padStart(3, "0");
 const ms = (v: number | null) => (v != null ? `${v} ms` : "");
 
 /** What a cell needs besides its flow. */
@@ -99,6 +98,37 @@ function loadHidden(): Set<string> {
   }
 }
 
+interface Handlers {
+  onSelect: (id: number) => void;
+  onContextMenu: (id: number, x: number, y: number) => void;
+  onEnableSsl: (host: string) => void;
+}
+
+/** One row; memoized so a batch of flow updates re-renders only the rows that changed. */
+const Row = memo(function Row({ f, top, alt, selected, color, cells, decrypts, handlers }: {
+  f: FlowSummary; top: number; alt: boolean; selected: boolean; color?: string;
+  cells: { c: Column; style: CSSProperties }[]; decrypts: (host: string) => boolean;
+  /** Latest handlers behind a stable ref: the parent's are new functions on every render. */
+  handlers: MutableRefObject<Handlers>;
+  /** Re-render when device names change. */
+  clients: number;
+}) {
+  return (
+    <div
+      className={`flow-row ${alt ? "alt" : ""} ${selected ? "selected" : ""} ${statusClass(f)}`}
+      style={{ position: "absolute", top: 0, transform: `translateY(${top}px)`, height: ROW, width: "100%", ...(color && !selected ? { background: color } : {}) }}
+      onClick={(e) => {
+        const host = (e.target as HTMLElement).closest<HTMLElement>("[data-ssl-host]")?.dataset.sslHost;
+        if (host) { e.stopPropagation(); handlers.current.onEnableSsl(host); return; }
+        handlers.current.onSelect(f.id);
+      }}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); handlers.current.onContextMenu(f.id, e.clientX, e.clientY); }}
+    >
+      {cells.map(({ c, style }) => <span key={c.id} className={`c-${c.id}`} style={style} title={c.title?.(f)}>{c.cell(f, { decrypts })}</span>)}
+    </div>
+  );
+});
+
 export function FlowList(props: {
   flows: FlowSummary[];
   selected: number | null;
@@ -114,7 +144,9 @@ export function FlowList(props: {
 }) {
   const { flows, selected, onSelect, onContextMenu, follow, colors, onEnableSsl, decrypts } = props;
   const [widths, setWidths] = useState<Record<string, number>>(() => load("sniffo.columnWidths", {}));
-  useClientsVersion(); // client labels change when a device is renamed
+  const clients = useClientsVersion(); // client labels change when a device is renamed
+  const handlers = useRef<Handlers>({ onSelect, onContextMenu, onEnableSsl });
+  handlers.current = { onSelect, onContextMenu, onEnableSsl };
   const parent = useRef<HTMLDivElement>(null);
   const v = useVirtualizer({ count: flows.length, getScrollElement: () => parent.current, estimateSize: () => ROW, overscan: 20, scrollMargin: ROW, scrollPaddingStart: ROW });
   const [hidden, setHidden] = useState(loadHidden);
@@ -147,6 +179,8 @@ export function FlowList(props: {
     const w: number | "flex" = c.id in widths ? widths[c.id] : c.width;
     return w === "flex" ? { flex: 1, minWidth: 120 } : { width: w, flex: "none" as const, textAlign: c.align };
   };
+
+  const cells = useMemo(() => cols.map((c) => ({ c, style: style(c) })), [hidden, widths]);
 
   // Row padding (20) + 8px gap between cells + every fixed column + the flexible path column's minimum.
   const minWidth = 20 + 8 * (cols.length - 1) + cols.reduce((sum, c) => {
@@ -199,19 +233,8 @@ export function FlowList(props: {
           {v.getVirtualItems().map((row) => {
             const f = flows[row.index];
             return (
-              <div
-                key={f.id}
-                className={`flow-row ${f.id === selected ? "selected" : ""} ${statusClass(f)}`}
-                style={{ position: "absolute", top: 0, transform: `translateY(${row.start - ROW}px)`, height: ROW, width: "100%", ...(colors.has(f.id) && f.id !== selected ? { background: colors.get(f.id) } : {}) }}
-                onClick={(e) => {
-                  const host = (e.target as HTMLElement).closest<HTMLElement>("[data-ssl-host]")?.dataset.sslHost;
-                  if (host) { e.stopPropagation(); onEnableSsl(host); return; }
-                  onSelect(f.id);
-                }}
-                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(f.id, e.clientX, e.clientY); }}
-              >
-                {cols.map((c) => <span key={c.id} className={`c-${c.id}`} style={style(c)} title={c.title?.(f)}>{c.cell(f, { decrypts })}</span>)}
-              </div>
+              <Row key={f.id} f={f} top={row.start - ROW} alt={row.index % 2 === 1} selected={f.id === selected} color={colors.get(f.id)}
+                cells={cells} decrypts={decrypts} handlers={handlers} clients={clients} />
             );
           })}
         </div>

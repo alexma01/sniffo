@@ -40,6 +40,14 @@ export interface Filter {
 
 export const emptyFilter: Filter = { text: "", regex: false, bodyHits: null, types: new Set(), statuses: new Set(), pinnedOnly: false, host: null, client: null };
 
+// Summaries are replaced on every update, so a WeakMap keeps one lowercase copy per version.
+const lowered = new WeakMap<FlowSummary, string>();
+const lowerUrl = (x: FlowSummary) => {
+  let s = lowered.get(x);
+  if (s === undefined) lowered.set(x, (s = x.url.toLowerCase()));
+  return s;
+};
+
 /** Returns a predicate, or an error message when the regex is invalid. */
 export function compile(f: Filter): ((x: FlowSummary) => boolean) | string {
   let textMatch: (x: FlowSummary) => boolean = () => true;
@@ -52,7 +60,7 @@ export function compile(f: Filter): ((x: FlowSummary) => boolean) | string {
     textMatch = (x) => re.test(x.url) || re.test(x.method) || re.test(String(x.status ?? ""));
   } else if (f.text) {
     const s = f.text.toLowerCase();
-    textMatch = (x) => x.url.toLowerCase().includes(s) || x.method.toLowerCase() === s || String(x.status ?? "").startsWith(s);
+    textMatch = (x) => lowerUrl(x).includes(s) || x.method.toLowerCase() === s || String(x.status ?? "").startsWith(s);
   }
   return (x) =>
     (!f.host || x.host === f.host) &&

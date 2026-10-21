@@ -346,7 +346,12 @@ impl Engine {
     /// Ids of flows whose URL, headers or text bodies contain `query` (case-insensitive).
     pub fn search(&self, query: &str) -> Vec<FlowId> {
         let q = query.to_lowercase();
-        self.inner.flows.read().unwrap().values().filter(|f| f.contains(&q)).map(|f| f.id).collect()
+        // Scanned outside the lock: decompressing every body under it stalls all proxy traffic.
+        // Only what `contains` reads is copied (bodies are refcounted `Bytes`).
+        let snapshot: Vec<Flow> = self.inner.flows.read().unwrap().values()
+            .map(|f| Flow { id: f.id, url: f.url.clone(), request: f.request.clone(), response: f.response.clone(), ..Default::default() })
+            .collect();
+        snapshot.into_iter().filter(|f| f.contains(&q)).map(|f| f.id).collect()
     }
 
     pub fn ssl_proxying(&self) -> SslProxying {

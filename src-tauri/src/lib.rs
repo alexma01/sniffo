@@ -598,16 +598,26 @@ fn forward_events<R: Runtime>(app: AppHandle<R>, engine: &Engine) {
     let mut rx = engine.subscribe();
     tauri::async_runtime::spawn(async move {
         let mut batch: Vec<FlowEvent> = Vec::new();
+        // A flow updates several times per tick (headers, body, every WebSocket frame): only its
+        // latest summary is sent, in the place of the first.
+        let mut upserts: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
         let mut tick = tokio::time::interval(Duration::from_millis(50));
         loop {
             tokio::select! {
                 ev = rx.recv() => match ev {
+                    Ok(FlowEvent::Upsert(s)) => match upserts.get(&s.id) {
+                        Some(&i) => batch[i] = FlowEvent::Upsert(s),
+                        None => { upserts.insert(s.id, batch.len()); batch.push(FlowEvent::Upsert(s)); }
+                    },
+                    // Later upserts must not move before a removal.
+                    Ok(ev @ (FlowEvent::Removed(_) | FlowEvent::Cleared)) => { upserts.clear(); batch.push(ev); }
                     Ok(ev) => batch.push(ev),
                     // UI fell behind: tell it to reload the full list.
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => { batch.clear(); let _ = app.emit("flows:resync", ()); }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => { batch.clear(); upserts.clear(); let _ = app.emit("flows:resync", ()); }
                     Err(_) => break,
                 },
                 _ = tick.tick() => if !batch.is_empty() {
+                    upserts.clear();
                     let _ = app.emit("flows", std::mem::take(&mut batch));
                 },
             }
