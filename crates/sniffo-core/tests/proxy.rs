@@ -74,6 +74,29 @@ async fn enabling_a_host_decrypts_only_that_host() {
 }
 
 #[tokio::test]
+async fn enabling_a_host_closes_its_open_tunnels() {
+    let (up, up_pem) = upstream_https().await;
+    let s = start_default(vec![up_pem.clone()]).await;
+    // One keep-alive client, like a browser: its connection to the host stays open as a tunnel.
+    let c = client(&s, Some(&up_pem));
+    let url = format!("https://localhost:{}/again", up.port());
+    c.get(&url).send().await.unwrap().text().await.unwrap();
+    assert_eq!(s.engine.summaries().iter().map(|f| f.method.as_str()).collect::<Vec<_>>(), ["CONNECT"]);
+
+    s.engine.set_ssl_proxying(SslProxying { include: vec!["localhost".into()], ..Default::default() });
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    // The open tunnel was closed, so the client reconnects and is decrypted right away.
+    let res = match c.get(&url).send().await {
+        Ok(r) => r,
+        Err(_) => c.get(&url).send().await.unwrap(), // the pooled connection died under the request
+    };
+    assert_eq!(res.status(), 200);
+    res.text().await.unwrap();
+    assert!(s.engine.summaries().iter().any(|f| f.method == "GET" && f.path == "/again"), "second request decrypted");
+    s.proxy.stop().await;
+}
+
+#[tokio::test]
 async fn excluded_hosts_are_tunnelled() {
     let (up, up_pem) = upstream_https().await;
     let s = start(vec![]).await;

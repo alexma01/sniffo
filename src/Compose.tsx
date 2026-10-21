@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { backdrop } from "./backdrop";
 import { CodeArea } from "./highlight";
 import { api } from "./api";
 import { headersToText, textToHeaders } from "./RulesEditor";
@@ -39,7 +40,7 @@ export function Compose({ initial, onClose }: { initial?: Req; onClose: () => vo
   };
 
   return (
-    <div className="modal-back" onClick={onClose}>
+    <div className="modal-back" {...backdrop(onClose)}>
       <div className="modal wide" onClick={(e) => e.stopPropagation()}>
         <h3>Compose request</h3>
         <div className="form">

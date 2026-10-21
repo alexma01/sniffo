@@ -351,10 +351,11 @@ export default function App() {
             follow={follow}
             colors={colors}
             onEnableSsl={(host) => sslForHost(host, true)}
+            decrypts={decrypts}
           />
           <div className="split" onMouseDown={startSplit} title="Drag to resize" />
           {sel ? (
-            <FlowDetail summary={sel} onSsl={sslForHost} onPin={(id, pinned) => api.pin(id, pinned)} />
+            <FlowDetail summary={sel} onSsl={sslForHost} decrypts={decrypts} onPin={(id, pinned) => api.pin(id, pinned)} />
           ) : (
             <div className="detail empty">
               {flows.size === 0 && <Logo size={104} tile />}

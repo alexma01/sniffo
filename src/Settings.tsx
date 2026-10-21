@@ -1,4 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { backdrop } from "./backdrop";
 import { Icon } from "./icons";
 import { useEffect, useState } from "react";
 import { api, NetworkOptions, ProtoSchemas, ProxyStatus, ReverseProxy, SslProxying } from "./api";
@@ -60,7 +61,7 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
     api.trustCa().then(() => { setMsg("Certificate installed"); onChanged(); }, (e) => setMsg(String(e)));
 
   return (
-    <div className="modal-back" onClick={onClose}>
+    <div className="modal-back" {...backdrop(onClose)}>
       <div className="modal settings" onClick={(e) => e.stopPropagation()}>
         <nav className="settings-nav" aria-label="Settings sections">
           <h3>Settings</h3>

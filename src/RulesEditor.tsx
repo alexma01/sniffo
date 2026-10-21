@@ -1,4 +1,5 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { backdrop } from "./backdrop";
 import { CodeArea } from "./highlight";
 import { useEffect, useState } from "react";
 import { Action, api, Headers, Rule, Rules } from "./api";
@@ -179,7 +180,7 @@ export function RulesEditor(props: { draft?: Rule | null; onClose: () => void })
   };
 
   return (
-    <div className="modal-back" onClick={props.onClose}>
+    <div className="modal-back" {...backdrop(props.onClose)}>
       <div className="modal wide" onClick={(e) => e.stopPropagation()}>
         <h3>Rules</h3>
         {editing ? (

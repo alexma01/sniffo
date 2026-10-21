@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { FlowSummary } from "./api";
+import { backdrop } from "./backdrop";
 
 export interface Command { label: string; shortcut?: string; run: () => void }
 
@@ -36,7 +37,7 @@ export function Palette(props: {
   const pick = (item?: Item) => { if (!item) return; onClose(); item.run(); };
 
   return (
-    <div className="modal-back palette-back" onClick={onClose}>
+    <div className="modal-back palette-back" {...backdrop(onClose)}>
       <div className="palette" role="dialog" aria-label="Command palette" onClick={(e) => e.stopPropagation()}>
         <input autoFocus value={query} placeholder="Search actions, hosts, flows…" aria-label="Search or run"
           onChange={(e) => { setQuery(e.target.value); setIndex(0); }}

@@ -1,4 +1,5 @@
 import QRCode from "qrcode";
+import { backdrop } from "./backdrop";
 import { Icon, IconName } from "./icons";
 import { useEffect, useRef, useState } from "react";
 import { api, Device, DeviceCommand, ProxyStatus } from "./api";
@@ -210,7 +211,7 @@ function Connected({ onWifi, port }: { onWifi: () => void; port: number }) {
 export function Devices({ status, onClose, onChanged }: { status: ProxyStatus | null; onClose: () => void; onChanged: () => void }) {
   const [tab, setTab] = useState<"connected" | "wifi">("connected");
   return (
-    <div className="modal-back" onClick={onClose}>
+    <div className="modal-back" {...backdrop(onClose)}>
       <div className="modal wide" onClick={(e) => e.stopPropagation()}>
         <h3>Devices</h3>
         <div className="seg flush">

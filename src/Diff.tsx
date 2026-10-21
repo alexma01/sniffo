@@ -1,4 +1,5 @@
 import { diffLines } from "diff";
+import { backdrop } from "./backdrop";
 import { useEffect, useState } from "react";
 import { api, Flow } from "./api";
 
@@ -40,7 +41,7 @@ export function Diff({ left, right, onClose }: { left: number; right: number; on
   }, [left, right]);
 
   return (
-    <div className="modal-back" onClick={onClose}>
+    <div className="modal-back" {...backdrop(onClose)}>
       <div className="modal wide tall" onClick={(e) => e.stopPropagation()}>
         <h3>Diff #{left} → #{right}</h3>
         <div className="seg flush">

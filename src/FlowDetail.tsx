@@ -376,7 +376,7 @@ export function parentWildcard(host: string): string | null {
 }
 
 /** Refetches whenever the summary object changes (each upsert event replaces it). */
-export function FlowDetail({ summary, onSsl, onPin }: { summary: FlowSummary; onSsl: (host: string, on: boolean) => void; onPin: (id: number, pinned: boolean) => void }) {
+export function FlowDetail({ summary, onSsl, onPin, decrypts }: { summary: FlowSummary; onSsl: (host: string, on: boolean) => void; onPin: (id: number, pinned: boolean) => void; decrypts: (host: string) => boolean }) {
   const [flow, setFlow] = useState<Flow | null>(null);
   useEffect(() => { api.getFlow(summary.id).then(setFlow); }, [summary]);
   if (!flow) return <div className="detail muted pad">Flow not found</div>;
@@ -389,7 +389,13 @@ export function FlowDetail({ summary, onSsl, onPin }: { summary: FlowSummary; on
           <button className="linkish" onClick={() => onSsl(flow.host, false)} title="Stop decrypting this host (new connections will be tunnelled)"><Icon name="unlock" size={12} /> Decrypted · disable</button>
         )}
       </div>
-      {flow.method === "CONNECT" && (
+      {flow.method === "CONNECT" && decrypts(flow.host) && (
+        <div className="ssl-banner on">
+          <div className="ssl-banner-title"><Icon name="unlock" /> SSL Proxying is on for <b>{flow.host}</b></div>
+          <p>This row is the connection opened before it was enabled. Sniffo closed it, so the app reconnects and its new requests show up decrypted in the list.</p>
+        </div>
+      )}
+      {flow.method === "CONNECT" && !decrypts(flow.host) && (
         <div className="ssl-banner">
           <div className="ssl-banner-title"><Icon name="lock" /> Encrypted — SSL Proxying is not enabled for <b>{flow.host}</b></div>
           <p>Sniffo is passing this HTTPS connection through untouched, so requests and responses are hidden. Enable SSL Proxying to see them; then repeat the action in the app.</p>

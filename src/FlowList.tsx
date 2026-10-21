@@ -26,7 +26,10 @@ const time = (ms: number) => {
 };
 const ms = (v: number | null) => (v != null ? `${v} ms` : "");
 
-interface Column { id: string; label: string; width: number | "flex"; align?: "right"; cell: (f: FlowSummary) => ReactNode; title?: (f: FlowSummary) => string }
+/** What a cell needs besides its flow. */
+interface CellContext { decrypts: (host: string) => boolean }
+
+interface Column { id: string; label: string; width: number | "flex"; align?: "right"; cell: (f: FlowSummary, ctx: CellContext) => ReactNode; title?: (f: FlowSummary) => string }
 
 export const COLUMNS: Column[] = [
   { id: "id", label: "#", width: 52, cell: (f) => (f.pinned ? <Icon name="pin" label="Pinned" /> : f.id) },
@@ -38,10 +41,11 @@ export const COLUMNS: Column[] = [
   { id: "host", label: "Host", width: 190, cell: (f) => f.host },
   {
     id: "path", label: "Path", width: "flex", title: (f) => f.error ?? f.url,
-    cell: (f) => (
+    cell: (f, ctx) => (
       <>
         {f.state === "paused" && <span className="badge warn"><Icon name="pause" size={10} /> paused</span>}
-        {isTunnel(f) && <button className="badge ssl-off" data-ssl-host={f.host} title={`Decrypt ${f.host}: Sniffo re-signs it with its own CA (the device must trust the Sniffo Root CA)`}><Icon name="lock" size={10} /> Enable SSL Proxying</button>}
+        {isTunnel(f) && ctx.decrypts(f.host) && <span className="badge" title={`SSL Proxying is on for ${f.host}: this row is the old tunnel, new connections are decrypted`}><Icon name="unlock" size={10} /> SSL on</span>}
+        {isTunnel(f) && !ctx.decrypts(f.host) && <button className="badge ssl-off" data-ssl-host={f.host} title={`Decrypt ${f.host}: Sniffo re-signs it with its own CA (the device must trust the Sniffo Root CA)`}><Icon name="lock" size={10} /> Enable SSL Proxying</button>}
         {f.ws_count > 0 && <span className="badge">WS {f.ws_count}</span>}
         {f.graphql && <span className="badge gql">{f.graphql}</span>}
         {f.tags.map((t) => <span key={t} className="badge">{t}</span>)}
@@ -105,8 +109,10 @@ export function FlowList(props: {
   colors: Map<number, string>;
   /** Called by the inline "Enable SSL Proxying" badge on tunnel rows. */
   onEnableSsl: (host: string) => void;
+  /** Whether SSL Proxying now covers a host (tunnel rows recorded before it was enabled). */
+  decrypts: (host: string) => boolean;
 }) {
-  const { flows, selected, onSelect, onContextMenu, follow, colors, onEnableSsl } = props;
+  const { flows, selected, onSelect, onContextMenu, follow, colors, onEnableSsl, decrypts } = props;
   const [widths, setWidths] = useState<Record<string, number>>(() => load("sniffo.columnWidths", {}));
   useClientsVersion(); // client labels change when a device is renamed
   const parent = useRef<HTMLDivElement>(null);
@@ -204,7 +210,7 @@ export function FlowList(props: {
                 }}
                 onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(f.id, e.clientX, e.clientY); }}
               >
-                {cols.map((c) => <span key={c.id} className={`c-${c.id}`} style={style(c)} title={c.title?.(f)}>{c.cell(f)}</span>)}
+                {cols.map((c) => <span key={c.id} className={`c-${c.id}`} style={style(c)} title={c.title?.(f)}>{c.cell(f, { decrypts })}</span>)}
               </div>
             );
           })}
