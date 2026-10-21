@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, TextareaHTMLAttributes, useRef } from "react";
 
 // ponytail: regex tokenizer, JSON only; above LIMIT text stays plain so huge bodies render fast.
 const LIMIT = 200_000;
@@ -46,3 +46,22 @@ export function highlightHttp(text: string): ReactNode[] {
 
 /** A WebSocket frame or any one-line payload: coloured only when it is JSON. */
 export const highlightMaybeJson = (text: string): ReactNode => (looksJson(text) ? highlightJson(text) : text);
+
+/** "name: value" lines (header editors). */
+export const highlightHeaders = (text: string): ReactNode[] =>
+  text.split("\n").map((h, i) => {
+    const c = h.indexOf(":");
+    return <span key={i}>{i > 0 && "\n"}{c < 0 ? h : <><span className="j-key">{h.slice(0, c)}</span><span className="j-punct">:</span>{h.slice(c + 1)}</>}</span>;
+  });
+
+/** A textarea whose text is coloured: a transparent textarea over a highlighted <pre>, scrolled together. */
+export function CodeArea({ value, kind, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { value: string; kind: "json" | "headers" }) {
+  const pre = useRef<HTMLPreElement>(null);
+  return (
+    <div className="code-area">
+      <pre ref={pre} aria-hidden="true">{kind === "headers" ? highlightHeaders(value) : highlightMaybeJson(value)}{"\n"}</pre>
+      <textarea {...rest} value={value} spellCheck={false}
+        onScroll={(e) => { pre.current!.scrollTop = e.currentTarget.scrollTop; pre.current!.scrollLeft = e.currentTarget.scrollLeft; }} />
+    </div>
+  );
+}

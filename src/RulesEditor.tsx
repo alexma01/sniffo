@@ -1,4 +1,5 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { CodeArea } from "./highlight";
 import { useEffect, useState } from "react";
 import { Action, api, Headers, Rule, Rules } from "./api";
 
@@ -73,9 +74,9 @@ function ActionForm({ action, onChange }: { action: Action; onChange: (a: Action
       return (
         <div className="form">
           <label>Status <input className="input" value={action.status} onChange={(e) => onChange({ ...action, status: Number(e.target.value.replace(/\D/g, "")) || 0 })} /></label>
-          <label>Headers <textarea rows={3} value={headersToText(action.headers)} onChange={(e) => onChange({ ...action, headers: textToHeaders(e.target.value) })} /></label>
+          <label>Headers <CodeArea kind="headers" rows={3} value={headersToText(action.headers)} onChange={(e) => onChange({ ...action, headers: textToHeaders(e.target.value) })} /></label>
           <label>Body file (optional, overrides body) <input className="input wide" value={action.file ?? ""} placeholder="/path/to/response.json" onChange={(e) => onChange({ ...action, file: opt(e.target.value) })} /></label>
-          <label>Body <textarea rows={8} value={action.body} disabled={!!action.file} onChange={(e) => onChange({ ...action, body: e.target.value })} /></label>
+          <label>Body <CodeArea kind="json" rows={8} value={action.body} disabled={!!action.file} onChange={(e) => onChange({ ...action, body: e.target.value })} /></label>
         </div>
       );
     case "map_local_dir":

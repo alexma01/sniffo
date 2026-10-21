@@ -334,3 +334,11 @@ button.pin.on, button.pin:hover { opacity: 1; filter: none; }
 .settings-main > .row.end, .settings-main > p { margin: 0; padding: 12px 20px; }
 .settings-main > .row.end { border-top: 1px solid var(--border); }
 .settings-body section + section { border-top: 1px solid var(--border); margin-top: 14px; }
+
+/* CodeArea: transparent textarea over a highlighted copy of its text; both must share font, padding and wrapping. */
+.code-area { position: relative; width: 100%; background: var(--bg-3); border-radius: 7px; }
+.code-area textarea, .code-area pre { margin: 0; padding: 6px 10px; font: 12px/1.6 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; letter-spacing: normal; border-width: 1px; }
+.code-area pre { z-index: 0; position: absolute; inset: 0; overflow: hidden; pointer-events: none; color: var(--fg); border: 1px solid transparent; border-radius: 7px; }
+.code-area textarea { z-index: 1; position: relative; display: block; width: 100%; color: transparent; caret-color: var(--fg); background: transparent; resize: vertical; }
+.code-area textarea::placeholder { color: var(--muted); }
+.code-area:has(textarea:disabled) { opacity: 0.5; }

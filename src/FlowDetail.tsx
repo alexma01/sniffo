@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+
 import { Icon } from "./icons";
 import { api, Flow, FlowSummary, formatBytes, header, Headers, WsMessage } from "./api";
-import { highlightHttp, highlightJson, highlightMaybeJson } from "./highlight";
+import { CodeArea, highlightHttp, highlightJson, highlightMaybeJson } from "./highlight";
 import { JsonTree } from "./JsonTree";
 import { decode, grpcFrames, toPlain } from "./protobuf";
 import { SCHEMAS_CHANGED } from "./Settings";
@@ -291,7 +292,7 @@ function Messages({ flowId, messages }: { flowId: number; messages: WsMessage[] 
             {!draft.binary && <button onClick={format} title="Format JSON">{"{ }"}</button>}
             <button className="primary" disabled={!draft.data} onClick={send}>Send</button>
           </div>
-          <textarea rows={3} value={draft.data} placeholder={draft.binary ? "base64 payload" : "text or JSON — ⌘↩ to send"}
+          <CodeArea kind="json" rows={3} value={draft.data} placeholder={draft.binary ? "base64 payload" : "text or JSON — ⌘↩ to send"}
             onChange={(e) => setDraft({ ...draft, data: e.target.value })}
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && draft.data) send(); }} />
           {error && <div className="err">{error}</div>}
