@@ -56,7 +56,20 @@ export const COLUMNS: Column[] = [
   { id: "size", label: "Size", width: 68, align: "right", cell: (f) => formatBytes(f.response_size) },
   { id: "ttfb", label: "TTFB", width: 64, align: "right", cell: (f) => ms(f.ttfb_ms) },
   { id: "duration", label: "Duration", width: 72, align: "right", cell: (f) => ms(f.duration_ms) },
+  { id: "timeline", label: "Timeline", width: 120, cell: (f) => <Timeline f={f} />, title: (f) => (f.duration_ms != null ? `TTFB ${f.ttfb_ms ?? "?"} ms · total ${f.duration_ms} ms` : "In progress") },
 ];
+
+// ponytail: per-row duration on a log scale up to 5 s, not a shared waterfall; enough to spot slow calls at a glance.
+const scale = (v: number) => Math.min(100, Math.max(3, (Math.log1p(v) / Math.log1p(5000)) * 100));
+
+/** Duration bar; the darker head is the time to first byte. */
+function Timeline({ f }: { f: FlowSummary }) {
+  if (isTunnel(f)) return null;
+  if (f.duration_ms == null) return <span className="tl"><span className="tl-bar pending" /></span>;
+  const total = scale(f.duration_ms);
+  const ttfb = f.ttfb_ms != null ? Math.min(100, (scale(f.ttfb_ms) / total) * 100) : 0;
+  return <span className="tl"><span className="tl-bar" style={{ width: `${total}%` }}><span className="tl-ttfb" style={{ width: `${ttfb}%` }} /></span></span>;
+}
 
 const DEFAULT_HIDDEN = ["reqtype", "ttfb"];
 

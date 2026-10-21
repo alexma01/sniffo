@@ -16,6 +16,16 @@ const load = <T,>(key: string, fallback: T): T => {
 const save = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* storage unavailable */ } };
 interface Target { host: string; x: number; y: number }
 
+// Sidebar sparklines: flows per client in the last 2 minutes of capture, 10 s per point.
+const SPARK_BUCKETS = 12;
+const SPARK_STEP_MS = 10_000;
+
+function Sparkline({ counts }: { counts: number[] }) {
+  const max = Math.max(1, ...counts);
+  const points = counts.map((c, i) => `${(i * 33) / (counts.length - 1)},${11 - (c / max) * 10}`).join(" ");
+  return <svg className="spark" width="34" height="12" viewBox="0 0 34 12" aria-hidden="true"><polyline points={points} /></svg>;
+}
+
 // Module level: a component defined inside Sidebar would remount (losing focus and clicks) on every render.
 function Section({ title, count, open, onToggle, children }: { title: string; count: number; open: boolean; onToggle: () => void; children: ReactNode }) {
   return (
@@ -54,16 +64,26 @@ export function Sidebar(props: {
     return () => window.removeEventListener("click", close);
   }, [menu]);
 
-  const { domains, apps, pinnedFlows } = useMemo(() => {
+  const { domains, apps, pinnedFlows, spark } = useMemo(() => {
     const domains = new Map<string, number>();
     const apps = new Map<string, number>();
+    const spark = new Map<string, number[]>();
     let pinnedFlows = 0;
+    let latest = 0;
+    for (const f of flows.values()) latest = Math.max(latest, f.started_ms);
     for (const f of flows.values()) {
+      const bucket = SPARK_BUCKETS - 1 - Math.floor((latest - f.started_ms) / SPARK_STEP_MS);
+      if (bucket >= 0) {
+        const key = clientLabel(f);
+        const counts = spark.get(key) ?? new Array(SPARK_BUCKETS).fill(0);
+        counts[bucket]++;
+        spark.set(key, counts);
+      }
       domains.set(f.host, (domains.get(f.host) ?? 0) + 1);
       apps.set(clientLabel(f), (apps.get(clientLabel(f)) ?? 0) + 1);
       if (f.pinned) pinnedFlows++;
     }
-    return { domains, apps, pinnedFlows };
+    return { domains, apps, pinnedFlows, spark };
   }, [flows]);
 
   const q = query.trim().toLowerCase();
@@ -101,6 +121,7 @@ export function Sidebar(props: {
       ) : (
         <span className="ellipsis grow">{label(a)}</span>
       )}
+      {spark.has(a) && <Sparkline counts={spark.get(a)!} />}
       <span className="muted">{n}</span>
     </div>
   );
