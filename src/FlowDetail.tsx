@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { Icon } from "./icons";
 import { api, Flow, FlowSummary, formatBytes, header, Headers, WsMessage } from "./api";
+import { highlightHttp, highlightJson, highlightMaybeJson } from "./highlight";
 import { JsonTree } from "./JsonTree";
 import { decode, grpcFrames, toPlain } from "./protobuf";
 import { SCHEMAS_CHANGED } from "./Settings";
@@ -201,7 +203,7 @@ function BodyView({ bytes, contentType }: { bytes: Uint8Array | null; contentTyp
             <button className={mode === "tree" ? "active" : ""} onClick={() => setMode("tree")}>Tree</button>
             <button className={mode === "pretty" ? "active" : ""} onClick={() => setMode("pretty")}>Pretty</button>
           </div>
-          {mode === "tree" ? <JsonTree value={value} /> : <pre className="code">{JSON.stringify(value, null, 2)}</pre>}
+          {mode === "tree" ? <JsonTree value={value} /> : <pre className="code">{highlightJson(JSON.stringify(value, null, 2))}</pre>}
         </div>
       );
     } catch { /* not JSON after all */ }
@@ -269,7 +271,7 @@ function Messages({ flowId, messages }: { flowId: number; messages: WsMessage[] 
             <span className="ws-time">+{((m.time_ms - t0) / 1000).toFixed(3)}s</span>
             <span className="ws-kind">{m.kind}</span>
             <span className="ws-size">{formatBytes(m.size)}</span>
-            <span className="ws-data">{m.injected && <span className="badge warn" title="Sent from Sniffo">injected</span>}{m.data}</span>
+            <span className="ws-data">{m.injected && <span className="badge warn" title="Sent from Sniffo">injected</span>}{m.kind === "text" ? highlightMaybeJson(m.data) : m.data}</span>
           </div>
           {open === i && (m.kind === "text" || m.kind === "binary") && !closed && (
             <div className="seg"><button onClick={() => setDraft({ toServer: m.outgoing, binary: m.kind === "binary", data: m.data })}>Edit &amp; resend</button></div>
@@ -357,8 +359,8 @@ function Pane(props: { title: string; flow: Flow; response: boolean }) {
             : <BodyView bytes={bytes} contentType={header(msg.headers, "content-type")} />
         ) : (
           <pre className="code">
-            {firstLine + "\n" + msg.headers.map(([k, v]) => `${k}: ${v}`).join("\n") + "\n\n" +
-              (bytes && isText(bytes) ? new TextDecoder().decode(bytes) : bytes ? `<${formatBytes(bytes.length)} binary>` : "")}
+            {highlightHttp(firstLine + "\n" + msg.headers.map(([k, v]) => `${k}: ${v}`).join("\n") + "\n\n" +
+              (bytes && isText(bytes) ? new TextDecoder().decode(bytes) : bytes ? `<${formatBytes(bytes.length)} binary>` : ""))}
           </pre>
         )}
       </div>
@@ -380,15 +382,15 @@ export function FlowDetail({ summary, onSsl, onPin }: { summary: FlowSummary; on
   return (
     <div className="detail">
       <div className="detail-url" title={flow.url}>
-        <button className={`pin ${summary.pinned ? "on" : ""}`} onClick={() => onPin(flow.id, !summary.pinned)} title={summary.pinned ? "Unpin (pinned flows survive Clear)" : "Pin: keep this flow when clearing, list it under Pinned"}>📌</button>
-        <span className="method">{flow.method}</span> <span className="ellipsis grow">{flow.url}</span>
+        <button className={`pin ${summary.pinned ? "on" : ""}`} onClick={() => onPin(flow.id, !summary.pinned)} title={summary.pinned ? "Unpin (pinned flows survive Clear)" : "Pin: keep this flow when clearing, list it under Pinned"}><Icon name="pin" /></button>
+        <span className={`method m-${flow.method}`}>{flow.method}</span> <span className="ellipsis grow">{flow.url}</span>
         {flow.method !== "CONNECT" && (flow.scheme === "https" || flow.scheme === "wss") && (
-          <button className="linkish" onClick={() => onSsl(flow.host, false)} title="Stop decrypting this host (new connections will be tunnelled)">🔓 Decrypted · disable</button>
+          <button className="linkish" onClick={() => onSsl(flow.host, false)} title="Stop decrypting this host (new connections will be tunnelled)"><Icon name="unlock" size={12} /> Decrypted · disable</button>
         )}
       </div>
       {flow.method === "CONNECT" && (
         <div className="ssl-banner">
-          <div className="ssl-banner-title">🔒 Encrypted — SSL Proxying is not enabled for <b>{flow.host}</b></div>
+          <div className="ssl-banner-title"><Icon name="lock" /> Encrypted — SSL Proxying is not enabled for <b>{flow.host}</b></div>
           <p>Sniffo is passing this HTTPS connection through untouched, so requests and responses are hidden. Enable SSL Proxying to see them; then repeat the action in the app.</p>
           <div className="row">
             <button className="primary" onClick={() => onSsl(flow.host, true)}>Enable for {flow.host}</button>

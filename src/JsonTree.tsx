@@ -11,7 +11,7 @@ function Leaf({ v }: { v: Json }) {
 
 function Node({ name, v, depth }: { name?: string; v: Json; depth: number }) {
   const [open, setOpen] = useState(depth < 2);
-  const label = name !== undefined && <span className="j-key">{name}: </span>;
+  const label = name !== undefined && <><span className="j-key">{name}</span><span className="j-punct">: </span></>;
   if (v === null || typeof v !== "object") {
     return <div className="j-row">{label}<Leaf v={v} /></div>;
   }
@@ -21,10 +21,10 @@ function Node({ name, v, depth }: { name?: string; v: Json; depth: number }) {
     <div className="j-row">
       <span className="j-toggle" onClick={() => setOpen(!open)}>{open ? "▾" : "▸"}</span>
       {label}
-      {l}
+      <span className="j-punct">{l}</span>
       {!open && <span className="muted" onClick={() => setOpen(true)}> {entries.length} {Array.isArray(v) ? "items" : "keys"} </span>}
       {open && <div className="j-children">{entries.map(([k, x]) => <Node key={k} name={k} v={x} depth={depth + 1} />)}</div>}
-      {r}
+      <span className="j-punct">{r}</span>
     </div>
   );
 }

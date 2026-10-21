@@ -1,8 +1,9 @@
 import QRCode from "qrcode";
+import { Icon, IconName } from "./icons";
 import { useEffect, useRef, useState } from "react";
 import { api, Device, DeviceCommand, ProxyStatus } from "./api";
 
-const ICON: Record<Device["platform"], string> = { ios_simulator: "📱", ios_device: "📱", android: "🤖", android_avd: "🤖" };
+const ICON: Record<Device["platform"], IconName> = { ios_simulator: "phone", ios_device: "phone", android: "android", android_avd: "android" };
 const KIND: Record<Device["platform"], string> = { ios_simulator: "iOS Simulator", ios_device: "iPhone / iPad", android: "Android", android_avd: "Android emulator (off)" };
 const ORDER: Device["platform"][] = ["ios_simulator", "android", "ios_device", "android_avd"];
 
@@ -79,7 +80,7 @@ function WifiSetup({ status, onChanged }: { status: ProxyStatus | null; onChange
               <li><b>Download the certificate</b>: in <b>Safari</b> (not Chrome) open <code>http://sniffo.cert</code> or scan the QR → <i>Download for iOS</i> → Allow.</li>
               <li><b>Install it</b>: Settings → General → VPN &amp; Device Management → <i>Sniffo Root CA</i> → Install.</li>
               <li className="must"><b>Trust it</b>: Settings → General → About → <b>Certificate Trust Settings</b> → turn on <i>Sniffo Root CA</i>. Without this switch iOS keeps saying “This connection is not private”.</li>
-              <li><b>Choose what to decrypt</b>: in Sniffo click 🔒 next to a domain in the sidebar, or <i>Enable SSL Proxying</i> on its row. Other HTTPS stays an untouched tunnel.</li>
+              <li><b>Choose what to decrypt</b>: in Sniffo click the lock next to a domain in the sidebar, or <i>Enable SSL Proxying</i> on its row. Other HTTPS stays an untouched tunnel.</li>
             </ol>
             <h4>Android</h4>
             <ol className="steps">
@@ -156,7 +157,7 @@ function Connected({ onWifi, port }: { onWifi: () => void; port: number }) {
       <div className="dev-list">
         {devices.map((d) => (
           <div key={d.id} className={`dev-item ${d.id === selected ? "active" : ""}`} onClick={() => setSelected(d.id)}>
-            <span>{ICON[d.platform]}</span>
+            <Icon name={ICON[d.platform]} />
             <div className="grow">
               <div className="ellipsis"><b>{d.name}</b></div>
               <div className="muted small">{[KIND[d.platform], d.os, d.platform === "ios_device" || d.platform === "android" ? d.state : ""].filter(Boolean).join(" · ")}</div>
@@ -168,7 +169,7 @@ function Connected({ onWifi, port }: { onWifi: () => void; port: number }) {
       <div className="dev-detail">
         {device && (
           <>
-            <h4>{ICON[device.platform]} {device.name}</h4>
+            <h4><Icon name={ICON[device.platform]} /> {device.name}</h4>
             <p className="muted">{[KIND[device.platform], device.os, device.state].filter(Boolean).join(" · ")} · <code className="small">{device.id}</code></p>
             {device.platform === "ios_device" ? (
               <p>

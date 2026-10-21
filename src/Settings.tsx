@@ -1,4 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { Icon } from "./icons";
 import { useEffect, useState } from "react";
 import { api, NetworkOptions, ProtoSchemas, ProxyStatus, ReverseProxy, SslProxying } from "./api";
 
@@ -134,7 +135,7 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
           {proto?.files.map((f) => (
             <div key={f} className="row">
               <code className="grow ellipsis" title={f}>{f}</code>
-              <button onClick={() => setProtoFiles(proto.files.filter((x) => x !== f))}>✕</button>
+              <button onClick={() => setProtoFiles(proto.files.filter((x) => x !== f))} aria-label="Remove"><Icon name="x" size={12} /></button>
             </div>
           ))}
           <div className="row">
@@ -155,7 +156,7 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
               <input type="checkbox" checked={r.enabled} onChange={(e) => setReverse(reverse.map((x, j) => (j === i ? { ...x, enabled: e.target.checked } : x)))} />
               localhost:<input className="input" value={r.port} onChange={(e) => setReverse(reverse.map((x, j) => (j === i ? { ...x, port: Number(e.target.value.replace(/\D/g, "")) || 0 } : x)))} />
               →<input className="input wide grow" value={r.target} placeholder="https://api.example.com" onChange={(e) => setReverse(reverse.map((x, j) => (j === i ? { ...x, target: e.target.value.trim() } : x)))} />
-              <button onClick={() => setReverse(reverse.filter((_, j) => j !== i))}>✕</button>
+              <button onClick={() => setReverse(reverse.filter((_, j) => j !== i))} aria-label="Remove"><Icon name="x" size={12} /></button>
               {reverseErrors[i] && <span className="err small">{reverseErrors[i]}</span>}
             </div>
           ))}

@@ -1,10 +1,11 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { Icon } from "./icons";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { FlowSummary, formatBytes } from "./api";
 import { AppIcon } from "./AppIcon";
 import { clientDisplay, clientIconName, useClientsVersion } from "./clients";
 
-const ROW = 24;
+const ROW = 28;
 
 /** HTTPS tunnel passed through without decryption (SSL Proxying not enabled for its host). */
 export const isTunnel = (f: FlowSummary) => f.method === "CONNECT";
@@ -28,19 +29,19 @@ const ms = (v: number | null) => (v != null ? `${v} ms` : "");
 interface Column { id: string; label: string; width: number | "flex"; align?: "right"; cell: (f: FlowSummary) => ReactNode; title?: (f: FlowSummary) => string }
 
 export const COLUMNS: Column[] = [
-  { id: "id", label: "#", width: 52, cell: (f) => (f.pinned ? "📌" : f.id) },
+  { id: "id", label: "#", width: 52, cell: (f) => (f.pinned ? <Icon name="pin" label="Pinned" /> : f.id) },
   { id: "time", label: "Time", width: 96, cell: (f) => time(f.started_ms) },
   { id: "client", label: "Client", width: 140, cell: (f) => <><AppIcon name={clientIconName(f)} />{clientDisplay(f)}</>, title: (f) => `${clientDisplay(f)} — ${f.client_ip}` },
-  { id: "method", label: "Method", width: 72, cell: (f) => <b>{f.method}</b> },
-  { id: "status", label: "Code", width: 46, cell: (f) => (f.state === "failed" ? "ERR" : f.state === "paused" ? "⏸" : isTunnel(f) ? "" : f.status ?? "…") },
-  { id: "tls", label: "🔒", width: 22, cell: (f) => (f.scheme === "https" || f.scheme === "wss" ? "🔒" : ""), title: (f) => f.scheme },
+  { id: "method", label: "Method", width: 72, cell: (f) => <span className={`method m-${f.method}`}>{f.method}</span> },
+  { id: "status", label: "Code", width: 46, cell: (f) => (f.state === "failed" ? "ERR" : f.state === "paused" ? <Icon name="pause" label="Paused" /> : isTunnel(f) ? "" : f.status ?? "…") },
+  { id: "tls", label: "TLS", width: 30, cell: (f) => (f.scheme === "https" || f.scheme === "wss" ? <Icon name="lock" label="TLS" /> : ""), title: (f) => f.scheme },
   { id: "host", label: "Host", width: 190, cell: (f) => f.host },
   {
     id: "path", label: "Path", width: "flex", title: (f) => f.error ?? f.url,
     cell: (f) => (
       <>
-        {f.state === "paused" && <span className="badge warn">⏸ paused</span>}
-        {isTunnel(f) && <button className="badge ssl-off" data-ssl-host={f.host} title={`Decrypt ${f.host}: Sniffo re-signs it with its own CA (the device must trust the Sniffo Root CA)`}>🔒 Enable SSL Proxying</button>}
+        {f.state === "paused" && <span className="badge warn"><Icon name="pause" size={10} /> paused</span>}
+        {isTunnel(f) && <button className="badge ssl-off" data-ssl-host={f.host} title={`Decrypt ${f.host}: Sniffo re-signs it with its own CA (the device must trust the Sniffo Root CA)`}><Icon name="lock" size={10} /> Enable SSL Proxying</button>}
         {f.ws_count > 0 && <span className="badge">WS {f.ws_count}</span>}
         {f.graphql && <span className="badge gql">{f.graphql}</span>}
         {f.tags.map((t) => <span key={t} className="badge">{t}</span>)}
@@ -204,7 +205,7 @@ export function FlowList(props: {
                 const next = new Set(hidden);
                 if (next.has(c.id)) next.delete(c.id); else next.add(c.id);
                 setHidden(next);
-              }} /> {c.label === "🔒" ? "TLS" : c.label}
+              }} /> {c.label}
             </label>
           ))}
         </div>

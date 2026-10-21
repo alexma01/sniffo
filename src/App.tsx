@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "./icons";
 import { api, BreakpointHit, FlowEvent, ScriptLog, FlowSummary, formatBytes, ProxyStatus, Rule, Rules, SslProxying } from "./api";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { BreakpointEditor } from "./BreakpointEditor";
@@ -243,7 +244,7 @@ export default function App() {
         <span className={`dot ${status?.running ? "on" : "off"}`} title={status?.running ? `Listening on ${status.address}` : "Proxy stopped"} />
         {status?.running && (
           <button className="lan" onClick={() => setShowDevices(true)} title="Use this address on phones and tablets">
-            {status.allow_lan && status.lan[0] ? `📱 ${status.lan[0].ip}:${status.port}` : "📱 Devices"}
+            {status.allow_lan && status.lan[0] ? <><Icon name="phone" /> {status.lan[0].ip}:{status.port}</> : <><Icon name="phone" /> Devices</>}
           </button>
         )}
         {status?.running ? (
@@ -351,7 +352,7 @@ export default function App() {
             <strong>Script console</strong>
             <span className="spacer" />
             <button onClick={clearLogs}>Clear</button>
-            <button onClick={() => setShowConsole(false)}>✕</button>
+            <button onClick={() => setShowConsole(false)} aria-label="Close console"><Icon name="x" size={12} /></button>
           </div>
           <div className="console-body">
             {!logs.length && <div className="muted">console.log output and script errors appear here.</div>}
@@ -384,7 +385,7 @@ export default function App() {
         {rules?.allow_list.enabled && <span className="item warn">Allow list on</span>}
         {rules?.no_caching && <span className="item warn">No caching</span>}
         <span className="spacer" />
-        {stats.paused > 0 && <span className="item warn">⏸ {stats.paused} paused</span>}
+        {stats.paused > 0 && <span className="item warn"><Icon name="pause" size={11} /> {stats.paused} paused</span>}
         <button className={`linkish ${logs.some((l) => l.error) ? "err" : ""}`} onClick={() => setShowConsole(!showConsole)}>Console ({logs.length})</button>
         <span className="item"><span className="label">Errors</span> {stats.errors}</span>
         <span className="item"><span className="label">↑</span> {formatBytes(stats.up)} <span className="label">↓</span> {formatBytes(stats.down)}</span>
@@ -407,7 +408,7 @@ export default function App() {
             {Object.entries(HIGHLIGHTS).map(([name, c]) => (
               <span key={name} title={name} style={{ background: c.replace(/0\.2\d\)/, "0.9)") }} onClick={() => { highlight(menuFlow.id, c); setMenu(null); }} />
             ))}
-            <span title="No highlight" className="none" onClick={() => { highlight(menuFlow.id, null); setMenu(null); }}>✕</span>
+            <span title="No highlight" className="none" onClick={() => { highlight(menuFlow.id, null); setMenu(null); }}><Icon name="x" size={10} /></span>
           </div>
           <div onClick={() => copy(menuFlow.url, "URL")}>Copy URL</div>
           {!isTunnel(menuFlow) && <>

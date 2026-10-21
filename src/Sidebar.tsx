@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
+import { Icon } from "./icons";
 import { Action, FlowSummary, Rule } from "./api";
 import { clientLabel, Filter } from "./filters";
 import { AppIcon } from "./AppIcon";
@@ -131,7 +132,7 @@ export function Sidebar(props: {
     const on = decrypts(h);
     return (
       <button className={`lock ${on ? "on" : ""}`} title={on ? `Decrypting ${h} — click to stop` : `Encrypted — click to enable SSL Proxying for ${h}`}
-        onClick={(e) => { e.stopPropagation(); sslForHost(h, !on); }}>{on ? "🔓" : "🔒"}</button>
+        onClick={(e) => { e.stopPropagation(); sslForHost(h, !on); }}><Icon name={on ? "unlock" : "lock"} size={12} /></button>
     );
   };
 
@@ -148,7 +149,7 @@ export function Sidebar(props: {
 
       <Section {...sectionProps("pinned")} title="Pinned" count={pinList.length + (pinnedFlows ? 1 : 0)}>
         <div className={`side-item ${filter.pinnedOnly ? "active" : ""}`} onClick={() => set({ host: null, pinnedOnly: !filter.pinnedOnly })}>
-          <span className="grow">📌 Pinned flows</span> <span className="muted">{pinnedFlows}</span>
+          <span className="grow"><Icon name="pin" size={12} /> Pinned flows</span> <span className="muted">{pinnedFlows}</span>
         </div>
         {pinList.map((p) => item(p.host, "pin:"))}
         {!pinList.length && !q && <div className="muted side-hint">Right-click a domain → Pin</div>}
