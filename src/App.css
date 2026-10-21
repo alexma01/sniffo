@@ -357,3 +357,19 @@ button.pin.on, button.pin:hover { opacity: 1; filter: none; }
 .tl-bar.pending { width: 40%; background: repeating-linear-gradient(90deg, var(--muted) 0 4px, transparent 4px 8px); opacity: 0.6; }
 .spark { flex: none; fill: none; stroke: color-mix(in srgb, var(--fg) 35%, transparent); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .side-item.active .spark { stroke: var(--accent-text); }
+
+/* Command palette (⌘P). */
+.palette-open { display: flex; align-items: center; gap: 8px; width: min(380px, 30vw); justify-content: flex-start; color: var(--muted) !important; background: var(--bg-3) !important; font-weight: 400 !important; }
+.palette-open kbd { margin-left: auto; font-family: inherit; font-size: 11px; padding: 1px 6px; border-radius: 5px; border: 1px solid var(--border); background: var(--raised); }
+.palette-back { align-items: flex-start; padding-top: 12vh; }
+.palette { width: min(640px, 92vw); border-radius: 14px; overflow: hidden; background: var(--modal); box-shadow: var(--pop-shadow); }
+.palette > input { width: 100%; height: 52px; padding: 0 18px; border: none; border-bottom: 1px solid var(--border); background: transparent; font-size: 16px; outline: none; }
+.palette-list { max-height: 50vh; overflow: auto; padding: 6px; }
+.palette-group { padding: 8px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.palette-item { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: 8px; cursor: default; }
+.palette-item.active { background: var(--sel); }
+.palette-tag { min-width: 58px; font: 600 10.5px var(--font-mono); text-align: center; }
+.palette-tag.action { color: var(--accent-text); }
+.palette-tag.host { color: var(--muted); }
+.palette-item .ellipsis { font-family: var(--font-mono); font-size: 12px; }
+.palette-foot { display: flex; gap: 16px; padding: 9px 16px; border-top: 1px solid var(--border); background: var(--bg-2); font-size: 12px; color: var(--muted); }

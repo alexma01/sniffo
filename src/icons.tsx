@@ -8,6 +8,7 @@ const PATHS = {
   laptop: "M5 6h14v10H5zM3 19h18",
   android: "M6 10h12v7a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2zM8 10a4 4 0 0 1 8 0M9.5 7 8 5M14.5 7 16 5",
   x: "M6 6l12 12M18 6 6 18",
+  search: "M11 4a7 7 0 1 1 0 14 7 7 0 0 1 0-14zM16.5 16.5 21 21",
 };
 
 export type IconName = keyof typeof PATHS;

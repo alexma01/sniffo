@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./icons";
 import { Logo } from "./Logo";
+import { Command, Palette } from "./Palette";
 import { api, BreakpointHit, FlowEvent, ScriptLog, FlowSummary, formatBytes, ProxyStatus, Rule, Rules, SslProxying } from "./api";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { BreakpointEditor } from "./BreakpointEditor";
@@ -68,6 +69,7 @@ const HAR = [{ name: "HAR / Sniffo session", extensions: ["har"] }];
 export default function App() {
   const { flows, hits, logs, clearLogs, doneHit } = useFlows();
   const [showConsole, setShowConsole] = useState(false);
+  const [palette, setPalette] = useState(false);
   const [rulesDraft, setRulesDraft] = useState<Rule | null | undefined>(undefined);
   const [status, setStatus] = useState<ProxyStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -195,13 +197,30 @@ export default function App() {
 
   const remove = (ids: number[]) => { api.remove(ids); if (selected != null && ids.includes(selected)) setSelected(null); };
 
+  // Proxyman-style shortcuts; the same list feeds the ⌘P palette.
+  const commands: (Command & { key?: string; shift?: boolean; inInput?: boolean })[] = [
+    { label: "Repeat selected flow", key: "r", shortcut: "⌘R", run: () => { if (selected != null) api.repeat(selected).then((st) => notify(`Repeated — ${st}`), fail); } },
+    { label: "Edit & Repeat selected flow…", key: "e", shortcut: "⌘E", run: () => { if (selected != null) requestOf(selected).then(setCompose); } },
+    { label: "Copy selected flow as cURL", key: "c", shift: true, shortcut: "⇧⌘C", run: () => { if (selected != null) requestOf(selected).then((r) => copy(toCurl(r), "as cURL")); } },
+    { label: "Compose request", key: "n", shortcut: "⌘N", run: () => setCompose(null) },
+    { label: "Clear session", key: "k", shortcut: "⌘K", run: () => { api.clear(); setSelected(null); } },
+    { label: "Filter flows", key: "f", shortcut: "⌘F", inInput: true, run: () => filterRef.current?.focus() },
+    { label: "Rules", key: "l", shortcut: "⌘L", run: () => setRulesDraft(null) },
+    { label: "Settings", key: ",", shortcut: "⌘,", run: () => setShowSettings(true) },
+    { label: "Devices…", run: () => setShowDevices(true) },
+    { label: "Export session as HAR…", key: "s", shortcut: "⌘S", inInput: true, run: () => exportHar() },
+    { label: "Open HAR…", key: "o", shortcut: "⌘O", inInput: true, run: () => importHar(true) },
+    { label: "Toggle console", run: () => setShowConsole((v) => !v) },
+    { label: "Search or run…", key: "p", shortcut: "⌘P", inInput: true, run: () => setPalette(true) },
+  ];
+
   useEffect(() => {
     const close = () => { setMenu(null); setFileMenu(false); };
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement;
       const mod = e.metaKey || e.ctrlKey;
       if (e.key === "Escape") {
-        setShowSettings(false); setShowDevices(false); setCompose(undefined); setDiff(null); setRulesDraft(undefined); setMenu(null);
+        setShowSettings(false); setShowDevices(false); setCompose(undefined); setDiff(null); setRulesDraft(undefined); setMenu(null); setPalette(false);
         return;
       }
       if (!mod) {
@@ -212,24 +231,11 @@ export default function App() {
         return;
       }
       const k = e.key.toLowerCase();
-      // Proxyman-style shortcuts; plain copy/paste/select-all stay native.
-      const actions: Record<string, () => void> = {
-        k: () => { api.clear(); setSelected(null); },
-        f: () => filterRef.current?.focus(),
-        n: () => setCompose(null),
-        r: () => { if (selected != null) api.repeat(selected).then((st) => notify(`Repeated — ${st}`), fail); },
-        e: () => { if (selected != null) requestOf(selected).then(setCompose); },
-        s: () => exportHar(),
-        o: () => importHar(true),
-        ",": () => setShowSettings(true),
-        l: () => setRulesDraft(null),
-      };
-      if (e.shiftKey && k === "c" && selected != null) {
+      const cmd = commands.find((c) => c.key === k && !c.shift === !e.shiftKey);
+      // Plain copy/paste/select-all stay native while typing; only a few shortcuts work from inputs.
+      if (cmd && !(typing && !cmd.inInput)) {
         e.preventDefault();
-        requestOf(selected).then((r) => copy(toCurl(r), "as cURL"));
-      } else if (!e.shiftKey && actions[k] && !(typing && k !== "f" && k !== "s" && k !== "o")) {
-        e.preventDefault();
-        actions[k]();
+        cmd.run();
       }
     };
     window.addEventListener("click", close);
@@ -267,6 +273,8 @@ export default function App() {
           <button className="warn" onClick={() => setShowSettings(true)}>Certificate not trusted</button>
         )}
         <button onClick={() => { api.clear(); setSelected(null); }} title="Remove all unpinned flows (⌘K)">Clear</button>
+        <span className="spacer" />
+        <button className="palette-open" onClick={() => setPalette(true)}><Icon name="search" /> Search or run…<kbd>⌘P</kbd></button>
         <span className="spacer" />
         <button onClick={() => setCompose(null)} title="Compose a request (⌘N) · Edit & repeat selected (⌘E) · Repeat (⌘R) · Copy as cURL (⌘⇧C)">Compose</button>
         <div className="dropdown">
@@ -311,6 +319,11 @@ export default function App() {
       {compose !== undefined && <Compose initial={compose ?? undefined} onClose={() => setCompose(undefined)} />}
       {diff && <Diff left={diff[0]} right={diff[1]} onClose={() => setDiff(null)} />}
       {toast && <div className="toast">{toast}</div>}
+      {palette && (
+        <Palette commands={commands} flows={visible} onClose={() => setPalette(false)}
+          onHost={(host) => set({ host, pinnedOnly: false, client: null })}
+          onFlow={(id) => { setSelected(id); setFollow(false); }} />
+      )}
       {showDevices && <Devices status={status} onClose={() => setShowDevices(false)} onChanged={refresh} />}
       {showSettings && <Settings status={status} onClose={() => setShowSettings(false)} onChanged={refresh} />}
       {error && <div className="banner">{error}</div>}
