@@ -72,6 +72,8 @@ export interface ProxyStatus {
   auto_system_proxy: boolean;
   vpn: { state: "not_needed" | "applied" | "helper_missing" } | { state: "failed"; detail: string };
   lan: { interface: string; ip: string }[];
+  /** mDNS name (sniffo.local) announced while LAN access is on. */
+  lan_name: string | null;
   ca_path: string;
   ca_trusted: boolean;
   system_proxy: boolean;

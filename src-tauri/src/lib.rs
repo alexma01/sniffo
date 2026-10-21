@@ -22,6 +22,8 @@ struct AppState {
     /// Last result of routing a VPN's own proxy entry through us (macOS).
     vpn: std::sync::Mutex<system::VpnProxy>,
     proxy: Mutex<Option<ProxyHandle>>,
+    /// mDNS announcement of `sniffo.local`, live while the proxy accepts LAN clients.
+    lan_name: std::sync::Mutex<Option<system::LanName>>,
     network: std::sync::Mutex<NetworkOptions>,
     reverse_cfg: std::sync::Mutex<Vec<ReverseProxy>>,
     reverse: Mutex<Vec<ProxyHandle>>,
@@ -104,6 +106,7 @@ impl AppState {
             want_system_proxy: AtomicBool::new(false),
             vpn: std::sync::Mutex::new(system::VpnProxy::NotNeeded),
             proxy: Mutex::new(None),
+            lan_name: Default::default(),
             network: std::sync::Mutex::new(saved.network),
             reverse_cfg: std::sync::Mutex::new(saved.reverse),
             reverse: Mutex::new(vec![]),
@@ -137,6 +140,8 @@ struct ProxyStatus {
     auto_system_proxy: bool,
     vpn: system::VpnProxy,
     lan: Vec<system::LanAddress>,
+    /// Set while `sniffo.local` is being announced.
+    lan_name: Option<&'static str>,
     ca_path: String,
     ca_trusted: bool,
     system_proxy: bool,
@@ -153,6 +158,7 @@ async fn proxy_status(state: State<'_, AppState>) -> Result<ProxyStatus, String>
         auto_system_proxy: state.auto_system_proxy.load(Ordering::Relaxed),
         vpn: state.vpn.lock().unwrap().clone(),
         lan: system::lan_addresses(),
+        lan_name: state.lan_name.lock().unwrap().as_ref().map(|_| system::LAN_HOSTNAME),
         ca_path: state.ca_path.display().to_string(),
         ca_trusted: system::ca_trusted(&state.ca_path),
         system_proxy: system::system_proxy_enabled(&state.snapshot_path),
@@ -192,6 +198,13 @@ async fn start_proxy(state: State<'_, AppState>, port: Option<u16>) -> Result<St
     let addr = handle.addr.to_string();
     let port = handle.addr.port();
     *proxy = Some(handle);
+    *state.lan_name.lock().unwrap() = None;
+    if host == "0.0.0.0" {
+        match system::publish_lan_name(port) {
+            Ok(n) => *state.lan_name.lock().unwrap() = Some(n),
+            Err(e) => tracing::warn!("cannot announce {}: {e}", system::LAN_HOSTNAME),
+        }
+    }
     // Keep the OS pointed at us when the port changes (snapshot of the user's settings is kept).
     if system::system_proxy_enabled(&state.snapshot_path) {
         system::enable_system_proxy("127.0.0.1", port, &state.snapshot_path).map_err(|e| e.to_string())?;
@@ -204,6 +217,7 @@ async fn stop_proxy(state: State<'_, AppState>) -> Result<(), String> {
     state.want_system_proxy.store(false, Ordering::Relaxed);
     // Never leave the OS pointing at a dead proxy.
     system::disable_system_proxy(&state.snapshot_path).map_err(|e| e.to_string())?;
+    state.lan_name.lock().unwrap().take();
     if let Some(p) = state.proxy.lock().await.take() {
         p.stop().await;
     }

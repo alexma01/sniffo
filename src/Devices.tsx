@@ -61,8 +61,9 @@ function WifiSetup({ status, onChanged }: { status: ProxyStatus | null; onChange
             <h4>1. Proxy settings on the device</h4>
             <table className="kv big">
               <tbody>
+                {status.lan_name && <tr><td className="k">Server</td><td className="v">{status.lan_name}</td></tr>}
                 <tr>
-                  <td className="k">Server</td>
+                  <td className="k">{status.lan_name ? "or IP" : "Server"}</td>
                   <td className="v">
                     {status.lan.length > 1 ? (
                       <select value={ip} onChange={(e) => setIp(e.target.value)}>
@@ -74,7 +75,7 @@ function WifiSetup({ status, onChanged }: { status: ProxyStatus | null; onChange
                 <tr><td className="k">Port</td><td className="v">{port ?? "—"}</td></tr>
               </tbody>
             </table>
-            <p className="muted">The device must be on the same Wi-Fi network as this computer.</p>
+            <p className="muted">The device must be on the same Wi-Fi network as this computer.{status.lan_name && <> <code>{status.lan_name}</code> follows this computer across networks; use the IP if the device can't resolve it (some Android versions, guest Wi-Fi).</>}</p>
             <h4>iPhone / iPad</h4>
             <ol className="steps">
               <li><b>Proxy</b>: Settings → Wi-Fi → ⓘ next to the network → Configure Proxy → <b>Manual</b> → server and port above → Save.</li>

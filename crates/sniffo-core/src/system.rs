@@ -307,6 +307,29 @@ fn lan_rank(interface: &str, ip: &str) -> u8 {
     }
 }
 
+/// Fixed name LAN devices can use as proxy host instead of an IP that changes with the network.
+pub const LAN_HOSTNAME: &str = "sniffo.local";
+
+/// Keeps `sniffo.local` answered over mDNS (IPv4, following interface/IP changes) while alive.
+pub struct LanName(mdns_sd::ServiceDaemon);
+
+pub fn publish_lan_name(port: u16) -> Result<LanName, String> {
+    let daemon = mdns_sd::ServiceDaemon::new().map_err(|e| e.to_string())?;
+    // The proxy listens on 0.0.0.0 only: an AAAA answer would send clients to a dead address.
+    daemon.disable_interface(mdns_sd::IfKind::IPv6).map_err(|e| e.to_string())?;
+    let info = mdns_sd::ServiceInfo::new("_http._tcp.local.", "Sniffo", &format!("{LAN_HOSTNAME}."), "", port, None)
+        .map_err(|e| e.to_string())?
+        .enable_addr_auto();
+    daemon.register(info).map_err(|e| e.to_string())?;
+    Ok(LanName(daemon))
+}
+
+impl Drop for LanName {
+    fn drop(&mut self) {
+        let _ = self.0.shutdown();
+    }
+}
+
 #[cfg(test)]
 mod lan_tests {
     #[test]
@@ -314,6 +337,26 @@ mod lan_tests {
         assert!(super::lan_rank("en0", "192.168.1.12") < super::lan_rank("utun3", "10.8.0.2"));
         assert!(super::lan_rank("Wi-Fi", "172.20.1.4") < super::lan_rank("Wi-Fi", "100.64.0.1"));
         assert!(super::lan_addresses().iter().all(|a| a.ip != "127.0.0.1"));
+    }
+
+    /// Needs a network with multicast: `cargo test -p sniffo-core -- --ignored lan_name`.
+    #[test]
+    #[ignore]
+    fn lan_name_is_announced() {
+        let _name = super::publish_lan_name(9191).unwrap();
+        let browser = mdns_sd::ServiceDaemon::new().unwrap();
+        let rx = browser.browse("_http._tcp.local.").unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while let Ok(ev) = rx.recv_deadline(deadline) {
+            if let mdns_sd::ServiceEvent::ServiceResolved(s) = ev {
+                if s.get_fullname() == "Sniffo._http._tcp.local." {
+                    assert_eq!(s.get_hostname(), "sniffo.local.");
+                    assert!(!s.get_addresses_v4().is_empty());
+                    return;
+                }
+            }
+        }
+        panic!("sniffo.local not announced");
     }
 }
 

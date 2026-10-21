@@ -255,7 +255,7 @@ export default function App() {
         <span className={`dot ${status?.running ? "on" : "off"}`} title={status?.running ? `Listening on ${status.address}` : "Proxy stopped"} />
         {status?.running && (
           <button className="lan" onClick={() => setShowDevices(true)} title="Use this address on phones and tablets">
-            {status.allow_lan && status.lan[0] ? <><Icon name="phone" /> {status.lan[0].ip}:{status.port}</> : <><Icon name="phone" /> Devices</>}
+            {status.allow_lan && status.lan[0] ? <><Icon name="phone" /> {status.lan_name ?? status.lan[0].ip}:{status.port}</> : <><Icon name="phone" /> Devices</>}
           </button>
         )}
         {status?.running ? (
@@ -397,7 +397,7 @@ export default function App() {
       <footer className="statusbar">
         <span className="item"><span className={`dot ${status?.running ? "on" : "off"}`} />{status?.running ? `Proxy ${status.address}` : "Proxy stopped"}</span>
         {status?.running && status.allow_lan && status.lan[0] && (
-          <span className="item" title={status.lan.map((a) => `${a.interface}: ${a.ip}`).join("\n")}><span className="label">LAN</span> {status.lan[0].ip}:{status.port}</span>
+          <span className="item" title={status.lan.map((a) => `${a.interface}: ${a.ip}`).join("\n")}><span className="label">LAN</span> {status.lan_name ?? status.lan[0].ip}:{status.port}</span>
         )}
         <span className="item"><span className="label">System proxy</span> {status?.system_proxy ? <span className="ok">On</span> : "Off"}</span>
         {status?.system_proxy && status.vpn.state === "applied" && <span className="item ok" title="A VPN overrides the system proxy; Sniffo routes its entry through the proxy">VPN routed</span>}
