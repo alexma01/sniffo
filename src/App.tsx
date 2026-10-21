@@ -241,7 +241,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="toolbar">
+      <header className="toolbar" data-tauri-drag-region>
         <span className="brand"><Logo /> Sniffo</span>
         <span className={`dot ${status?.running ? "on" : "off"}`} title={status?.running ? `Listening on ${status.address}` : "Proxy stopped"} />
         {status?.running && (

@@ -342,3 +342,6 @@ button.pin.on, button.pin:hover { opacity: 1; filter: none; }
 .code-area textarea { z-index: 1; position: relative; display: block; width: 100%; color: transparent; caret-color: var(--fg); background: transparent; resize: vertical; }
 .code-area textarea::placeholder { color: var(--muted); }
 .code-area:has(textarea:disabled) { opacity: 0.5; }
+
+/* Traffic lights overlay the toolbar's left edge on macOS. */
+.mac-titlebar .toolbar { padding-left: 84px; user-select: none; -webkit-user-select: none; }
