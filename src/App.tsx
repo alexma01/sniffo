@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./icons";
+import { Logo } from "./Logo";
 import { api, BreakpointHit, FlowEvent, ScriptLog, FlowSummary, formatBytes, ProxyStatus, Rule, Rules, SslProxying } from "./api";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { BreakpointEditor } from "./BreakpointEditor";
@@ -241,6 +242,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="toolbar">
+        <span className="brand"><Logo /> Sniffo</span>
         <span className={`dot ${status?.running ? "on" : "off"}`} title={status?.running ? `Listening on ${status.address}` : "Proxy stopped"} />
         {status?.running && (
           <button className="lan" onClick={() => setShowDevices(true)} title="Use this address on phones and tablets">
@@ -338,10 +340,20 @@ export default function App() {
           {sel ? (
             <FlowDetail summary={sel} onSsl={sslForHost} onPin={(id, pinned) => api.pin(id, pinned)} />
           ) : (
-            <div className="detail empty muted">
-              {status?.running
-                ? `Set your HTTP/HTTPS proxy to ${status.address} and trust the CA at ${status.ca_path}`
-                : "Start the proxy to capture traffic"}
+            <div className="detail empty">
+              {flows.size === 0 && <Logo size={104} tile />}
+              {flows.size === 0 && <div className="empty-title">{status?.running ? "Waiting for traffic…" : "Proxy stopped"}</div>}
+              <div className="muted">
+                {status?.running
+                  ? `Set your HTTP/HTTPS proxy to ${status.address} and trust the CA at ${status.ca_path}`
+                  : "Start the proxy to capture traffic"}
+              </div>
+              {flows.size === 0 && status?.running && (
+                <div className="row">
+                  <button className="primary" onClick={() => setShowDevices(true)}>Connect a device…</button>
+                  <button onClick={() => setCompose(null)}>Compose request</button>
+                </div>
+              )}
             </div>
           )}
         </div>

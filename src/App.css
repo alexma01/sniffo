@@ -318,3 +318,6 @@ button.pin.on, button.pin:hover { opacity: 1; filter: none; }
 .icon { flex: none; vertical-align: -2px; }
 .app-icon.fallback { display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 10px; color: var(--on-accent); background: color-mix(in srgb, var(--muted) 55%, transparent); }
 .app-icon.fallback[data-glyph] { color: var(--muted); background: none; }
+.brand { display: flex; align-items: center; gap: 7px; margin-right: 4px; font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
+.logo.tile { border-radius: 24%; box-shadow: 0 12px 30px rgb(0 0 0 / 0.22); }
+.empty-title { font-size: 18px; font-weight: 600; color: var(--fg); }
