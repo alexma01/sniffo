@@ -168,14 +168,25 @@ async fn start_proxy(state: State<'_, AppState>, port: Option<u16>) -> Result<St
         return Err(format!("cannot listen on port {wanted}: a reverse proxy uses it"));
     }
     let mut proxy = state.proxy.lock().await;
+    let restarting = proxy.as_ref().is_some_and(|p| p.addr.port() == wanted);
     if let Some(p) = proxy.take() {
         p.stop().await;
     }
     // All interfaces when LAN devices are allowed (like Proxyman); otherwise loopback only.
     let host = if state.allow_lan.load(Ordering::Relaxed) { "0.0.0.0" } else { "127.0.0.1" };
-    let listener = TcpListener::bind((host, port.unwrap_or(DEFAULT_PORT)))
-        .await
-        .map_err(|e| format!("cannot listen on port {}: {e}", port.unwrap_or(DEFAULT_PORT)))?;
+    // Right after stopping on the same port the OS may still hold it for a moment: retry briefly
+    // rather than leave the proxy stopped.
+    let mut attempts = if restarting { 20 } else { 1 };
+    let listener = loop {
+        match TcpListener::bind((host, wanted)).await {
+            Ok(l) => break l,
+            Err(e) if attempts > 1 && e.kind() == std::io::ErrorKind::AddrInUse => {
+                attempts -= 1;
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            Err(e) => return Err(format!("cannot listen on port {wanted}: {e}")),
+        }
+    };
     let network = state.network.lock().unwrap().clone();
     let handle = state.engine.start(listener, &state.ca, StartOptions { network, ..Default::default() }).await?;
     let addr = handle.addr.to_string();

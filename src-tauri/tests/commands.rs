@@ -96,6 +96,24 @@ fn settings_survive_a_restart() {
     assert_eq!(app.ok("get_proto_schemas", json!({})), json!({ "files": [proto], "messages": ["demo.User"] }));
 }
 
+/// Connections the proxy closed leave TIME_WAIT sockets on its port: restarting on that port
+/// (allow LAN, network settings, Settings → Save) must still work, or the proxy is left stopped.
+#[test]
+fn restart_on_the_same_port_after_traffic() {
+    let app = TestApp::new();
+    let port = app.start();
+    let up = Upstream::start();
+    for round in 0..3 {
+        for i in 0..20 {
+            assert_eq!(via(port, "GET", &up.url(&format!("/r{round}-{i}")), &[], b"").status, 200);
+        }
+        app.ok("set_allow_lan", json!({ "allow": round % 2 == 1 }));
+        app.ok("set_network", json!({ "network": { "upstream": null, "dns": [], "ignore_upstream_tls_errors": false } }));
+        assert_eq!(app.ok("proxy_status", json!({}))["port"], json!(port));
+    }
+    assert_eq!(via(port, "GET", &up.url("/still-up"), &[], b"").status, 200);
+}
+
 #[test]
 fn unreadable_settings_fall_back_to_defaults() {
     let dir = temp_dir("corrupt");

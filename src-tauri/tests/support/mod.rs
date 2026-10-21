@@ -203,9 +203,9 @@ impl TestApp {
 
     /// Starts the proxy on a free port; returns it.
     pub fn start(&self) -> u16 {
-        let port = free_port();
-        self.ok("start_proxy", json!({ "port": port }));
-        port
+        // Port 0: the OS picks one nobody else holds (a port chosen here could be taken meanwhile).
+        let addr = self.ok("start_proxy", json!({ "port": 0 }));
+        addr.as_str().and_then(|a| a.rsplit(':').next()?.parse().ok()).expect("listening address")
     }
 
     /// Every `flows` event item the UI received so far.
@@ -265,13 +265,20 @@ pub fn wait<T>(what: &str, mut f: impl FnMut() -> Option<T>) -> T {
 /// A free port outside the OS ephemeral range, so a client connection elsewhere in the test
 /// process can't grab it while the proxy restarts on it.
 pub fn free_port() -> u16 {
-    static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
-    // Below 32768, where Linux starts handing out ephemeral ports (macOS: 49152).
-    let base = 20_000 + (std::process::id() % 100) as u16 * 40;
+    // A different start each run (ports of the previous run linger in TIME_WAIT), then a shared
+    // counter: concurrent tests never try the same port.
+    static NEXT: std::sync::OnceLock<std::sync::atomic::AtomicU32> = std::sync::OnceLock::new();
+    let next = NEXT.get_or_init(|| {
+        let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0);
+        std::sync::atomic::AtomicU32::new(seed / 1000)
+    });
     loop {
-        let port = base + NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 8_000;
-        // Both: a socket on one address doesn't always block binding the other.
-        if TcpListener::bind(("127.0.0.1", port)).is_ok() && TcpListener::bind(("0.0.0.0", port)).is_ok() {
+        // 20000-31999: below 32768, where Linux starts handing out ephemeral ports (macOS: 49152).
+        let port = 20_000 + (next.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 12_000) as u16;
+        // Bound the way the app binds (tokio, SO_REUSEADDR), on both addresses: a socket on one
+        // address, or one in TIME_WAIT, can block the other.
+        let free = |host: &'static str| tauri::async_runtime::block_on(async move { tokio::net::TcpListener::bind((host, port)).await.is_ok() });
+        if TcpListener::bind(("127.0.0.1", port)).is_ok() && free("127.0.0.1") && free("0.0.0.0") {
             return port;
         }
     }
