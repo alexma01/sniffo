@@ -129,6 +129,11 @@ const Row = memo(function Row({ f, top, alt, selected, color, cells, decrypts, h
   );
 });
 
+/** Window event that drives the list from outside (palette): jump to an edge or flip the order. */
+export const LIST_EVENT = "sniffo:list";
+export type ListCommand = "top" | "bottom" | "order";
+export const listCommand = (what: ListCommand) => window.dispatchEvent(new CustomEvent(LIST_EVENT, { detail: what }));
+
 export function FlowList(props: {
   flows: FlowSummary[];
   selected: number | null;
@@ -150,16 +155,35 @@ export function FlowList(props: {
   const handlers = useRef<Handlers>({ onSelect, onContextMenu, onEnableSsl });
   handlers.current = { onSelect, onContextMenu, onEnableSsl };
   const parent = useRef<HTMLDivElement>(null);
-  const v = useVirtualizer({ count: flows.length, getScrollElement: () => parent.current, estimateSize: () => ROW, overscan: 20, scrollMargin: ROW, scrollPaddingStart: ROW });
+  // Newest first is a view option: the list (and auto-scroll) then follow the top edge.
+  const [newestFirst, setNewestFirst] = useState<boolean>(() => load("sniffo.newestFirst", false));
+  const rows = useMemo(() => (newestFirst ? [...flows].reverse() : flows), [flows, newestFirst]);
+  const [edges, setEdges] = useState({ top: true, bottom: true });
+  const v = useVirtualizer({ count: rows.length, getScrollElement: () => parent.current, estimateSize: () => ROW, overscan: 20, scrollMargin: ROW, scrollPaddingStart: ROW });
   const [hidden, setHidden] = useState(loadHidden);
   const [picker, setPicker] = useState<{ x: number; y: number } | null>(null);
   const cols = COLUMNS.filter((c) => !hidden.has(c.id));
 
   useEffect(() => save("sniffo.hiddenColumns", [...hidden]), [hidden]);
 
+  useEffect(() => save("sniffo.newestFirst", newestFirst), [newestFirst]);
+
+  const jump = (to: "top" | "bottom") => parent.current?.scrollTo({ top: to === "top" ? 0 : parent.current.scrollHeight });
+
   useEffect(() => {
-    if (follow && flows.length) v.scrollToIndex(flows.length - 1);
-  }, [flows.length, follow]);
+    if (follow && rows.length) jump(newestFirst ? "top" : "bottom");
+  }, [rows.length, follow, newestFirst]);
+
+  // Palette commands and shortcuts elsewhere in the app.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const what = (e as CustomEvent<ListCommand>).detail;
+      if (what === "order") setNewestFirst((n) => !n);
+      else jump(what);
+    };
+    window.addEventListener(LIST_EVENT, on);
+    return () => window.removeEventListener(LIST_EVENT, on);
+  }, []);
 
   useEffect(() => {
     if (!picker) return;
@@ -169,11 +193,11 @@ export function FlowList(props: {
   }, [picker]);
 
   const move = (delta: number) => {
-    const i = flows.findIndex((f) => f.id === selected);
-    const next = flows[Math.max(0, Math.min(flows.length - 1, (i < 0 ? -1 : i) + delta))];
+    const i = rows.findIndex((f) => f.id === selected);
+    const next = rows[Math.max(0, Math.min(rows.length - 1, (i < 0 ? -1 : i) + delta))];
     if (next) {
       onSelect(next.id);
-      v.scrollToIndex(flows.indexOf(next));
+      v.scrollToIndex(rows.indexOf(next));
     }
   };
 
@@ -219,10 +243,16 @@ export function FlowList(props: {
         tabIndex={0}
         onScroll={(e) => {
           const el = e.currentTarget;
-          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < ROW * 1.5;
-          if (atBottom !== follow) onFollowChange(atBottom);
+          const top = el.scrollTop < ROW * 1.5;
+          const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < ROW * 1.5;
+          if (top !== edges.top || bottom !== edges.bottom) setEdges({ top, bottom });
+          const atLatest = newestFirst ? top : bottom;
+          if (atLatest !== follow) onFollowChange(atLatest);
         }}
         onKeyDown={(e) => {
+          const mod = e.metaKey || e.ctrlKey;
+          if (e.key === "Home" || (mod && e.key === "ArrowUp")) { e.preventDefault(); jump("top"); return; }
+          if (e.key === "End" || (mod && e.key === "ArrowDown")) { e.preventDefault(); jump("bottom"); return; }
           if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
           if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
         }}
@@ -230,21 +260,27 @@ export function FlowList(props: {
         {/* The header occupies the first ROW px of the scroller: hence scrollMargin/scrollPaddingStart above. */}
         <div className="flow-row head" style={{ minWidth }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setPicker({ x: e.clientX, y: e.clientY }); }} title="Right-click to choose columns">
           {cols.map((c) => (
-            <span key={c.id} style={style(c)} className="th">
-              {c.label}
+            <span key={c.id} style={style(c)} className={`th ${c.id === "id" ? "sortable" : ""}`}
+              onClick={c.id === "id" ? (e) => { if (!(e.target as HTMLElement).classList.contains("resizer")) setNewestFirst(!newestFirst); } : undefined}
+              title={c.id === "id" ? (newestFirst ? "Newest first — click for oldest first" : "Oldest first — click for newest first") : undefined}>
+              {c.label}{c.id === "id" && <span className="sort">{newestFirst ? "↓" : "↑"}</span>}
               <span className="resizer" onMouseDown={(e) => startResize(c, e)} onDoubleClick={() => { const { [c.id]: _, ...rest } = widths; setWidths(rest); save("sniffo.columnWidths", rest); }} title="Drag to resize, double-click to reset" />
             </span>
           ))}
         </div>
         <div style={{ height: v.getTotalSize(), position: "relative", minWidth }}>
           {v.getVirtualItems().map((row) => {
-            const f = flows[row.index];
+            const f = rows[row.index];
             return (
               <Row key={f.id} f={f} top={row.start - ROW} alt={row.index % 2 === 1} selected={f.id === selected} color={colors.get(f.id)}
                 cells={cells} decrypts={decrypts} handlers={handlers} clients={clients} />
             );
           })}
         </div>
+      </div>
+      <div className="list-jump">
+        {!edges.top && <button onClick={() => jump("top")} title="Top of the list (Home, ⌘↑)">↑ Top</button>}
+        {!edges.bottom && <button onClick={() => jump("bottom")} title="Bottom of the list (End, ⌘↓)">↓ Bottom</button>}
       </div>
       {picker && (
         <div className="menu" style={{ left: picker.x, top: picker.y }} onClick={(e) => e.stopPropagation()}>

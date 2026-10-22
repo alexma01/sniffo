@@ -12,7 +12,7 @@ import { Devices } from "./Devices";
 import { defaultAction, newRule, RulesEditor } from "./RulesEditor";
 import { clientLabel, compile, emptyFilter, Filter, STATUSES, toggle, TYPES } from "./filters";
 import { FlowDetail } from "./FlowDetail";
-import { FlowList, isTunnel } from "./FlowList";
+import { FlowList, isTunnel, listCommand } from "./FlowList";
 import { Settings } from "./Settings";
 import { Sidebar } from "./Sidebar";
 import { setLocalIps } from "./clients";
@@ -249,6 +249,9 @@ export default function App() {
     { label: "Export session as HAR…", key: "s", shortcut: "⌘S", inInput: true, run: () => exportHar() },
     { label: "Open HAR…", key: "o", shortcut: "⌘O", inInput: true, run: () => importHar(true) },
     { label: "Toggle console", run: () => setShowConsole((v) => !v) },
+    { label: "Go to top of the list", shortcut: "Home", run: () => listCommand("top") },
+    { label: "Go to bottom of the list", shortcut: "End", run: () => listCommand("bottom") },
+    { label: "Newest / oldest first", run: () => listCommand("order") },
     { label: "Search or run…", key: "p", shortcut: "⌘P", inInput: true, run: () => setPalette(true) },
   ];
 

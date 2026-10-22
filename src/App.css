@@ -391,3 +391,11 @@ button.pin.on, button.pin:hover { opacity: 1; filter: none; }
 .modal .row.end { position: sticky; bottom: -20px; z-index: 2; margin: 18px -24px -20px; padding: 12px 24px 20px; background: var(--modal); border-top: 1px solid var(--border); }
 .modal.settings .row.end, .modal.tall .row.end { position: static; margin: 0; }
 .modal textarea { max-height: 60vh; }
+
+/* Flow list: sortable # header and floating jump buttons. */
+.flow-list { position: relative; }
+.th.sortable { cursor: pointer; }
+.th.sortable:hover { color: var(--fg); }
+.th .sort { margin-left: 4px; color: var(--accent-text); }
+.list-jump { position: absolute; right: 18px; bottom: 12px; display: flex; flex-direction: column; gap: 6px; z-index: 3; pointer-events: none; }
+.list-jump button { pointer-events: auto; height: 26px; padding: 0 10px; border-radius: 999px; font-size: 12px; background: var(--raised); box-shadow: var(--pop-shadow); border-color: transparent; }
