@@ -104,10 +104,9 @@ function ActionForm({ action, onChange }: { action: Action; onChange: (a: Action
       return <p className="muted">Matching requests get a 403 without reaching the server.</p>;
     case "script":
       return (
-        <textarea
-          className="code-editor"
+        <CodeArea
+          kind="js"
           rows={18}
-          spellCheck={false}
           value={action.code}
           onChange={(e) => onChange({ ...action, code: e.target.value })}
           onKeyDown={(e) => {

@@ -47,6 +47,24 @@ export function highlightHttp(text: string): ReactNode[] {
 /** A WebSocket frame or any one-line payload: coloured only when it is JSON. */
 export const highlightMaybeJson = (text: string): ReactNode => (looksJson(text) ? highlightJson(text) : text);
 
+const JS_TOKEN = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`)|\b(\d+(?:\.\d+)?)\b|\b(function|return|const|let|var|if|else|for|while|of|in|new|true|false|null|undefined|this|typeof|async|await|try|catch|throw)\b|([A-Za-z_$][\w$]*)(?=\s*\()/g;
+
+/** Script editor: comments, strings, numbers, keywords and called functions (same --syn-* tokens). */
+export function highlightJs(text: string): ReactNode[] {
+  if (text.length > LIMIT) return [text];
+  const out: ReactNode[] = [];
+  let last = 0;
+  for (const m of text.matchAll(JS_TOKEN)) {
+    const i = m.index!;
+    if (i > last) out.push(text.slice(last, i));
+    const cls = m[1] ? "j-comment" : m[2] ? "j-str" : m[3] ? "j-num" : m[4] ? "j-bool" : "j-key";
+    out.push(<span key={i} className={cls}>{m[0]}</span>);
+    last = i + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
 /** "name: value" lines (header editors). */
 export const highlightHeaders = (text: string): ReactNode[] =>
   text.split("\n").map((h, i) => {
@@ -55,11 +73,11 @@ export const highlightHeaders = (text: string): ReactNode[] =>
   });
 
 /** A textarea whose text is coloured: a transparent textarea over a highlighted <pre>, scrolled together. */
-export function CodeArea({ value, kind, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { value: string; kind: "json" | "headers" }) {
+export function CodeArea({ value, kind, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { value: string; kind: "json" | "headers" | "js" }) {
   const pre = useRef<HTMLPreElement>(null);
   return (
     <div className="code-area">
-      <pre ref={pre} aria-hidden="true">{kind === "headers" ? highlightHeaders(value) : highlightMaybeJson(value)}{"\n"}</pre>
+      <pre ref={pre} aria-hidden="true">{kind === "headers" ? highlightHeaders(value) : kind === "js" ? highlightJs(value) : highlightMaybeJson(value)}{"\n"}</pre>
       <textarea {...rest} value={value} spellCheck={false}
         onScroll={(e) => { pre.current!.scrollTop = e.currentTarget.scrollTop; pre.current!.scrollLeft = e.currentTarget.scrollLeft; }} />
     </div>
