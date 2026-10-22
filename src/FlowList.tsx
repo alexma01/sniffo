@@ -135,6 +135,8 @@ export function FlowList(props: {
   onSelect: (id: number) => void;
   onContextMenu: (id: number, x: number, y: number) => void;
   follow: boolean;
+  /** Scrolling up pauses auto-scroll; scrolling back to the bottom resumes it. */
+  onFollowChange: (follow: boolean) => void;
   /** Row highlight colours set from the context menu. */
   colors: Map<number, string>;
   /** Called by the inline "Enable SSL Proxying" badge on tunnel rows. */
@@ -142,7 +144,7 @@ export function FlowList(props: {
   /** Whether SSL Proxying now covers a host (tunnel rows recorded before it was enabled). */
   decrypts: (host: string) => boolean;
 }) {
-  const { flows, selected, onSelect, onContextMenu, follow, colors, onEnableSsl, decrypts } = props;
+  const { flows, selected, onSelect, onContextMenu, follow, onFollowChange, colors, onEnableSsl, decrypts } = props;
   const [widths, setWidths] = useState<Record<string, number>>(() => load("sniffo.columnWidths", {}));
   const clients = useClientsVersion(); // client labels change when a device is renamed
   const handlers = useRef<Handlers>({ onSelect, onContextMenu, onEnableSsl });
@@ -215,6 +217,11 @@ export function FlowList(props: {
         className="flow-scroll"
         ref={parent}
         tabIndex={0}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < ROW * 1.5;
+          if (atBottom !== follow) onFollowChange(atBottom);
+        }}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
           if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }

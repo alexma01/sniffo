@@ -384,6 +384,7 @@ export default function App() {
             onSelect={(id) => { setSelected(id); setFollow(false); }}
             onContextMenu={(id, x, y) => { setSelected(id); setMenu({ id, x, y }); }}
             follow={follow}
+            onFollowChange={setFollow}
             colors={colors}
             onEnableSsl={(host) => sslForHost(host, true)}
             decrypts={decrypts}

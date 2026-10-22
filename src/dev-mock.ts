@@ -99,3 +99,13 @@ mockIPC((cmd, args) => {
     default: return null;
   }
 }, { shouldMockEvents: true });
+
+// ?stream: a new flow every second, to try auto-scroll and live updates.
+if (new URLSearchParams(location.search).has("stream")) {
+  setInterval(() => {
+    const base = flows[1 + (flows.length % 4)];
+    const f = { ...base, id: flows.length + 1, started_ms: Date.now(), path: `${base.path}?n=${flows.length + 1}` };
+    flows.push(f);
+    emit("flows", [{ type: "upsert", data: summary(f) }]);
+  }, 1000);
+}
