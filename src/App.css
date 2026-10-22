@@ -408,3 +408,7 @@ button.pin.on, button.pin:hover { opacity: 1; filter: none; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .toast.ok .icon { color: #4d7c0f; } }
 .toast.err { background: #b91c1c; color: #fff; cursor: pointer; } /* white on this red: 6.5:1 in both themes */
 .j-comment { color: var(--muted); font-style: italic; }
+
+/* Textareas grow only downwards and never past their container; dialogs never scroll sideways. */
+textarea { resize: vertical; max-width: 100%; }
+.modal { overflow-x: hidden; }
