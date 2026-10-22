@@ -226,12 +226,12 @@ test("apps and devices", async ({ sniffo }) => {
   await sniffo.get("/during-rename");
   await expect(row(page, "/during-rename")).toBeVisible();
   await expect(devices.locator("input.rename")).toBeFocused();
-  await devices.locator("input.rename").fill("Ale's iPhone");
+  await devices.locator("input.rename").fill("Test iPhone");
   await devices.locator("input.rename").press("Enter");
-  await expect(devices.locator(".side-item", { hasText: "Ale's iPhone" })).toBeVisible();
-  await expect(row(page, "/item/1").locator(".c-client")).toContainText("Ale's iPhone");
+  await expect(devices.locator(".side-item", { hasText: "Test iPhone" })).toBeVisible();
+  await expect(row(page, "/item/1").locator(".c-client")).toContainText("Test iPhone");
   await page.reload();
-  const renamed = page.locator(".side-section", { hasText: "Devices" }).locator(".side-item", { hasText: "Ale's iPhone" });
+  const renamed = page.locator(".side-section", { hasText: "Devices" }).locator(".side-item", { hasText: "Test iPhone" });
   await expect(renamed).toBeVisible();
 
   // Device menu: rename via menu (empty name resets), show only, export, delete.

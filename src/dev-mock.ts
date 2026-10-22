@@ -12,11 +12,11 @@ const samples: [string, string, number, string, string][] = [
   ["POST", "https://api.example.com/graphql", 200, "application/json", '{"data":{"user":{"name":"Ada"}}}'],
   ["GET", "https://www.example.org/feed.xml", 200, "application/xml", "<rss><channel><title>Feed</title><item><title>One</title></item></channel></rss>"],
   ["PUT", "https://api.example.com/v1/items/9", 500, "text/plain", "boom"],
-  ["CONNECT", "https://dev-h2o-api.hubsense.io:443/", 200, "", ""],
+  ["CONNECT", "https://www.googleapis.com:443/", 200, "", ""],
   ["POST", "https://api.example.com/demo.UserService/Get", 200, "application/grpc", String.fromCharCode(0, 0, 0, 0, 7, 8, 7, 18, 3, 97, 100, 97)],
   ["GET", "https://www.example.org/", 304, "text/html", ""],
   // Tunnels: SSL Proxying not enabled for these hosts (no status, no response).
-  ["CONNECT", "https://plugins.jetbrains.com:443", 0, "", ""],
+  ["CONNECT", "https://fonts.googleapis.com:443", 0, "", ""],
   ["CONNECT", "https://www.google.com:443", 0, "", ""],
 ];
 
@@ -25,7 +25,7 @@ const flows: Flow[] = samples.map(([method, url, status, ct, body], i) => {
   if (method === "CONNECT") return {
     id: i + 1, client_addr: "127.0.0.1:52000", started_ms: Date.now() - (6 - i) * 1000, ttfb_ms: null, duration_ms: null,
     method, url, scheme: "https", host: u.hostname, path: "", http_version: "HTTP/1.1",
-    request: { headers: [["host", u.host], ["user-agent", "JetBrains Rider/2026.2"]], body_size: 0 },
+    request: { headers: [["host", u.host], ["user-agent", "Google Drive/112.0"]], body_size: 0 },
     status: null, response: null, state: "complete", error: null, ws_messages: [], ws_dropped: 0, graphql: null,
   };
   return {
@@ -52,7 +52,7 @@ let rules: unknown = { rules: [], allow_list: { enabled: false, patterns: [] }, 
 const summary = (f: Flow): FlowSummary => ({
   id: f.id, started_ms: f.started_ms, ttfb_ms: f.ttfb_ms, duration_ms: f.duration_ms, method: f.method, url: f.url, host: f.host, path: f.path,
   scheme: f.scheme, http_version: f.id % 2 ? "HTTP/2.0" : "HTTP/1.1", client_ip: f.id === 6 ? "192.168.1.40" : "127.0.0.1",
-  client_app: f.method === "CONNECT" ? "Rider" : f.id === 6 ? null : f.id % 3 ? "Google Chrome" : "curl", request_type: null,
+  client_app: f.method === "CONNECT" ? "Google Drive" : f.id === 6 ? null : f.id % 3 ? "Google Chrome" : "curl", request_type: null,
   status: f.status, state: f.state, content_type: f.response?.headers[0][1] ?? null, request_size: f.request.body_size,
   response_size: f.response?.body_size ?? null, error: f.error, pinned: pinned.has(f.id), tags: f.id === 2 ? ["Map Local /login"] : [], ws_count: f.ws_messages.length, graphql: f.graphql,
 });
@@ -77,7 +77,7 @@ mockIPC((cmd, args) => {
     case "list_devices": return [
       { id: "SIM1", name: "iPhone 18 Pro", platform: "ios_simulator", state: "Booted", os: "iOS 27.0", emulator: true },
       { id: "emulator-5554", name: "sdk gphone64 arm64", platform: "android", state: "device", os: "Android 15", emulator: true },
-      { id: "PHONE", name: "iPhone 14 Ale", platform: "ios_device", state: "connected", os: "iOS 26.6.1", emulator: false },
+      { id: "PHONE", name: "iPhone 14", platform: "ios_device", state: "connected", os: "iOS 26.6.1", emulator: false },
       { id: "Medium_Phone", name: "Medium Phone", platform: "android_avd", state: "Shutdown", os: "Android emulator", emulator: true },
     ];
     case "device_command": return "done (mock)";
