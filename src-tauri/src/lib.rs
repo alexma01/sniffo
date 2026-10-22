@@ -630,6 +630,7 @@ fn forward_events<R: Runtime>(app: AppHandle<R>, engine: &Engine) {
 pub fn setup<R: Runtime>(builder: tauri::Builder<R>, data_dir: Option<PathBuf>) -> tauri::Builder<R> {
     builder
         .setup(move |app| {
+            let guarded = data_dir.is_none();
             let (dir, icons) = match data_dir {
                 Some(d) => (d.clone(), d.join("icons")),
                 None => (app.path().app_data_dir()?, app.path().app_cache_dir()?.join("icons")),
@@ -646,6 +647,10 @@ pub fn setup<R: Runtime>(builder: tauri::Builder<R>, data_dir: Option<PathBuf>) 
                 let _ = system::disable_system_proxy(&snap);
                 default_hook(info);
             }));
+            // Tests pass a data_dir and their binary has no guard mode.
+            if guarded {
+                spawn_proxy_guard(&app.state::<AppState>().snapshot_path);
+            }
             let watchdog = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let mut tick = tokio::time::interval(Duration::from_secs(10));
@@ -689,6 +694,38 @@ pub fn setup<R: Runtime>(builder: tauri::Builder<R>, data_dir: Option<PathBuf>) 
             proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, install_vpn_helper, list_devices, device_command, app_icon, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_ws_messages, get_body, clear_flows, remove_flows, pin_flow, search_flows,
             get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, export_rules, import_rules, get_proto_schemas, set_proto_files, decode_proto, list_breakpoints, resume_breakpoint, send_ws_message
         ])
+}
+
+const GUARD_FLAG: &str = "--proxy-guard";
+
+/// SIGKILL, Force Quit and native crashes skip every in-process hook: a child process holds a
+/// pipe to us and restores the OS proxy when it closes, i.e. whenever and however we die.
+fn spawn_proxy_guard(snapshot_path: &Path) {
+    use std::process::{Command, Stdio};
+    let Ok(exe) = std::env::current_exe() else { return };
+    let mut cmd = Command::new(exe);
+    cmd.arg(GUARD_FLAG).arg(snapshot_path).stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null());
+    // Own process group: Ctrl+C or a group kill aimed at the app must not take the guard too.
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    match cmd.spawn() {
+        // Keep the pipe's write end open for the rest of the process lifetime.
+        Ok(child) => std::mem::forget(child),
+        Err(e) => tracing::error!("starting system proxy guard: {e}"),
+    }
+}
+
+/// Guard mode entry (`main` calls it first): blocks until the parent app exits, then restores.
+/// No-op when the app already restored on a clean exit (the snapshot file is gone).
+pub fn run_proxy_guard() -> bool {
+    let mut args = std::env::args_os().skip(1);
+    if args.next().as_deref() != Some(GUARD_FLAG.as_ref()) {
+        return false;
+    }
+    let Some(snap) = args.next() else { return true };
+    let _ = std::io::Read::read_to_end(&mut std::io::stdin(), &mut Vec::new());
+    let _ = system::disable_system_proxy(Path::new(&snap));
+    true
 }
 
 /// Puts the OS proxy settings back (on quit; also used by the test bridge).
