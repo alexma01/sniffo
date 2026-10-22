@@ -41,7 +41,7 @@ struct Saved {
     /// Listen on all interfaces so phones/tablets on the LAN can use the proxy.
     #[serde(default = "yes")]
     allow_lan: bool,
-    /// Like Proxyman: point the OS at Sniffo on launch (restored on quit).
+    /// Point the OS at Sniffo on launch (restored on quit).
     #[serde(default = "yes")]
     auto_system_proxy: bool,
     #[serde(default)]
@@ -191,7 +191,7 @@ async fn start_proxy(state: State<'_, AppState>, port: Option<u16>) -> Result<St
     if let Some(p) = proxy.take() {
         p.stop().await;
     }
-    // All interfaces when LAN devices are allowed (like Proxyman); otherwise loopback only.
+    // All interfaces when LAN devices are allowed; otherwise loopback only.
     let host = if state.allow_lan.load(Ordering::Relaxed) { "0.0.0.0" } else { "127.0.0.1" };
     // Right after stopping on the same port the OS may still hold it for a moment: retry briefly
     // rather than leave the proxy stopped.

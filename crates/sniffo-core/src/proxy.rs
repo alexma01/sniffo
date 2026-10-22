@@ -52,7 +52,7 @@ pub struct SslProxying {
     pub exclude: Vec<String>,
 }
 
-/// Like Proxyman, no host is decrypted until the user enables it: apps with their own
+/// No host is decrypted until the user enables it: apps with their own
 /// trust store (JVM IDEs, CLIs) keep working when Sniffo takes over the system proxy.
 impl Default for SslProxying {
     fn default() -> Self {

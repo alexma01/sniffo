@@ -381,7 +381,7 @@ pub enum VpnProxy {
     Failed(String),
 }
 
-// Like Proxyman's Helper Tool: VPN clients (Cato, GlobalProtect…) publish their own proxy
+// VPN clients (Cato, GlobalProtect…) publish their own proxy
 // entry in the dynamic store, which wins over System Settings and needs root to change.
 // A root-owned script plus a sudoers rule limited to it is installed once, with the user's
 // approval in macOS's own password prompt; it only accepts `set <port>` and `restore`.

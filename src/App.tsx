@@ -167,7 +167,7 @@ export default function App() {
       return v;
     };
   }, [ssl]);
-  /** Proxyman-style per-host toggle: enable adds the host to Include; disable removes it, excluding it if a wildcard still matches. */
+  /** Per-host toggle: enable adds the host to Include; disable removes it, excluding it if a wildcard still matches. */
   const sslForHost = (host: string, on: boolean) => {
     if (!ssl) return;
     const other = (l: string[]) => l.filter((h) => h.toLowerCase() !== host.toLowerCase());
@@ -184,7 +184,7 @@ export default function App() {
   const onSsl = useCallback((host: string, on: boolean) => sslRef.current(host, on), []);
   const onPin = useCallback((id: number, pinned: boolean) => { api.pin(id, pinned); }, []);
   /** Start the proxy (at launch and from the Start button) and take over the system proxy if the
-   *  user wants that (Settings → General, on by default like Proxyman). */
+   *  user wants that (Settings → General, on by default). */
   const start = () => {
     setPhase("starting");
     return api.start()
@@ -259,7 +259,7 @@ export default function App() {
 
   const remove = (ids: number[]) => { api.remove(ids); if (selected != null && ids.includes(selected)) setSelected(null); };
 
-  // Proxyman-style shortcuts; the same list feeds the ⌘P palette.
+  // Keyboard shortcuts; the same list feeds the ⌘P palette.
   const commands: (Command & { key?: string; shift?: boolean; inInput?: boolean })[] = [
     { label: "Repeat selected flow", key: "r", shortcut: "⌘R", run: () => { if (selected != null) api.repeat(selected).then((st) => notify(`Repeated — ${st}`), fail); } },
     { label: "Edit & Repeat selected flow…", key: "e", shortcut: "⌘E", run: () => { if (selected != null) requestOf(selected).then(setCompose); } },
