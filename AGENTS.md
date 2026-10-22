@@ -13,6 +13,7 @@ Free cross-platform HTTP/HTTPS debugging proxy. Tauri 2 desktop app: Rust proxy 
 
 | Path | What |
 |---|---|
+| `docs/`, `CONTRIBUTING.md` | Human docs: getting started, features, development (tests, CI, releases) |
 | `crates/sniffo-core/` | Proxy engine (hudsucker): `proxy.rs`, `rules.rs`, `script.rs` (QuickJS), `ca.rs`, `system.rs` (OS proxy), `devices.rs`, `har.rs` |
 | `src-tauri/src/lib.rs` | Tauri commands (IPC) — the only bridge UI ↔ core |
 | `src/` | React UI. `api.ts` = typed IPC wrappers, `App.tsx` = shell |
@@ -40,6 +41,6 @@ pnpm test:e2e                    # Playwright, on demand only
 ## Read when needed
 
 - Architecture, IPC flow, mock/bridge modes → [.claude/docs/architecture.md](.claude/docs/architecture.md)
-- Tests: which suite, how to run, ports → [.claude/docs/testing.md](.claude/docs/testing.md)
+- Tests, CI, releases → [docs/development.md](docs/development.md). Ports: :9090 is often taken by another proxy; run Sniffo dev on :9191
 - UI changes, theme, gallery, design canvas → [.claude/docs/ui.md](.claude/docs/ui.md)
-- Releases and CI → [.claude/docs/release.md](.claude/docs/release.md)
+- README screenshots: `docs/images/`, taken from the dev-mock UI. Public or example.com hosts only, no real names
