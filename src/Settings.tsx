@@ -1,4 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { toast, toastError } from "./toast";
 import { backdrop } from "./backdrop";
 import { Icon } from "./icons";
 import { useEffect, useState } from "react";
@@ -51,6 +52,7 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
       const p = Number(port);
       if (status?.running && !status.address?.endsWith(`:${p}`)) await api.start(p);
       onChanged();
+      toast("Settings saved");
       onClose();
     } catch (e) {
       setMsg(String(e));
@@ -58,7 +60,7 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
   };
 
   const trust = () =>
-    api.trustCa().then(() => { setMsg("Certificate installed"); onChanged(); }, (e) => setMsg(String(e)));
+    api.trustCa().then(() => { setMsg("Certificate installed"); toast("Certificate installed and trusted"); onChanged(); }, (e) => { setMsg(String(e)); toastError(e); });
 
   return (
     <div className="modal-back" {...backdrop(onClose)}>

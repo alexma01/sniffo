@@ -1,4 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { onToast, toast as showToast, Toast, toastError } from "./toast";
 import { Icon } from "./icons";
 import { Logo } from "./Logo";
 import { Command, Palette } from "./Palette";
@@ -98,7 +99,7 @@ export default function App() {
   const [diffBase, setDiffBase] = useState<number | null>(null);
   const [diff, setDiff] = useState<[number, number] | null>(null);
   const [fileMenu, setFileMenu] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
   const filterRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [listPct, setListPct] = useState(() => loadNumber("sniffo.listHeight", 45));
@@ -124,8 +125,13 @@ export default function App() {
     window.addEventListener("mouseup", up);
   };
 
-  const notify = (text: string) => { setToast(text); setTimeout(() => setToast(null), 3000); };
-  const fail = (e: unknown) => setError(String(e));
+  const notify = (text: string) => showToast(text);
+  const fail = toastError;
+  // Latest toast wins; errors stay longer and close on click.
+  useEffect(() => onToast((t) => {
+    setToast(t);
+    setTimeout(() => setToast((cur) => (cur?.id === t.id ? null : cur)), t.kind === "err" ? 7000 : 3000);
+  }), []);
   const exportHar = async (ids: number[] = []) => {
     const path = await save({ filters: HAR, defaultPath: ids.length === 1 ? `flow-${ids[0]}.har` : "sniffo-session.har" });
     if (path) api.exportHar(path, ids).then((n) => notify(`Saved ${n} flows to ${path}`), fail);
@@ -359,7 +365,13 @@ export default function App() {
       {hits.length > 0 && <BreakpointEditor hits={hits} onDone={doneHit} />}
       {compose !== undefined && <Compose initial={compose ?? undefined} onClose={() => setCompose(undefined)} />}
       {diff && <Diff left={diff[0]} right={diff[1]} onClose={() => setDiff(null)} />}
-      {toast && <div className="toast">{toast}</div>}
+      {toast && (
+        <div className={`toast ${toast.kind}`} role={toast.kind === "err" ? "alert" : "status"} onClick={() => setToast(null)}>
+          {toast.kind === "ok" && <Icon name="check" size={13} />}
+          {toast.kind === "err" && <Icon name="alert" size={13} />}
+          <span className="ellipsis">{toast.text}</span>
+        </div>
+      )}
       {palette && (
         <Palette commands={commands} flows={visible} onClose={() => setPalette(false)}
           onHost={(host) => set({ host, pinnedOnly: false, client: null })}

@@ -399,3 +399,11 @@ button.pin.on, button.pin:hover { opacity: 1; filter: none; }
 .th .sort { margin-left: 4px; color: var(--accent-text); }
 .list-jump { position: absolute; right: 18px; bottom: 12px; display: flex; flex-direction: column; gap: 6px; z-index: 3; pointer-events: none; }
 .list-jump button { pointer-events: auto; height: 26px; padding: 0 10px; border-radius: 999px; font-size: 12px; background: var(--raised); box-shadow: var(--pop-shadow); border-color: transparent; }
+
+/* Toast kinds: ✓ lime for saves, red for errors (click to dismiss). */
+.toast { display: flex; align-items: center; gap: 8px; cursor: default; }
+/* The toast is inverted (fg on bg): lime on the dark light-theme toast, deep green on the pale dark-theme one. */
+.toast.ok .icon { color: var(--accent); }
+[data-theme="dark"] .toast.ok .icon { color: #4d7c0f; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .toast.ok .icon { color: #4d7c0f; } }
+.toast.err { background: #b91c1c; color: #fff; cursor: pointer; } /* white on this red: 6.5:1 in both themes */

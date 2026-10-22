@@ -1,4 +1,5 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { toast, toastError } from "./toast";
 import { backdrop } from "./backdrop";
 import { CodeArea } from "./highlight";
 import { useEffect, useState } from "react";
@@ -158,7 +159,7 @@ export function RulesEditor(props: { draft?: Rule | null; onClose: () => void })
   // Local state first, so the next edit (e.g. blur then click) builds on this one.
   const persist = (next: Rules) => {
     setRules(next);
-    return api.setRules(next).then(() => setMsg(null), (e) => { setMsg(String(e)); api.getRules().then(setRules); });
+    return api.setRules(next).then(() => { setMsg(null); return true; }, (e) => { setMsg(String(e)); toastError(e); api.getRules().then(setRules); return false; });
   };
 
   if (!rules) return null;
@@ -168,7 +169,8 @@ export function RulesEditor(props: { draft?: Rule | null; onClose: () => void })
     const err = regexError(editing);
     if (err) { setMsg(err); return; }
     const exists = rules.rules.some((r) => r.id === editing.id);
-    persist({ ...rules, rules: exists ? rules.rules.map((r) => (r.id === editing.id ? editing : r)) : [...rules.rules, editing] });
+    persist({ ...rules, rules: exists ? rules.rules.map((r) => (r.id === editing.id ? editing : r)) : [...rules.rules, editing] })
+      .then((ok) => ok && toast(`Rule “${editing.name}” saved`));
     setEditing(null);
   };
   const move = (i: number, d: number) => {
@@ -218,7 +220,7 @@ export function RulesEditor(props: { draft?: Rule | null; onClose: () => void })
                       <button onClick={() => move(i, -1)} title="Move up">↑</button>
                       <button onClick={() => move(i, 1)} title="Move down">↓</button>
                       <button onClick={() => setEditing(structuredClone(r))}>Edit</button>
-                      <button onClick={() => persist({ ...rules, rules: rules.rules.filter((x) => x.id !== r.id) })}>Delete</button>
+                      <button onClick={() => persist({ ...rules, rules: rules.rules.filter((x) => x.id !== r.id) }).then((ok) => ok && toast(`Rule “${r.name}” deleted`))}>Delete</button>
                     </td>
                   </tr>
                 ))}
