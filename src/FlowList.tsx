@@ -208,8 +208,8 @@ export function FlowList(props: {
 
   const cells = useMemo(() => cols.map((c) => ({ c, style: style(c) })), [hidden, widths]);
 
-  // Row padding (20) + 8px gap between cells + every fixed column + the flexible path column's minimum.
-  const minWidth = 20 + 8 * (cols.length - 1) + cols.reduce((sum, c) => {
+  // Row padding (2×12) + 10px gap between cells (.flow-row in App.css) + every fixed column + the flexible path column's minimum.
+  const minWidth = 24 + 10 * (cols.length - 1) + cols.reduce((sum, c) => {
     const w: number | "flex" = c.id in widths ? widths[c.id] : c.width;
     return sum + (w === "flex" ? 120 : w);
   }, 0);

@@ -298,9 +298,9 @@ export default function App() {
         )}
         {status?.running ? (
           // Restoring the OS proxy settings takes a few seconds (networksetup per network service).
-          <button disabled={busy} onClick={() => { setBusy(true); api.stop().finally(() => refresh().finally(() => setBusy(false))); }}>{busy ? "Stopping…" : "Stop"}</button>
+          <button className="danger" disabled={busy} onClick={() => { setBusy(true); api.stop().finally(() => refresh().finally(() => setBusy(false))); }}>{busy ? "Stopping…" : "Stop"}</button>
         ) : (
-          <button disabled={busy} onClick={() => { setBusy(true); start().finally(() => setBusy(false)); }}>{busy ? "Starting…" : "Start"}</button>
+          <button className="primary" disabled={busy} onClick={() => { setBusy(true); start().finally(() => setBusy(false)); }}>{busy ? "Starting…" : "Start"}</button>
         )}
         <label className="check" title="Route this machine's HTTP/HTTPS traffic through Sniffo">
           <input
@@ -317,7 +317,7 @@ export default function App() {
         <span className="spacer" />
         <button className="palette-open" onClick={() => setPalette(true)}><Icon name="search" /> Search or run…<kbd>⌘P</kbd></button>
         <span className="spacer" />
-        <button onClick={() => setCompose(null)} title="Compose a request (⌘N) · Edit & repeat selected (⌘E) · Repeat (⌘R) · Copy as cURL (⌘⇧C)">Compose</button>
+        <button className="primary" onClick={() => setCompose(null)} title="Compose a request (⌘N) · Edit & repeat selected (⌘E) · Repeat (⌘R) · Copy as cURL (⌘⇧C)">Compose</button>
         <div className="dropdown">
           <button onClick={(e) => { e.stopPropagation(); setFileMenu(!fileMenu); }}>File ▾</button>
           {fileMenu && (
