@@ -180,9 +180,9 @@ export default function App() {
   sslRef.current = sslForHost;
   const onSsl = useCallback((host: string, on: boolean) => sslRef.current(host, on), []);
   const onPin = useCallback((id: number, pinned: boolean) => { api.pin(id, pinned); }, []);
-  const start = () => api.start().then(() => setError(null), (e) => setError(String(e))).finally(refresh);
-  /** First start of this app run: also take over the system proxy if the user wants that (default, like Proxyman). */
-  const launch = () => api.start()
+  /** Start the proxy (at launch and from the Start button) and take over the system proxy if the
+   *  user wants that (Settings → General, on by default like Proxyman). */
+  const start = () => api.start()
     .then(async () => {
       setError(null);
       const s = await api.status();
@@ -193,7 +193,7 @@ export default function App() {
   const set = (patch: Partial<Filter>) => setFilter((f) => ({ ...f, ...patch }));
 
   useEffect(() => {
-    api.status().then((s) => (s.running ? refresh() : launch()));
+    api.status().then((s) => (s.running ? refresh() : start()));
     // LAN addresses change when Wi-Fi/VPN changes.
     const t = setInterval(() => api.status().then(setStatus), 10_000);
     return () => clearInterval(t);
