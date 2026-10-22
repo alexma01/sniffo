@@ -317,6 +317,12 @@ pub fn publish_lan_name(port: u16) -> Result<LanName, String> {
     let daemon = mdns_sd::ServiceDaemon::new().map_err(|e| e.to_string())?;
     // The proxy listens on 0.0.0.0 only: an AAAA answer would send clients to a dead address.
     daemon.disable_interface(mdns_sd::IfKind::IPv6).map_err(|e| e.to_string())?;
+    // Only addresses another device can reach: no loopback, link-local or VPN/tunnel ones.
+    let unreachable = mdns_sd::IfPredicate::new(|i| match i.ip() {
+        std::net::IpAddr::V4(v4) => v4.is_loopback() || v4.is_link_local() || lan_rank(&i.name, &v4.to_string()) == 2,
+        _ => true,
+    });
+    daemon.disable_interface(mdns_sd::IfKind::Predicate(unreachable)).map_err(|e| e.to_string())?;
     let info = mdns_sd::ServiceInfo::new("_http._tcp.local.", "Sniffo", &format!("{LAN_HOSTNAME}."), "", port, None)
         .map_err(|e| e.to_string())?
         .enable_addr_auto();
@@ -351,7 +357,9 @@ mod lan_tests {
             if let mdns_sd::ServiceEvent::ServiceResolved(s) = ev {
                 if s.get_fullname() == "Sniffo._http._tcp.local." {
                     assert_eq!(s.get_hostname(), "sniffo.local.");
-                    assert!(!s.get_addresses_v4().is_empty());
+                    let ips = s.get_addresses_v4();
+                    assert!(!ips.is_empty());
+                    assert!(ips.iter().all(|ip| !ip.is_loopback() && !ip.is_link_local()), "{ips:?}");
                     return;
                 }
             }
