@@ -79,6 +79,8 @@ async function requestOf(id: number): Promise<Req> {
 /** Dev only (?open=settings…): start with a dialog open, for the ?gallery page. */
 const OPEN = import.meta.env.DEV ? new URLSearchParams(location.search).get("open") : null;
 
+const PROXY_LABEL = { starting: "Starting proxy…", stopping: "Stopping proxy…", stopped: "Proxy stopped", running: "Proxy running" } as const;
+
 const HAR = [{ name: "HAR / Sniffo session", extensions: ["har"] }];
 
 export default function App() {
@@ -93,7 +95,8 @@ export default function App() {
   const [searchBodies, setSearchBodies] = useState(false);
   const [follow, setFollow] = useState(true);
   const [showSettings, setShowSettings] = useState(OPEN === "settings");
-  const [busy, setBusy] = useState(false);
+  /** A proxy transition in flight. Starts as "starting": the app launches the proxy on its own. */
+  const [phase, setPhase] = useState<"starting" | "stopping" | "proxy" | null>("starting");
   const [showDevices, setShowDevices] = useState(OPEN === "devices");
   const [compose, setCompose] = useState<Req | null | undefined>(OPEN === "compose" ? null : undefined);
   const [diffBase, setDiffBase] = useState<number | null>(null);
@@ -182,18 +185,33 @@ export default function App() {
   const onPin = useCallback((id: number, pinned: boolean) => { api.pin(id, pinned); }, []);
   /** Start the proxy (at launch and from the Start button) and take over the system proxy if the
    *  user wants that (Settings → General, on by default like Proxyman). */
-  const start = () => api.start()
-    .then(async () => {
-      setError(null);
-      const s = await api.status();
-      if (s.auto_system_proxy && !s.system_proxy) await api.setSystemProxy(true);
-    })
-    .catch((e) => setError(String(e)))
-    .finally(refresh);
+  const start = () => {
+    setPhase("starting");
+    return api.start()
+      .then(async () => {
+        setError(null);
+        const s = await api.status();
+        if (s.auto_system_proxy && !s.system_proxy) await api.setSystemProxy(true);
+      })
+      .catch((e) => setError(String(e)))
+      .finally(() => refresh().finally(() => setPhase(null)));
+  };
+  // Restoring the OS proxy settings takes a few seconds (networksetup per network service).
+  const stop = () => {
+    setPhase("stopping");
+    return api.stop().finally(() => refresh().finally(() => setPhase(null)));
+  };
+  const setSystemProxy = (on: boolean) => {
+    setPhase("proxy");
+    api.setSystemProxy(on).then(() => setError(null), (err) => setError(String(err))).finally(() => refresh().finally(() => setPhase(null)));
+  };
+  /** What the UI shows: a transition in flight wins over the last known status. */
+  const proxyState = phase === "starting" || phase === "stopping" ? phase : status?.running ? "running" : status ? "stopped" : "starting";
+  const running = proxyState === "running";
   const set = (patch: Partial<Filter>) => setFilter((f) => ({ ...f, ...patch }));
 
   useEffect(() => {
-    api.status().then((s) => (s.running ? refresh() : start()));
+    api.status().then((s) => (s.running ? refresh().finally(() => setPhase(null)) : start()));
     // LAN addresses change when Wi-Fi/VPN changes.
     const t = setInterval(() => api.status().then(setStatus), 10_000);
     return () => clearInterval(t);
@@ -296,25 +314,26 @@ export default function App() {
     <div className="app">
       <header className="toolbar" data-tauri-drag-region>
         <span className="brand"><Logo /> Sniffo</span>
-        <span className={`dot ${status?.running ? "on" : "off"}`} title={status?.running ? `Listening on ${status.address}` : "Proxy stopped"} />
-        {status?.running && (
+        <span className={`dot ${running ? "on" : proxyState === "stopped" ? "off" : "busy"}`} title={running ? `Listening on ${status!.address}` : PROXY_LABEL[proxyState]} />
+        {running && status && (
           <button className="lan" onClick={() => setShowDevices(true)} title="Use this address on phones and tablets">
             {status.allow_lan && status.lan[0] ? <><Icon name="phone" /> {status.lan_name ?? status.lan[0].ip}:{status.port}</> : <><Icon name="phone" /> Devices</>}
           </button>
         )}
-        {status?.running ? (
-          // Restoring the OS proxy settings takes a few seconds (networksetup per network service).
-          <button className="danger" disabled={busy} onClick={() => { setBusy(true); api.stop().finally(() => refresh().finally(() => setBusy(false))); }}>{busy ? "Stopping…" : "Stop"}</button>
+        {proxyState === "starting" || proxyState === "stopping" ? (
+          <button disabled>{PROXY_LABEL[proxyState]}</button>
+        ) : running ? (
+          <button className="danger" onClick={stop}>Stop</button>
         ) : (
-          <button className="primary" disabled={busy} onClick={() => { setBusy(true); start().finally(() => setBusy(false)); }}>{busy ? "Starting…" : "Start"}</button>
+          <button className="primary" onClick={start}>Start</button>
         )}
         <label className="check" title="Route this machine's HTTP/HTTPS traffic through Sniffo">
           <input
             type="checkbox"
             checked={!!status?.system_proxy}
-            disabled={!status?.running}
-            onChange={(e) => api.setSystemProxy(e.target.checked).then(() => setError(null), (err) => setError(String(err))).finally(refresh)}
-          /> System proxy
+            disabled={!running || phase !== null}
+            onChange={(e) => setSystemProxy(e.target.checked)}
+          /> {phase === "proxy" ? "Applying…" : "System proxy"}
         </label>
         {status && !status.ca_trusted && (
           <button className="warn" onClick={() => setShowSettings(true)}>Certificate not trusted</button>
@@ -410,13 +429,13 @@ export default function App() {
           ) : (
             <div className="detail empty">
               {flows.size === 0 && <Logo size={104} tile />}
-              {flows.size === 0 && <div className="empty-title">{status?.running ? "Waiting for traffic…" : "Proxy stopped"}</div>}
+              {flows.size === 0 && <div className="empty-title">{running ? "Waiting for traffic…" : PROXY_LABEL[proxyState]}</div>}
               <div className="muted">
-                {status?.running
+                {running && status
                   ? `Set your HTTP/HTTPS proxy to ${status.address} and trust the CA at ${status.ca_path}`
-                  : "Start the proxy to capture traffic"}
+                  : proxyState === "stopped" ? "Start the proxy to capture traffic" : "One moment…"}
               </div>
-              {flows.size === 0 && status?.running && (
+              {flows.size === 0 && running && (
                 <div className="row">
                   <button className="primary" onClick={() => setShowDevices(true)}>Connect a device…</button>
                   <button onClick={() => setCompose(null)}>Compose request</button>
@@ -446,8 +465,8 @@ export default function App() {
         </div>
       )}
       <footer className="statusbar">
-        <span className="item"><span className={`dot ${status?.running ? "on" : "off"}`} />{status?.running ? `Proxy ${status.address}` : "Proxy stopped"}</span>
-        {status?.running && status.allow_lan && status.lan[0] && (
+        <span className="item"><span className={`dot ${running ? "on" : proxyState === "stopped" ? "off" : "busy"}`} />{running ? `Proxy ${status!.address}` : PROXY_LABEL[proxyState]}</span>
+        {running && status && status.allow_lan && status.lan[0] && (
           <span className="item" title={status.lan.map((a) => `${a.interface}: ${a.ip}`).join("\n")}><span className="label">LAN</span> {status.lan_name ?? status.lan[0].ip}:{status.port}</span>
         )}
         <span className="item"><span className="label">System proxy</span> {status?.system_proxy ? <span className="ok">On</span> : "Off"}</span>

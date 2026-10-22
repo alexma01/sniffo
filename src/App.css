@@ -412,3 +412,6 @@ button.pin.on, button.pin:hover { opacity: 1; filter: none; }
 /* Textareas grow only downwards and never past their container; dialogs never scroll sideways. */
 textarea { resize: vertical; max-width: 100%; }
 .modal { overflow-x: hidden; }
+.dot.busy { background: var(--warn); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .dot.busy { animation: none; } }
