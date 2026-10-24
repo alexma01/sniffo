@@ -2,6 +2,7 @@ import { useState } from "react";
 import { backdrop } from "./backdrop";
 import { CodeArea } from "./highlight";
 import { api } from "./api";
+import { t, useLang } from "./i18n";
 import { headersToText, textToHeaders } from "./RulesEditor";
 import { parseCurl, Req } from "./snippets";
 
@@ -9,6 +10,7 @@ const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
 /** Builds and sends a request through the proxy (it shows up in the list like any other). */
 export function Compose({ initial, onClose }: { initial?: Req; onClose: () => void }) {
+  useLang();
   const [method, setMethod] = useState(initial?.method ?? "GET");
   const [url, setUrl] = useState(initial?.url ?? "https://");
   const [headers, setHeaders] = useState(headersToText(initial?.headers ?? [["accept", "*/*"]]));
@@ -31,7 +33,7 @@ export function Compose({ initial, onClose }: { initial?: Req; onClose: () => vo
     setBusy(true);
     try {
       const status = await api.compose(method, url, textToHeaders(headers), body);
-      setMsg({ ok: true, text: `Sent — ${status}. The request is in the list.` });
+      setMsg({ ok: true, text: t("compose.sent", { status }) });
     } catch (e) {
       setMsg({ ok: false, text: String(e) });
     } finally {
@@ -42,7 +44,7 @@ export function Compose({ initial, onClose }: { initial?: Req; onClose: () => vo
   return (
     <div className="modal-back" {...backdrop(onClose)}>
       <div className="modal wide" onClick={(e) => e.stopPropagation()}>
-        <h3>Compose request</h3>
+        <h3>{t("compose.title")}</h3>
         <div className="form">
           <div className="row">
             <select value={METHODS.includes(method) ? method : "other"} onChange={(e) => setMethod(e.target.value)}>
@@ -50,18 +52,18 @@ export function Compose({ initial, onClose }: { initial?: Req; onClose: () => vo
               {!METHODS.includes(method) && <option value="other">{method}</option>}
             </select>
             <input className="input wide grow" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
-            <button className="primary" disabled={busy} onClick={send}>Send</button>
+            <button className="primary" disabled={busy} onClick={send}>{t("detail.send")}</button>
           </div>
-          <label>Headers <CodeArea kind="headers" rows={6} value={headers} onChange={(e) => setHeaders(e.target.value)} /></label>
-          <label>Body <CodeArea kind="json" rows={8} value={body} onChange={(e) => setBody(e.target.value)} /></label>
+          <label>{t("detail.headers")} <CodeArea kind="headers" rows={6} value={headers} onChange={(e) => setHeaders(e.target.value)} /></label>
+          <label>{t("detail.body")} <CodeArea kind="json" rows={8} value={body} onChange={(e) => setBody(e.target.value)} /></label>
           <details>
-            <summary>Import from cURL</summary>
+            <summary>{t("compose.importCurl")}</summary>
             <textarea rows={4} value={curl} placeholder="curl 'https://…' -H '…'" onChange={(e) => setCurl(e.target.value)} />
-            <div className="row"><button onClick={importCurl} disabled={!curl.trim()}>Import</button></div>
+            <div className="row"><button onClick={importCurl} disabled={!curl.trim()}>{t("compose.import")}</button></div>
           </details>
           {msg && <p className={msg.ok ? "ok" : "err"}>{msg.text}</p>}
         </div>
-        <div className="row end"><button onClick={onClose}>Close</button></div>
+        <div className="row end"><button onClick={onClose}>{t("detail.close")}</button></div>
       </div>
     </div>
   );

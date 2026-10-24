@@ -52,6 +52,10 @@ Every feature is free and unlimited.
 
 ![Settings](images/settings.png)
 
+## Language
+
+- English and Italian, switched live in Settings → General. Defaults to the system language.
+
 ## Devices
 
 - LAN mode with a QR code and a certificate page at `http://sniffo.cert`.

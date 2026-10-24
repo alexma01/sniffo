@@ -37,6 +37,7 @@ pnpm test:e2e                    # Playwright, on demand only
 - Git-flow: work on `feature/<name>` from `develop`; `main` = releases only. Conventional Commits.
 - Match surrounding code: small, few comments, no new deps for what a few lines do.
 - New/changed Tauri command → update `src/api.ts`, `src/dev-mock.ts` and `src-tauri/tests/commands.rs`.
+- UI text goes through `t()` with keys in `src/locales/parts/*.ts`, English and Italian (see ui.md).
 
 ## Read when needed
 

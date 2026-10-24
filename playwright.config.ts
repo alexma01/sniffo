@@ -19,6 +19,7 @@ export default defineConfig({
   use: {
     baseURL: "http://localhost:1430",
     viewport: { width: 1500, height: 900 },
+    locale: "en-US", // selectors use the English strings
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
