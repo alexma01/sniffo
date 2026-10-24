@@ -70,6 +70,8 @@ pub enum Action {
     },
     /// JavaScript `onRequest` / `onResponse` (see `script` module).
     Script { code: String },
+    /// Declarative edits of headers, query, URL, status and body, applied in order.
+    Rewrite { items: Vec<Rewrite> },
     /// Simulated network conditions.
     Throttle {
         #[serde(default)]
@@ -84,6 +86,82 @@ pub enum Action {
 
 fn yes() -> bool {
     true
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Rewrite {
+    /// Applies to the response instead of the request.
+    #[serde(default)]
+    pub response: bool,
+    pub target: RewriteTarget,
+    pub op: RewriteOp,
+    /// Header or query parameter name.
+    #[serde(default)]
+    pub name: String,
+    /// Regex for `replace` (all matches; `$1` in `value` refers to groups).
+    #[serde(default)]
+    pub pattern: String,
+    #[serde(default)]
+    pub value: String,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RewriteTarget { Header, Query, Url, Status, Body }
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RewriteOp { Set, Remove, Replace }
+
+// Rewrite rules run as generated scripts: same buffering, ordering and error console as Script.
+const REWRITE_JS: &str = r##"
+const __dec = (s) => { try { return decodeURIComponent(s.replace(/\+/g, " ")); } catch { return s; } };
+function __query(url, it, edit) {
+  const h = url.indexOf("#"), hash = h < 0 ? "" : url.slice(h);
+  if (h >= 0) url = url.slice(0, h);
+  const q = url.indexOf("?"), base = q < 0 ? url : url.slice(0, q);
+  let ps = q < 0 ? [] : url.slice(q + 1).split("&").filter(Boolean);
+  const hit = (p) => __dec(p.split("=")[0]) === it.name;
+  if (it.op === "remove") ps = ps.filter((p) => !hit(p));
+  else if (it.op === "set") {
+    const kv = encodeURIComponent(it.name) + "=" + encodeURIComponent(it.value);
+    ps = ps.some(hit) ? ps.map((p) => (hit(p) ? kv : p)) : [...ps, kv];
+  } else ps = ps.map((p) => {
+    if (!hit(p)) return p;
+    const i = p.indexOf("=");
+    return (i < 0 ? p + "=" : p.slice(0, i + 1)) + encodeURIComponent(edit(i < 0 ? "" : __dec(p.slice(i + 1))));
+  });
+  return base + (ps.length ? "?" + ps.join("&") : "") + hash;
+}
+function __apply(m, res) {
+  for (const it of __items) {
+    if (it.response !== res) continue;
+    const re = it.op === "replace" ? new RegExp(it.pattern, "g") : null;
+    const edit = (s) => (re ? String(s).replace(re, it.value) : it.value);
+    if (it.target === "header") {
+      const k = it.name.toLowerCase();
+      if (it.op === "remove") delete m.headers[k];
+      else if (it.op === "set") m.headers[k] = it.value;
+      else if (k in m.headers) m.headers[k] = Array.isArray(m.headers[k]) ? m.headers[k].map(edit) : edit(m.headers[k]);
+    } else if (it.target === "body") {
+      if (re && m.body == null) continue; // binary or empty: nothing to search
+      const json = m.body !== null && typeof m.body === "object";
+      let b = it.op === "remove" ? "" : edit(json ? JSON.stringify(m.body) : m.body);
+      if (json) try { b = JSON.parse(b); } catch {}
+      m.body = b;
+    } else if (it.target === "status") {
+      if (res && it.op === "set") m.status = Number(it.value) || m.status;
+    } else if (!res && it.target === "url" && it.op !== "remove") m.url = edit(m.url);
+    else if (!res && it.target === "query") m.url = __query(m.url, it, edit);
+  }
+  return m;
+}
+function onRequest(c, request) { return __apply(request, false); }
+function onResponse(c, request, response) { return __apply(response, true); }
+"##;
+
+pub fn rewrite_script(items: &[Rewrite]) -> String {
+    format!("const __items = {};{REWRITE_JS}", serde_json::to_string(items).unwrap_or_else(|_| "[]".into()))
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -155,6 +233,7 @@ impl Rules {
                     p.break_response |= response;
                 }
                 Action::Script { code } => p.scripts.push((r.name.clone(), code.clone())),
+                Action::Rewrite { items } => p.scripts.push((r.name.clone(), rewrite_script(items))),
                 Action::Throttle { latency_ms, download_kbps, upload_kbps } => {
                     p.latency_ms = p.latency_ms.max(*latency_ms);
                     let bps = |k: u64| (k > 0).then_some(k * 1024);
@@ -194,6 +273,40 @@ mod tests {
         assert!(!p.block && p.map_local.is_some() && p.record);
         assert_eq!((p.latency_ms, p.download_bps, p.upload_bps), (300, Some(50 * 1024), None));
         assert!(rules.plan("GET", "http://ads.tracker.com/x").block);
+    }
+
+    #[test]
+    fn rewrite_edits_request_and_response() {
+        use serde_json::json;
+        let it = |response, target, op, name: &str, pattern: &str, value: &str| Rewrite { response, target, op, name: name.into(), pattern: pattern.into(), value: value.into() };
+        use {RewriteOp::*, RewriteTarget::*};
+        let code = rewrite_script(&[
+            it(false, Header, Set, "X-Debug", "", "1"),
+            it(false, Header, Remove, "cookie", "", ""),
+            it(false, Header, Replace, "user-agent", "Chrome/\\d+", "Chrome/1"),
+            it(false, Query, Set, "page", "", "2 3"),
+            it(false, Query, Remove, "token", "", ""),
+            it(false, Url, Replace, "", "api\\.example\\.com", "staging.example.com"),
+            it(false, Body, Replace, "", "\"admin\":false", "\"admin\":true"),
+            it(true, Status, Set, "", "", "503"),
+            it(true, Body, Replace, "", "(\\w+)@example\\.com", "$1@test"),
+            it(true, Header, Set, "cache-control", "", "no-store"),
+        ]);
+        let mut shared = json!({});
+        let req = json!({ "method": "POST", "url": "https://api.example.com/u?token=abc&page=1#top",
+            "headers": { "cookie": "s=1", "user-agent": "Mozilla Chrome/120" }, "body": { "admin": false } });
+        let out = crate::script::run(&code, "onRequest", &json!([{}, req]), &mut shared);
+        assert_eq!(out.error, None);
+        let v = out.value.unwrap();
+        assert_eq!(v["url"], "https://staging.example.com/u?page=2%203#top");
+        assert_eq!(v["headers"], json!({ "user-agent": "Mozilla Chrome/1", "x-debug": "1" }));
+        assert_eq!(v["body"], json!({ "admin": true }), "JSON bodies stay JSON");
+
+        let res = json!({ "status": 200, "headers": {}, "body": "mail ada@example.com" });
+        let v = crate::script::run(&code, "onResponse", &json!([{}, req, res]), &mut shared).value.unwrap();
+        assert_eq!((v["status"].clone(), v["body"].clone(), v["headers"]["cache-control"].clone()), (json!(503), json!("mail ada@test"), json!("no-store")));
+        let binary = json!({ "status": 200, "headers": {}, "body": null });
+        assert!(crate::script::run(&code, "onResponse", &json!([{}, req, binary]), &mut shared).value.unwrap()["body"].is_null(), "binary bodies untouched");
     }
 
     #[test]

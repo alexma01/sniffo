@@ -426,7 +426,7 @@ const MAX_WS = 10_000;
 export const FlowDetail = memo(function FlowDetail({ summary, onSsl, onPin, decrypts }: { summary: FlowSummary; onSsl: (host: string, on: boolean) => void; onPin: (id: number, pinned: boolean) => void; decrypts: (host: string) => boolean }) {
   const [flow, setFlow] = useState<Flow | null>(null);
   // Every upsert replaces the summary; a new frame (ws_count) or a pin needs no full refetch.
-  const { ws_count, pinned: _pinned, ...shown } = summary;
+  const { ws_count, pinned: _pinned, color: _color, comment: _comment, ...shown } = summary;
   const key = JSON.stringify(shown);
   useEffect(() => {
     let live = true;
@@ -458,6 +458,9 @@ export const FlowDetail = memo(function FlowDetail({ summary, onSsl, onPin, decr
           <button className="linkish" onClick={() => onSsl(flow.host, false)} title="Stop decrypting this host (new connections will be tunnelled)"><Icon name="unlock" size={12} /> Decrypted · disable</button>
         )}
       </div>
+      <input key={flow.id} className="flow-comment" placeholder="Add a comment…" defaultValue={summary.comment ?? ""} aria-label="Comment"
+        onBlur={(e) => { if (e.target.value.trim() !== (summary.comment ?? "")) api.mark(flow.id, summary.color, e.target.value); }}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur(); }} />
       {flow.method === "CONNECT" && decrypts(flow.host) && (
         <div className="ssl-banner on">
           <div className="ssl-banner-title"><Icon name="unlock" /> SSL Proxying is on for <b>{flow.host}</b></div>

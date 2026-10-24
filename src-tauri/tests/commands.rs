@@ -67,6 +67,22 @@ fn status_start_restart_and_stop() {
 }
 
 #[test]
+fn browsers_and_terminal_env_use_the_running_proxy() {
+    let app = TestApp::new();
+    assert!(app.ok("list_browsers", json!({})).is_array());
+    assert_eq!(app.call("terminal_env", json!({})).unwrap_err(), "Start the proxy first");
+    assert_eq!(app.call("launch_browser", json!({ "id": "chrome" })).unwrap_err(), "Start the proxy first");
+    let port = app.start();
+    assert_eq!(app.call("launch_browser", json!({ "id": "netscape" })).unwrap_err(), "netscape is not installed");
+    let env: Vec<(String, String)> = serde_json::from_value(app.ok("terminal_env", json!({}))).unwrap();
+    let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap();
+    assert_eq!(get("HTTPS_PROXY"), format!("http://127.0.0.1:{port}"));
+    assert_eq!(get("NODE_EXTRA_CA_CERTS"), app.dir.join("sniffo-ca.pem").display().to_string());
+    let bundle = std::fs::read_to_string(get("SSL_CERT_FILE")).unwrap();
+    assert!(bundle.ends_with(&std::fs::read_to_string(app.dir.join("sniffo-ca.pem")).unwrap()), "bundle ends with the Sniffo CA");
+}
+
+#[test]
 fn settings_survive_a_restart() {
     let dir = temp_dir("persist");
     let proto = dir.join("user.proto");
@@ -157,6 +173,10 @@ fn flows_are_listed_read_pinned_searched_removed_and_cleared() {
 
     app.ok("pin_flow", json!({ "id": 1, "pinned": true }));
     app.wait_event("pin upsert", |e| e["type"] == "upsert" && e["data"]["id"] == 1 && e["data"]["pinned"] == true);
+    app.ok("mark_flow", json!({ "id": 2, "color": "red", "comment": "  slow  " }));
+    app.wait_event("mark upsert", |e| e["type"] == "upsert" && e["data"]["id"] == 2 && e["data"]["color"] == "red" && e["data"]["comment"] == "slow");
+    app.ok("mark_flow", json!({ "id": 2, "color": null, "comment": "" }));
+    app.wait_event("unmark upsert", |e| e["type"] == "upsert" && e["data"]["id"] == 2 && e["data"]["color"].is_null() && e["data"]["comment"].is_null());
     via(port, "GET", &up.url("/third"), &[], b"");
     app.settled(3);
     app.ok("remove_flows", json!({ "ids": [3] }));

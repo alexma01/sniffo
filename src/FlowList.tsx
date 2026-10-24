@@ -7,6 +7,12 @@ import { clientDisplay, clientIconName, useClientsVersion } from "./clients";
 
 const ROW = 28;
 
+/** Row highlight colours, by the name stored on the flow. */
+export const HIGHLIGHTS: Record<string, string> = {
+  red: "rgb(255 59 48 / 0.22)", orange: "rgb(255 149 0 / 0.22)", yellow: "rgb(255 204 0 / 0.25)",
+  green: "rgb(52 199 89 / 0.22)", blue: "rgb(0 122 255 / 0.20)", purple: "rgb(175 82 222 / 0.22)",
+};
+
 /** HTTPS tunnel passed through without decryption (SSL Proxying not enabled for its host). */
 export const isTunnel = (f: FlowSummary) => f.method === "CONNECT";
 
@@ -47,6 +53,7 @@ export const COLUMNS: Column[] = [
         {isTunnel(f) && !ctx.decrypts(f.host) && <button className="badge ssl-off" data-ssl-host={f.host} title={`Decrypt ${f.host}: Sniffo re-signs it with its own CA (the device must trust the Sniffo Root CA)`}><Icon name="lock" size={10} /> Enable SSL Proxying</button>}
         {f.ws_count > 0 && <span className="badge">WS {f.ws_count}</span>}
         {f.graphql && <span className="badge gql">{f.graphql}</span>}
+        {f.comment && <span className="badge" title={f.comment}><Icon name="note" size={10} /> {f.comment.length > 24 ? f.comment.slice(0, 24) + "…" : f.comment}</span>}
         {f.tags.map((t) => <span key={t} className="badge">{t}</span>)}
         {f.path}
       </>
@@ -142,14 +149,12 @@ export function FlowList(props: {
   follow: boolean;
   /** Scrolling up pauses auto-scroll; scrolling back to the bottom resumes it. */
   onFollowChange: (follow: boolean) => void;
-  /** Row highlight colours set from the context menu. */
-  colors: Map<number, string>;
   /** Called by the inline "Enable SSL Proxying" badge on tunnel rows. */
   onEnableSsl: (host: string) => void;
   /** Whether SSL Proxying now covers a host (tunnel rows recorded before it was enabled). */
   decrypts: (host: string) => boolean;
 }) {
-  const { flows, selected, onSelect, onContextMenu, follow, onFollowChange, colors, onEnableSsl, decrypts } = props;
+  const { flows, selected, onSelect, onContextMenu, follow, onFollowChange, onEnableSsl, decrypts } = props;
   const [widths, setWidths] = useState<Record<string, number>>(() => load("sniffo.columnWidths", {}));
   const clients = useClientsVersion(); // client labels change when a device is renamed
   const handlers = useRef<Handlers>({ onSelect, onContextMenu, onEnableSsl });
@@ -272,7 +277,7 @@ export function FlowList(props: {
           {v.getVirtualItems().map((row) => {
             const f = rows[row.index];
             return (
-              <Row key={f.id} f={f} top={row.start - ROW} alt={row.index % 2 === 1} selected={f.id === selected} color={colors.get(f.id)}
+              <Row key={f.id} f={f} top={row.start - ROW} alt={row.index % 2 === 1} selected={f.id === selected} color={f.color ? HIGHLIGHTS[f.color] : undefined}
                 cells={cells} decrypts={decrypts} handlers={handlers} clients={clients} />
             );
           })}

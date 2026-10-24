@@ -1,5 +1,6 @@
 import QRCode from "qrcode";
 import { backdrop } from "./backdrop";
+import { toast, toastError } from "./toast";
 import { Icon, IconName } from "./icons";
 import { useEffect, useRef, useState } from "react";
 import { api, Device, DeviceCommand, ProxyStatus } from "./api";
@@ -34,7 +35,9 @@ function actions(d: Device): [string, DeviceCommand, string?][] {
   }
 }
 
-function WifiSetup({ status, onChanged }: { status: ProxyStatus | null; onChanged: () => void }) {
+type Os = "ios" | "android";
+
+function WifiSetup({ os, status, onChanged }: { os: Os; status: ProxyStatus | null; onChanged: () => void }) {
   const [ip, setIp] = useState(status?.lan[0]?.ip ?? "");
   const [qr, setQr] = useState<string | null>(null);
   const port = status?.port;
@@ -76,7 +79,8 @@ function WifiSetup({ status, onChanged }: { status: ProxyStatus | null; onChange
               </tbody>
             </table>
             <p className="muted">The device must be on the same Wi-Fi network as this computer.{status.lan_name && <> <code>{status.lan_name}</code> follows this computer across networks; use the IP if the device can't resolve it (some Android versions, guest Wi-Fi).</>}</p>
-            <h4>iPhone / iPad</h4>
+            {os === "ios" ? <>
+            <h4>2. iPhone / iPad</h4>
             <ol className="steps">
               <li><b>Proxy</b>: Settings → Wi-Fi → ⓘ next to the network → Configure Proxy → <b>Manual</b> → server and port above → Save.</li>
               <li><b>Download the certificate</b>: in <b>Safari</b> (not Chrome) open <code>http://sniffo.cert</code> or scan the QR → <i>Download for iOS</i> → Allow.</li>
@@ -84,13 +88,15 @@ function WifiSetup({ status, onChanged }: { status: ProxyStatus | null; onChange
               <li className="must"><b>Trust it</b>: Settings → General → About → <b>Certificate Trust Settings</b> → turn on <i>Sniffo Root CA</i>. Without this switch iOS keeps saying “This connection is not private”.</li>
               <li><b>Choose what to decrypt</b>: in Sniffo click the lock next to a domain in the sidebar, or <i>Enable SSL Proxying</i> on its row. Other HTTPS stays an untouched tunnel.</li>
             </ol>
-            <h4>Android</h4>
+            </> : <>
+            <h4>2. Android</h4>
             <ol className="steps">
-              <li><b>Proxy</b>: Settings → Wi-Fi → long-press the network → Modify → Advanced → Proxy <b>Manual</b> → server and port above. (Over USB use <i>Simulators &amp; USB → Set proxy</i> instead.)</li>
+              <li><b>Proxy</b>: Settings → Wi-Fi → long-press the network → Modify → Advanced → Proxy <b>Manual</b> → server and port above. (Over USB select the device above → <i>Set proxy</i> instead.)</li>
               <li><b>Download</b>: open <code>http://sniffo.cert</code> in Chrome → <i>Download for Android</i>.</li>
               <li className="must"><b>Install</b>: Settings → Security → Encryption &amp; credentials → Install a certificate → <b>CA certificate</b> → sniffo-ca.crt.</li>
-              <li><b>Choose what to decrypt</b> in Sniffo, as above. Chrome trusts user CAs; your own apps need a <code>network_security_config</code> that trusts user certificates; other apps ignore them.</li>
+              <li><b>Choose what to decrypt</b>: in Sniffo click the lock next to a domain in the sidebar, or <i>Enable SSL Proxying</i> on its row. Chrome trusts user CAs; your own apps need a <code>network_security_config</code> that trusts user certificates; other apps ignore them.</li>
             </ol>
+            </>}
             <div className="callout">
               <b>Good to know</b>
               <ul>
@@ -111,7 +117,7 @@ function WifiSetup({ status, onChanged }: { status: ProxyStatus | null; onChange
   );
 }
 
-function Connected({ onWifi, port }: { onWifi: () => void; port: number }) {
+function Connected({ show, empty, port, compact }: { show: (d: Device) => boolean; empty: string; port: number; compact?: boolean }) {
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -123,7 +129,8 @@ function Connected({ onWifi, port }: { onWifi: () => void; port: number }) {
   const reload = () => {
     if (scanning.current) return;
     scanning.current = true;
-    api.listDevices().then((list) => {
+    api.listDevices().then((all) => {
+      const list = all.filter(show);
       list.sort((a, b) => ORDER.indexOf(a.platform) - ORDER.indexOf(b.platform) || Number(running(b)) - Number(running(a)));
       setDevices(list);
       setSelected((s) => s ?? list.find(running)?.id ?? list[0]?.id ?? null);
@@ -151,11 +158,11 @@ function Connected({ onWifi, port }: { onWifi: () => void; port: number }) {
     }
   };
 
-  if (!devices) return <p className="muted">Looking for simulators, emulators and USB devices…</p>;
-  if (!devices.length) return <p className="muted">No simulators, emulators or USB devices found. Install Xcode or the Android SDK, or plug a device in with USB debugging enabled.</p>;
+  if (!devices) return <p className="muted">Looking for devices…</p>;
+  if (!devices.length) return <p className="muted">{empty}</p>;
 
   return (
-    <div className="dev-split">
+    <div className={`dev-split ${compact ? "compact" : ""}`}>
       <div className="dev-list">
         {devices.map((d) => (
           <div key={d.id} className={`dev-item ${d.id === selected ? "active" : ""}`} onClick={() => setSelected(d.id)}>
@@ -176,8 +183,7 @@ function Connected({ onWifi, port }: { onWifi: () => void; port: number }) {
             {device.platform === "ios_device" ? (
               <p>
                 {running(device) ? "Connected. " : "Not connected — plug it in with USB and unlock it. "}
-                iOS doesn't let a computer change an iPhone's proxy or certificates, even over USB, so the setup is done on the phone:{" "}
-                <a href="#" onClick={(e) => { e.preventDefault(); onWifi(); }}>Wi-Fi proxy + certificate via QR code</a>.
+                iOS doesn't let a computer change an iPhone's proxy or certificates, even over USB, so the setup is done on the phone: follow the Wi-Fi steps below.
               </p>
             ) : device.platform === "android" && device.state === "unauthorized" ? (
               <p className="warn">Accept the “Allow USB debugging” prompt on the device.</p>
@@ -209,17 +215,73 @@ function Connected({ onWifi, port }: { onWifi: () => void; port: number }) {
   );
 }
 
+const WINDOWS = navigator.userAgent.includes("Windows");
+
+/** Browsers and terminals on this computer, sent through Sniffo without the system proxy. */
+function ThisComputer({ running }: { running: boolean }) {
+  const [browsers, setBrowsers] = useState<{ id: string; name: string }[] | null>(null);
+  const [env, setEnv] = useState<[string, string][] | null>(null);
+  useEffect(() => { api.listBrowsers().then(setBrowsers, () => setBrowsers([])); }, []);
+  useEffect(() => { if (running) api.terminalEnv().then(setEnv, toastError); }, [running]);
+  const script = (env ?? []).map(([k, v]) => (WINDOWS ? `$env:${k} = "${v}"` : `export ${k}="${v}"`)).join("\n");
+  if (!running) return <p className="muted">Start the proxy first.</p>;
+  return (
+    <>
+      <h4>Browser</h4>
+      <p className="muted">Opens with its own profile: proxy and certificate are preset, your usual browser and the system proxy stay untouched.</p>
+      <div className="row">
+        {browsers?.map((b) => <button key={b.id} onClick={() => api.launchBrowser(b.id).then(() => toast(`${b.name} opened through Sniffo`), toastError)}>Open {b.name}</button>)}
+        {browsers && !browsers.length && <span className="muted">No supported browser found (Chrome, Edge, Brave, Chromium, Firefox).</span>}
+      </div>
+      {browsers?.some((b) => b.id === "firefox") && <p className="muted small">Firefox uses the system certificate store: trust the Sniffo CA first (toolbar → Certificate).</p>}
+      <h4>Terminal</h4>
+      <p className="muted">Paste into a terminal: curl, Node, Python, git, Go, Rust and most CLIs in that session go through Sniffo.</p>
+      <pre className="code env">{script}</pre>
+      <div className="row"><button onClick={() => navigator.clipboard.writeText(script).then(() => toast("Terminal setup copied"), toastError)} disabled={!env}>Copy</button></div>
+    </>
+  );
+}
+
+const MAC = navigator.userAgent.includes("Mac");
+
+const KINDS: Record<Os, { label: string; virtual: string; show: (d: Device, physical: boolean) => boolean; empty: [string, string] }> = {
+  ios: {
+    label: "iOS", virtual: "Simulators",
+    show: (d, physical) => d.platform === (physical ? "ios_device" : "ios_simulator"),
+    empty: [MAC ? "No simulators found. Create one in Xcode → Window → Devices and Simulators." : "The iOS Simulator needs a Mac with Xcode.",
+      "No iPhone or iPad connected over USB. You don't need one: set it up over Wi-Fi below."],
+  },
+  android: {
+    label: "Android", virtual: "Emulators",
+    show: (d, physical) => physical ? d.platform === "android" && !d.emulator : d.platform === "android_avd" || (d.platform === "android" && d.emulator),
+    empty: ["No emulators found. Create one in Android Studio → Device Manager.",
+      "No device connected over USB. Plug it in with USB debugging enabled, or set it up over Wi-Fi below."],
+  },
+};
+
 export function Devices({ status, onClose, onChanged }: { status: ProxyStatus | null; onClose: () => void; onChanged: () => void }) {
-  const [tab, setTab] = useState<"connected" | "wifi">("connected");
+  const [tab, setTab] = useState<Os | "computer">(MAC ? "ios" : "android");
+  const [physical, setPhysical] = useState(false);
+  const port = status?.port ?? 9191;
   return (
     <div className="modal-back" {...backdrop(onClose)}>
       <div className="modal wide" onClick={(e) => e.stopPropagation()}>
         <h3>Devices</h3>
         <div className="seg flush">
-          <button className={tab === "connected" ? "active" : ""} onClick={() => setTab("connected")}>Simulators &amp; USB</button>
-          <button className={tab === "wifi" ? "active" : ""} onClick={() => setTab("wifi")}>Wi-Fi device (manual)</button>
+          {(["ios", "android"] as const).map((os) => <button key={os} className={tab === os ? "active" : ""} onClick={() => setTab(os)}>{KINDS[os].label}</button>)}
+          <button className={tab === "computer" ? "active" : ""} onClick={() => setTab("computer")}>This computer</button>
         </div>
-        {tab === "connected" ? <Connected onWifi={() => setTab("wifi")} port={status?.port ?? 9191} /> : <WifiSetup status={status} onChanged={onChanged} />}
+        {tab === "computer" ? <ThisComputer running={!!status?.running} /> : (
+          <>
+            <div className="seg flush sub">
+              <button className={!physical ? "active" : ""} onClick={() => setPhysical(false)}>{KINDS[tab].virtual}</button>
+              <button className={physical ? "active" : ""} onClick={() => setPhysical(true)}>Physical devices</button>
+            </div>
+            {/* Keyed so switching tabs rescans with the new filter and resets the selection. */}
+            <Connected key={`${tab}-${physical}`} show={(d) => KINDS[tab].show(d, physical)} empty={KINDS[tab].empty[Number(physical)]} port={port} compact={physical} />
+            {physical && <><h4>Over Wi-Fi</h4><WifiSetup os={tab} status={status} onChanged={onChanged} /></>}
+          </>
+        )}
         <div className="row end"><button onClick={onClose}>Close</button></div>
       </div>
     </div>

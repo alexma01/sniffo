@@ -3,7 +3,7 @@ import { toast, toastError } from "./toast";
 import { backdrop } from "./backdrop";
 import { CodeArea } from "./highlight";
 import { useEffect, useState } from "react";
-import { Action, api, Headers, Rule, Rules } from "./api";
+import { Action, api, Headers, Rewrite, Rule, Rules } from "./api";
 
 export const ACTION_LABELS: Record<Action["type"], string> = {
   breakpoint: "Breakpoint",
@@ -13,6 +13,7 @@ export const ACTION_LABELS: Record<Action["type"], string> = {
   block: "Block",
   throttle: "Throttle",
   script: "Script",
+  rewrite: "Rewrite",
 };
 
 export const SCRIPT_TEMPLATE = `// Runs for every matching request. Return the (modified) object, or nothing to leave it unchanged.
@@ -47,6 +48,7 @@ export function defaultAction(type: Action["type"]): Action {
     case "block": return { type };
     case "throttle": return { type, latency_ms: 300, download_kbps: 96, upload_kbps: 32 };
     case "script": return { type, code: SCRIPT_TEMPLATE };
+    case "rewrite": return { type, items: [newRewrite()] };
   }
 }
 
@@ -60,6 +62,46 @@ export const textToHeaders = (t: string): Headers =>
     const i = l.indexOf(":");
     return (i < 0 ? [l, ""] : [l.slice(0, i).trim(), l.slice(i + 1).trim()]) as [string, string];
   });
+
+const newRewrite = (): Rewrite => ({ response: false, target: "header", op: "set", name: "", pattern: "", value: "" });
+
+function RewriteForm({ items, onChange }: { items: Rewrite[]; onChange: (items: Rewrite[]) => void }) {
+  const set = (i: number, patch: Partial<Rewrite>) => onChange(items.map((it, j) => (j === i ? { ...it, ...patch } : it)));
+  return (
+    <div className="form">
+      {items.map((it, i) => {
+        // Query and URL exist only on requests, status only on responses.
+        const targets = it.response ? ["header", "status", "body"] : ["header", "query", "url", "body"];
+        const ops = it.target === "status" ? ["set"] : it.target === "url" ? ["replace", "set"] : ["set", "replace", "remove"];
+        return (
+          <div className="row rewrite" key={i}>
+            <select value={it.response ? "response" : "request"} aria-label="Phase" onChange={(e) => {
+              const response = e.target.value === "response";
+              set(i, { response, target: (response ? ["header", "status", "body"] : ["header", "query", "url", "body"]).includes(it.target) ? it.target : "header" });
+            }}>
+              <option value="request">Request</option><option value="response">Response</option>
+            </select>
+            <select value={it.target} aria-label="Target" onChange={(e) => {
+              const target = e.target.value as Rewrite["target"];
+              set(i, { target, op: target === "status" ? "set" : target === "url" ? "replace" : it.op });
+            }}>
+              {targets.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select value={it.op} aria-label="Operation" onChange={(e) => set(i, { op: e.target.value as Rewrite["op"] })}>
+              {ops.map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+            {(it.target === "header" || it.target === "query") && <input className="input" value={it.name} placeholder="name" onChange={(e) => set(i, { name: e.target.value })} />}
+            {it.op === "replace" && <input className="input grow" value={it.pattern} placeholder="regex" onChange={(e) => set(i, { pattern: e.target.value })} />}
+            {it.op !== "remove" && <input className="input grow" value={it.value} placeholder={it.op === "replace" ? "replacement ($1…)" : "value"} onChange={(e) => set(i, { value: e.target.value })} />}
+            <button title="Remove" onClick={() => onChange(items.filter((_, j) => j !== i))}>✕</button>
+          </div>
+        );
+      })}
+      <div className="row"><button onClick={() => onChange([...items, newRewrite()])}>Add edit</button></div>
+      <p className="muted">Applied in order. Replace changes every regex match; JSON bodies are matched as text.</p>
+    </div>
+  );
+}
 
 const opt = (s: string) => (s.trim() ? s.trim() : null);
 
@@ -100,6 +142,8 @@ function ActionForm({ action, onChange }: { action: Action; onChange: (a: Action
           <label>Path <input className="input" value={action.path ?? ""} placeholder="keep" onChange={(e) => onChange({ ...action, path: opt(e.target.value) })} /></label>
         </div>
       );
+    case "rewrite":
+      return <RewriteForm items={action.items} onChange={(items) => onChange({ ...action, items })} />;
     case "block":
       return <p className="muted">Matching requests get a 403 without reaching the server.</p>;
     case "script":
@@ -140,8 +184,12 @@ function ActionForm({ action, onChange }: { action: Action; onChange: (a: Action
 }
 
 function regexError(r: Rule) {
-  if (!r.matcher.regex) return null;
-  try { new RegExp(r.matcher.url); return null; } catch (e) { return String(e); }
+  const patterns = [r.matcher.regex ? r.matcher.url : null, ...(r.action.type === "rewrite" ? r.action.items.filter((i) => i.op === "replace").map((i) => i.pattern) : [])];
+  for (const p of patterns) {
+    if (p == null) continue;
+    try { new RegExp(p); } catch (e) { return String(e); }
+  }
+  return null;
 }
 
 /** Rule list + editor. `draft` opens the editor on a new rule (e.g. from the context menu). */

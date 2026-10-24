@@ -1,6 +1,7 @@
 use serde::Serialize;
 use serde::Deserialize;
 use sniffo_core::devices::{self, Device};
+use sniffo_core::intercept;
 use sniffo_core::net::NetworkOptions;
 use sniffo_core::{BreakpointHit, Decision, Engine, Flow, FlowEvent, FlowSummary, ProxyHandle, RootCa, Rules, SslProxying, StartOptions, WsMessage, system};
 use std::{path::{Path, PathBuf}, sync::atomic::{AtomicBool, Ordering}, time::Duration};
@@ -304,6 +305,36 @@ async fn list_devices() -> Result<Vec<Device>, String> {
 }
 
 #[tauri::command]
+async fn list_browsers() -> Result<Vec<intercept::Browser>, String> {
+    tauri::async_runtime::spawn_blocking(intercept::browsers).await.map_err(|e| e.to_string())
+}
+
+async fn running_port(state: &AppState) -> Result<u16, String> {
+    state.proxy.lock().await.as_ref().map(|p| p.addr.port()).ok_or_else(|| "Start the proxy first".into())
+}
+
+#[tauri::command]
+async fn launch_browser(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let port = running_port(&state).await?;
+    let (ca, ca_path) = (state.ca.clone(), state.ca_path.clone());
+    let profiles = ca_path.with_file_name("browser-profiles");
+    tauri::async_runtime::spawn_blocking(move || intercept::launch(&id, port, &ca, &ca_path, &profiles)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn terminal_env(state: State<'_, AppState>) -> Result<Vec<(&'static str, String)>, String> {
+    let port = running_port(&state).await?;
+    let (ca, ca_path) = (state.ca.clone(), state.ca_path.clone());
+    let bundle = ca_path.with_file_name("sniffo-ca-bundle.pem");
+    tauri::async_runtime::spawn_blocking(move || {
+        intercept::write_bundle(&ca, &bundle).map_err(|e| e.to_string())?;
+        Ok(intercept::terminal_env(port, &ca_path, &bundle))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn device_command(state: State<'_, AppState>, device: String, command: devices::Command) -> Result<String, String> {
     let port = state.proxy.lock().await.as_ref().map(|p| p.addr.port()).unwrap_or(DEFAULT_PORT);
     let ca = state.ca_path.clone();
@@ -485,6 +516,11 @@ fn remove_flows(state: State<'_, AppState>, ids: Vec<u64>) {
 #[tauri::command]
 fn pin_flow(state: State<'_, AppState>, id: u64, pinned: bool) {
     state.engine.set_pinned(id, pinned);
+}
+
+#[tauri::command]
+fn mark_flow(state: State<'_, AppState>, id: u64, color: Option<String>, comment: Option<String>) {
+    state.engine.mark(id, color, comment);
 }
 
 #[tauri::command]
@@ -691,7 +727,7 @@ pub fn setup<R: Runtime>(builder: tauri::Builder<R>, data_dir: Option<PathBuf>) 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, install_vpn_helper, list_devices, device_command, app_icon, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_ws_messages, get_body, clear_flows, remove_flows, pin_flow, search_flows,
+            proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, install_vpn_helper, list_devices, device_command, list_browsers, launch_browser, terminal_env, app_icon, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_ws_messages, get_body, clear_flows, remove_flows, pin_flow, mark_flow, search_flows,
             get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, export_rules, import_rules, get_proto_schemas, set_proto_files, decode_proto, list_breakpoints, resume_breakpoint, send_ws_message
         ])
 }

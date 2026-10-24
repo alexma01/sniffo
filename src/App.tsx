@@ -13,7 +13,7 @@ import { Devices } from "./Devices";
 import { defaultAction, newRule, RulesEditor } from "./RulesEditor";
 import { clientLabel, compile, emptyFilter, Filter, STATUSES, toggle, TYPES } from "./filters";
 import { FlowDetail } from "./FlowDetail";
-import { FlowList, isTunnel, listCommand } from "./FlowList";
+import { FlowList, HIGHLIGHTS, isTunnel, listCommand } from "./FlowList";
 import { Settings } from "./Settings";
 import { Sidebar } from "./Sidebar";
 import { setLocalIps } from "./clients";
@@ -61,11 +61,6 @@ function useFlows() {
 
 interface Menu { id: number; x: number; y: number }
 
-const HIGHLIGHTS: Record<string, string> = {
-  Red: "rgb(255 59 48 / 0.22)", Orange: "rgb(255 149 0 / 0.22)", Yellow: "rgb(255 204 0 / 0.25)",
-  Green: "rgb(52 199 89 / 0.22)", Blue: "rgb(0 122 255 / 0.20)", Purple: "rgb(175 82 222 / 0.22)",
-};
-
 function loadNumber(key: string, fallback: number) {
   try { return Number(localStorage.getItem(key)) || fallback; } catch { return fallback; }
 }
@@ -106,12 +101,6 @@ export default function App() {
   const filterRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [listPct, setListPct] = useState(() => loadNumber("sniffo.listHeight", 45));
-  const [colors, setColors] = useState<Map<number, string>>(new Map());
-  const highlight = (id: number, color: string | null) => setColors((m) => {
-    const next = new Map(m);
-    if (color) next.set(id, color); else next.delete(id);
-    return next;
-  });
 
   /** Drag the divider between the list and the detail panes. */
   const startSplit = (e: React.MouseEvent) => {
@@ -419,7 +408,6 @@ export default function App() {
             onContextMenu={(id, x, y) => { setSelected(id); setMenu({ id, x, y }); }}
             follow={follow}
             onFollowChange={setFollow}
-            colors={colors}
             onEnableSsl={(host) => sslForHost(host, true)}
             decrypts={decrypts}
           />
@@ -505,9 +493,9 @@ export default function App() {
           <div onClick={() => api.pin(menuFlow.id, !menuFlow.pinned)}>{menuFlow.pinned ? "Unpin" : "Pin"}</div>
           <div className="swatches" onClick={(e) => e.stopPropagation()}>
             {Object.entries(HIGHLIGHTS).map(([name, c]) => (
-              <span key={name} title={name} style={{ background: c.replace(/0\.2\d\)/, "0.9)") }} onClick={() => { highlight(menuFlow.id, c); setMenu(null); }} />
+              <span key={name} title={name} style={{ background: c.replace(/0\.2\d\)/, "0.9)") }} onClick={() => { api.mark(menuFlow.id, name, menuFlow.comment); setMenu(null); }} />
             ))}
-            <span title="No highlight" className="none" onClick={() => { highlight(menuFlow.id, null); setMenu(null); }}><Icon name="x" size={10} /></span>
+            <span title="No highlight" className="none" onClick={() => { api.mark(menuFlow.id, null, menuFlow.comment); setMenu(null); }}><Icon name="x" size={10} /></span>
           </div>
           <div onClick={() => copy(menuFlow.url, "URL")}>Copy URL</div>
           {!isTunnel(menuFlow) && <>
@@ -531,6 +519,7 @@ export default function App() {
             setRulesDraft(newRule(menuFlow.url.split("?")[0] + "*", { type: "map_local", status: flow?.status ?? 200, headers, body, file: null }));
           }}>Map Local…</div>
           <div onClick={() => setRulesDraft(newRule(`${menuFlow.url.split("://")[0]}://${menuFlow.host}/*`, defaultAction("map_remote")))}>Map Remote…</div>
+          <div onClick={() => setRulesDraft(newRule(menuFlow.url.split("?")[0] + "*", defaultAction("rewrite")))}>Rewrite…</div>
           <div onClick={() => setRulesDraft(newRule(menuFlow.url.split("?")[0] + "*", defaultAction("script")))}>Script…</div>
           <div onClick={() => setRulesDraft(newRule(`*://${menuFlow.host}/*`, defaultAction("throttle")))}>Throttle host…</div>
           <div onClick={() => setRulesDraft(newRule(`*://${menuFlow.host}/*`, defaultAction("block")))}>Block host…</div>

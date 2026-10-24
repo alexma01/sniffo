@@ -72,6 +72,9 @@ pub struct Flow {
     pub state: FlowState,
     pub error: Option<String>,
     pub pinned: bool,
+    /// User highlight: red / orange / yellow / green / blue / purple.
+    pub color: Option<String>,
+    pub comment: Option<String>,
     /// Names of the rules that acted on this flow.
     pub tags: Vec<String>,
     /// Frames of a WebSocket connection (empty for plain HTTP); the newest MAX_WS_MESSAGES.
@@ -120,6 +123,8 @@ pub struct FlowSummary {
     pub response_size: Option<usize>,
     pub error: Option<String>,
     pub pinned: bool,
+    pub color: Option<String>,
+    pub comment: Option<String>,
     pub tags: Vec<String>,
     /// Frames seen so far, including dropped ones.
     pub ws_count: usize,
@@ -149,6 +154,8 @@ impl Flow {
             response_size: self.response.as_ref().map(|r| r.body_size),
             error: self.error.clone(),
             pinned: self.pinned,
+            color: self.color.clone(),
+            comment: self.comment.clone(),
             tags: self.tags.clone(),
             ws_count: self.ws_dropped + self.ws_messages.len(),
             graphql: self.graphql.clone(),

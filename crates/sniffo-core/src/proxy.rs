@@ -321,6 +321,12 @@ impl Engine {
         self.inner.update(id, |f| f.pinned = pinned);
     }
 
+    /// Highlight color and comment; empty strings clear them.
+    pub fn mark(&self, id: FlowId, color: Option<String>, comment: Option<String>) {
+        let some = |s: Option<String>| s.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
+        self.inner.update(id, |f| (f.color, f.comment) = (some(color), some(comment)));
+    }
+
     /// .app bundle of a client app seen in traffic (macOS), for its icon.
     pub fn client_app_bundle(&self, name: &str) -> Option<std::path::PathBuf> {
         self.inner.apps.bundle(name)
@@ -502,7 +508,7 @@ impl Engine {
 }
 
 /// The OS trust store: reading it walks the keychain (slow on macOS), so once per process.
-fn native_roots() -> &'static [CertificateDer<'static>] {
+pub(crate) fn native_roots() -> &'static [CertificateDer<'static>] {
     static ROOTS: std::sync::OnceLock<Vec<CertificateDer<'static>>> = std::sync::OnceLock::new();
     ROOTS.get_or_init(|| {
         let native = rustls_native_certs::load_native_certs();

@@ -66,7 +66,7 @@ pub fn export(flows: &[Flow]) -> Value {
                 "request": request, "response": response, "cache": {},
                 "timings": { "send": 0, "wait": ttfb, "receive": total.saturating_sub(ttfb) },
                 "_client": f.client_app.clone().unwrap_or_else(|| f.client_addr.clone()),
-                "_pinned": f.pinned, "_tags": f.tags,
+                "_pinned": f.pinned, "_tags": f.tags, "_color": f.color, "comment": f.comment,
                 // Chrome DevTools' convention for WebSocket frames.
                 "_webSocketMessages": f.ws_messages.iter().map(|m| json!({
                     "type": if m.outgoing { "send" } else { "receive" },
@@ -132,6 +132,8 @@ pub fn import(data: &str) -> Result<Vec<Flow>, String> {
                 error: res["_error"].as_str().map(str::to_owned),
                 response,
                 pinned: e["_pinned"].as_bool().unwrap_or(false),
+                color: e["_color"].as_str().map(str::to_owned),
+                comment: e["comment"].as_str().filter(|c| !c.is_empty()).map(str::to_owned),
                 tags: e["_tags"].as_array().into_iter().flatten().filter_map(|t| t.as_str().map(str::to_owned)).collect(),
                 ws_messages: e["_webSocketMessages"].as_array().into_iter().flatten().map(|m| {
                     let data = m["data"].as_str().unwrap_or("").to_owned();
@@ -175,6 +177,8 @@ mod tests {
             response: Some(Message { headers: vec![("content-type".into(), "image/png".into())], body: bytes::Bytes::from_static(&[0x89, 0x50, 0, 0xff]), body_size: 4 }),
             state: FlowState::Complete,
             pinned: true,
+            color: Some("red".into()),
+            comment: Some("login fails here".into()),
             tags: vec!["mock".into()],
             ..Default::default()
         };
@@ -188,6 +192,7 @@ mod tests {
         assert_eq!(&f.request.body[..], b"{\"x\":1}");
         assert_eq!(&f.response.as_ref().unwrap().body[..], &[0x89, 0x50, 0, 0xff], "binary survives via base64");
         assert!(f.pinned && f.tags == ["mock"]);
+        assert_eq!((f.color.as_deref(), f.comment.as_deref()), (Some("red"), Some("login fails here")));
     }
 
     #[test]

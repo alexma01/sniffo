@@ -47,7 +47,7 @@ for (const scheme of ["light", "dark"] as const) {
     }
     await page.getByRole("button", { name: "Rules" }).click();
     await page.getByRole("button", { name: "Add rule" }).click();
-    for (const action of ["Map Local", "Map Remote", "Throttle", "Script"]) {
+    for (const action of ["Map Local", "Map Remote", "Throttle", "Script", "Rewrite"]) {
       await page.locator(".modal").getByLabel("Action").selectOption({ label: action });
       await fits(page, `10-rule-${action.toLowerCase().replace(" ", "-")}`, scheme);
     }
@@ -55,8 +55,10 @@ for (const scheme of ["light", "dark"] as const) {
     await page.locator(".toolbar .lan").click();
     await expect(page.locator(".dev-item").first()).toBeVisible();
     await fits(page, "11-devices", scheme);
-    await page.getByRole("button", { name: "Wi-Fi device (manual)" }).click();
+    await page.getByRole("button", { name: "Physical devices" }).click();
     await fits(page, "12-devices-wifi", scheme);
+    await page.getByRole("button", { name: "This computer" }).click();
+    await fits(page, "12b-devices-computer", scheme);
     await page.keyboard.press("Escape");
     await sniffo.call("set_rules", { rules: { rules: [{ id: "b", name: "b", enabled: true, matcher: { url: "*/held", regex: false, methods: [] }, action: { type: "breakpoint", request: true, response: false } }], allow_list: { enabled: false, patterns: [] }, no_caching: false } });
     const held = sniffo.get("/held");

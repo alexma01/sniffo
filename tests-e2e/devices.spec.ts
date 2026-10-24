@@ -1,4 +1,5 @@
-// Devices dialog: simulators/emulators/USB devices driven through (fake) xcrun and adb, Wi-Fi setup.
+// Devices dialog: iOS / Android tabs, each split into simulators (emulators) and physical devices,
+// driven through (fake) xcrun and adb; Wi-Fi setup under physical devices.
 import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 
@@ -9,15 +10,16 @@ const open = async (page: Page) => {
   await expect(m.locator("h3")).toHaveText("Devices");
   return m;
 };
+const tab = (m: ReturnType<Page["locator"]>, name: string) => m.getByRole("button", { name, exact: true }).click();
 const item = (page: Page, name: string) => page.locator(".dev-item", { hasText: name });
 const log = (page: Page) => page.locator(".dev-log > div");
 
 test("android emulator, unauthorized phone and AVD", async ({ sniffo }) => {
   const { page, port } = sniffo;
   const m = await open(page);
+  await tab(m, "Android");
   await expect(item(page, "sdk gphone64 arm64")).toContainText("Android · Android 15 · device");
-  // No OS version until authorized: no empty "· ·" in between.
-  await expect(item(page, "R58N123").locator(".muted")).toHaveText("Android · unauthorized");
+  await expect(item(page, "R58N123")).toHaveCount(0); // physical: other sub-tab
   await expect(item(page, "Medium Phone")).toContainText("Android emulator (off)");
   await expect(item(page, "sdk gphone64 arm64").locator(".dot")).toHaveClass(/on/);
   await expect(item(page, "Medium Phone").locator(".dot")).toHaveClass(/off/);
@@ -45,16 +47,22 @@ test("android emulator, unauthorized phone and AVD", async ({ sniffo }) => {
   await expect(log(page).first()).toHaveText("✓ sdk gphone64 arm64: Opened https://example.com/deep");
   expect(await sniffo.osCalls()).toContain("adb -s emulator-5554 shell am start -a android.intent.action.VIEW -d https://example.com/deep");
 
-  await item(page, "R58N123").click();
-  await expect(m).toContainText("Accept the “Allow USB debugging” prompt on the device.");
-  await expect(actions).toHaveCount(0);
-
   await item(page, "Medium Phone").click();
   await expect(actions).toHaveText(["Start emulator"]);
   await expect(m.locator(".row input.input")).toHaveCount(0); // not running: no Open URL
   await actions.click();
   await expect(log(page).first()).toHaveText("✓ Medium Phone: Starting Medium Phone…");
   await expect.poll(() => sniffo.osCalls()).toContain("emulator -avd Medium_Phone");
+
+  await tab(m, "Physical devices");
+  await expect(item(page, "sdk gphone64 arm64")).toHaveCount(0);
+  // No OS version until authorized: no empty "· ·" in between.
+  await expect(item(page, "R58N123").locator(".muted")).toHaveText("Android · unauthorized");
+  await item(page, "R58N123").click();
+  await expect(m).toContainText("Accept the “Allow USB debugging” prompt on the device.");
+  await expect(actions).toHaveCount(0);
+  await expect(m).toContainText("2. Android");
+  await expect(m).not.toContainText("2. iPhone / iPad");
 
   await m.getByRole("button", { name: "Close" }).click();
   await expect(m).toHaveCount(0);
@@ -65,6 +73,7 @@ test("a failing device command is logged as an error", async ({ sniffo }) => {
   // The device disappears between listing and acting on it.
   await page.route("**/invoke/device_command", (route) => route.fulfill({ json: { err: "device not found (disconnected?)" }, headers: { "access-control-allow-origin": "*" } }));
   const m = await open(page);
+  await tab(m, "Android");
   await item(page, "sdk gphone64 arm64").click();
   await m.getByRole("button", { name: "Reboot" }).click();
   await expect(log(page).first()).toHaveText("✗ sdk gphone64 arm64 — Reboot: device not found (disconnected?)");
@@ -78,7 +87,8 @@ test.describe("iOS (macOS)", () => {
   test("simulator and physical iPhone", async ({ sniffo }) => {
     const { page } = sniffo;
     const m = await open(page);
-    // Booted simulator is selected first.
+    // iOS is the default tab on macOS; the booted simulator is selected first.
+    await expect(item(page, "sdk gphone64 arm64")).toHaveCount(0);
     await expect(m.locator(".dev-item.active")).toContainText("iPhone 18 Pro");
     await expect(item(page, "iPhone 18 Pro")).toContainText("iOS Simulator · iOS 27.0");
     await expect(m.locator(".dev-actions button")).toHaveText(["Install & trust CA", "Restart", "Shut down"]);
@@ -99,18 +109,20 @@ test.describe("iOS (macOS)", () => {
     await expect(log(page).first()).toHaveText("✓ iPad Air: Simulator booted");
     expect(await sniffo.osCalls()).toContain("open -a Simulator");
 
+    await tab(m, "Physical devices");
+    await expect(item(page, "iPhone 18 Pro")).toHaveCount(0);
     await item(page, "Test iPhone").click();
     await expect(m).toContainText("iPhone / iPad · iOS 26.1 · connected (USB)");
     await expect(m).toContainText("Connected. iOS doesn't let a computer change an iPhone's proxy");
-    await m.getByRole("link", { name: "Wi-Fi proxy + certificate via QR code" }).click();
-    await expect(m.getByRole("button", { name: "Wi-Fi device (manual)" })).toHaveClass(/active/);
+    await expect(m.locator("h4", { hasText: "Over Wi-Fi" })).toBeVisible();
   });
 });
 
 test("Wi-Fi setup: LAN toggle, address, QR code", async ({ sniffo }) => {
   const { page, port } = sniffo;
   const m = await open(page);
-  await m.getByRole("button", { name: "Wi-Fi device (manual)" }).click();
+  await tab(m, "Android");
+  await tab(m, "Physical devices");
   const status = await sniffo.call("proxy_status");
   const lan = m.getByLabel(/Allow devices on the local network/);
   await expect(lan).toBeChecked();
@@ -126,7 +138,7 @@ test("Wi-Fi setup: LAN toggle, address, QR code", async ({ sniffo }) => {
     expect(page2).toContain("Sniffo");
     if (status.lan.length > 1) {
       const other = status.lan[1].ip;
-      await m.locator("tr", { hasText: "Server" }).locator("select").selectOption(other);
+      await m.locator(".kv select").selectOption(other);
       await expect(m.locator(".qr code")).toHaveText(`http://${other}:${port}/`);
     }
   } else {
@@ -137,7 +149,7 @@ test("Wi-Fi setup: LAN toggle, address, QR code", async ({ sniffo }) => {
   await expect(lan).not.toBeChecked();
   await expect(m).toContainText("Enable LAN access to proxy traffic from other devices.");
   expect((await sniffo.call("proxy_status")).allow_lan).toBe(false);
-  await expect(page.locator(".toolbar .lan")).toHaveText("📱 Devices");
+  await expect(page.locator(".toolbar .lan")).toHaveText(/^\s*Devices$/);
   expect((await sniffo.get("/still-local")).status).toBe(200);
   await lan.click();
   await expect(lan).toBeChecked();
