@@ -363,6 +363,8 @@ async fn compose_request(state: State<'_, AppState>, method: String, url: String
 /// Writes the given flows (all when `ids` is empty) as HAR; also used to save sessions.
 #[tauri::command(async)]
 fn export_har(state: State<'_, AppState>, path: String, ids: Vec<u64>) -> Result<usize, String> {
+    // A set: "Export visible" passes tens of thousands of ids.
+    let ids: std::collections::HashSet<u64> = ids.into_iter().collect();
     let flows: Vec<_> = state.engine.all_flows().into_iter().filter(|f| ids.is_empty() || ids.contains(&f.id)).collect();
     let json = serde_json::to_vec_pretty(&sniffo_core::har::export(&flows)).map_err(|e| e.to_string())?;
     std::fs::write(&path, json).map_err(|e| format!("{path}: {e}"))?;

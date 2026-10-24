@@ -164,10 +164,15 @@ impl Flow {
 
     /// Case-insensitive search across URL, headers and decoded text bodies.
     pub fn contains(&self, needle_lower: &str) -> bool {
-        let hit = |s: &str| s.to_lowercase().contains(needle_lower);
+        // The UI re-runs body search every 2 s under traffic: an ASCII needle is matched in place,
+        // without a lowercase copy of every (up to 32 MB) body.
+        let ascii = needle_lower.is_ascii();
+        let n = needle_lower.as_bytes();
+        let bytes_hit = |b: &[u8]| n.is_empty() || b.windows(n.len()).any(|w| w.eq_ignore_ascii_case(n));
+        let hit = |s: &str| if ascii { bytes_hit(s.as_bytes()) } else { s.to_lowercase().contains(needle_lower) };
         let msg_hit = |m: &Message| {
             m.headers.iter().any(|(k, v)| hit(k) || hit(v))
-                || std::str::from_utf8(&m.decoded_body()).is_ok_and(hit)
+                || if ascii { bytes_hit(&m.decoded_body()) } else { std::str::from_utf8(&m.decoded_body()).is_ok_and(hit) }
         };
         hit(&self.url) || msg_hit(&self.request) || self.response.as_ref().is_some_and(msg_hit)
     }
@@ -268,5 +273,15 @@ mod tests {
 
         let m = Message { headers: vec![("content-encoding".into(), "gzip".into())], body: Bytes::from_static(b"not gzip"), body_size: 0 };
         assert_eq!(&m.decoded_body()[..], b"not gzip");
+    }
+
+    #[test]
+    fn contains_ignores_case() {
+        let request = Message { headers: vec![("X-Trace".into(), "AbC".into())], body: Bytes::from_static("{\"name\":\"Ünïcode TOKEN\"}".as_bytes()), body_size: 0 };
+        let f = Flow { url: "https://example.com/Path".into(), request, ..Default::default() };
+        for q in ["path", "x-trace", "abc", "token", "ünïcode", ""] {
+            assert!(f.contains(q), "{q}");
+        }
+        assert!(!f.contains("missing"));
     }
 }

@@ -248,7 +248,15 @@ export default function App() {
   }, [flows]);
   const activeRules = rules?.rules.filter((r) => r.enabled).length ?? 0;
 
-  const remove = (ids: number[]) => { api.remove(ids); if (selected != null && ids.includes(selected)) setSelected(null); };
+  /** Deleting the selected flow selects its neighbour, so ⌫ can be pressed repeatedly. */
+  const remove = (ids: number[]) => {
+    api.remove(ids);
+    const gone = new Set(ids);
+    if (selected == null || !gone.has(selected)) return;
+    const i = visible.findIndex((f) => f.id === selected);
+    const next = [...visible.slice(i + 1), ...visible.slice(0, Math.max(i, 0)).reverse()].find((f) => !gone.has(f.id));
+    setSelected(next?.id ?? null);
+  };
 
   // Keyboard shortcuts; the same list feeds the ⌘P palette.
   const commands: (Command & { key?: string; shift?: boolean; inInput?: boolean })[] = [
@@ -297,7 +305,7 @@ export default function App() {
     window.addEventListener("click", close);
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("click", close); window.removeEventListener("keydown", onKey); };
-  }, [selected]);
+  }, [selected, visible]);
 
   const menuFlow = menu ? flows.get(menu.id) : undefined;
 
