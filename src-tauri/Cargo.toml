@@ -2,6 +2,7 @@
 name = "sniffo"
 version = "0.1.0"
 description = "A Tauri App"
+license = "Apache-2.0"
 authors = ["you"]
 edition = "2024"
 
