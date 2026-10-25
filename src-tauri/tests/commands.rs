@@ -650,3 +650,10 @@ fn reveal_ca_shows_the_certificate_in_finder() {
     finder("tell application \"Finder\" to close front Finder window");
     assert_eq!(selected, "sniffo-ca.pem");
 }
+
+/// The mock runtime cannot exit: reaching its `request_exit` proves the command asked to quit.
+#[test]
+#[should_panic(expected = "not implemented")]
+fn quit_app_requests_exit() {
+    TestApp::new().ok("quit_app", json!({}));
+}

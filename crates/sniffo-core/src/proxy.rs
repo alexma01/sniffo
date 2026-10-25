@@ -276,6 +276,10 @@ impl Engine {
         self.inner.flows.read().unwrap().values().map(Flow::summary).collect()
     }
 
+    pub fn flow_count(&self) -> usize {
+        self.inner.flows.read().unwrap().len()
+    }
+
     pub fn flow(&self, id: FlowId) -> Option<Flow> {
         self.inner.flows.read().unwrap().get(&id).cloned()
     }

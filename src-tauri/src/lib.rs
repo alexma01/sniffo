@@ -515,6 +515,12 @@ fn remove_flows(state: State<'_, AppState>, ids: Vec<u64>) {
     state.engine.remove(&ids);
 }
 
+/// Quits for good, after the UI got the user's OK (see `ask_before_quit`).
+#[tauri::command]
+fn quit_app<R: Runtime>(app: AppHandle<R>) {
+    app.exit(0);
+}
+
 #[tauri::command]
 fn pin_flow(state: State<'_, AppState>, id: u64, pinned: bool) {
     state.engine.set_pinned(id, pinned);
@@ -729,7 +735,7 @@ pub fn setup<R: Runtime>(builder: tauri::Builder<R>, data_dir: Option<PathBuf>) 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, install_vpn_helper, list_devices, device_command, list_browsers, launch_browser, terminal_env, app_icon, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_ws_messages, get_body, clear_flows, remove_flows, pin_flow, mark_flow, search_flows,
+            proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, install_vpn_helper, list_devices, device_command, list_browsers, launch_browser, terminal_env, app_icon, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_ws_messages, get_body, clear_flows, remove_flows, quit_app, pin_flow, mark_flow, search_flows,
             get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, export_rules, import_rules, get_proto_schemas, set_proto_files, decode_proto, list_breakpoints, resume_breakpoint, send_ws_message
         ])
 }
@@ -774,15 +780,31 @@ pub fn restore_system_proxy<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// Captured flows live in memory only: with any present, quitting waits for the UI to confirm.
+fn ask_before_quit<R: Runtime>(app: &AppHandle<R>) -> bool {
+    let has_flows = app.try_state::<AppState>().is_some_and(|s| s.engine.flow_count() > 0);
+    has_flows && app.emit("quit:requested", ()).is_ok()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into())).init();
-    setup(tauri::Builder::default().plugin(tauri_plugin_opener::init()).plugin(tauri_plugin_dialog::init()), None)
+    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init()).plugin(tauri_plugin_dialog::init()).on_window_event(|window, event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            if ask_before_quit(window.app_handle()) {
+                api.prevent_close();
+            }
+        }
+    });
+    setup(builder, None)
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            if let RunEvent::Exit = event {
-                restore_system_proxy(app);
+            match event {
+                // Cmd+Q / Dock Quit; `exit()` itself carries a code and is never held back.
+                RunEvent::ExitRequested { code: None, api, .. } if ask_before_quit(app) => api.prevent_exit(),
+                RunEvent::Exit => restore_system_proxy(app),
+                _ => {}
             }
         });
 }

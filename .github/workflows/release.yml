@@ -19,12 +19,7 @@ jobs:
           - name: macOS Intel
             os: macos-latest
             args: --target x86_64-apple-darwin
-          - name: Linux
-            os: ubuntu-22.04
-            args: ""
-          - name: Windows
-            os: windows-latest
-            args: ""
+          # Linux (ubuntu-22.04) and Windows (windows-latest) disabled: no way to test them yet.
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

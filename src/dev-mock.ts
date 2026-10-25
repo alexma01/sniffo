@@ -69,6 +69,7 @@ mockIPC((cmd, args) => {
       : flows.find((f) => f.id === a.id)?.graphql ? enc.encode('{"query":"query GetUser($id: ID!) {\\n  user(id: $id) { name }\\n}","variables":{"id":7}}').buffer
       : enc.encode("user=ada&remember=1").buffer;
     case "search_flows": return flows.filter((f) => new TextDecoder().decode(bodies.get(f.id)).toLowerCase().includes(String(a.query).toLowerCase())).map((f) => f.id);
+    case "quit_app": return;
     case "pin_flow": a.pinned ? pinned.add(a.id) : pinned.delete(a.id); emit("flows", [{ type: "upsert", data: summary(flows.find((f) => f.id === a.id)!) }]); return;
     case "mark_flow": marks.set(a.id, { color: a.color || null, comment: a.comment?.trim() || null }); emit("flows", [{ type: "upsert", data: summary(flows.find((f) => f.id === a.id)!) }]); return;
     case "get_rules": return rules;
