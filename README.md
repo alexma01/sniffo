@@ -5,7 +5,7 @@
 <h1 align="center">Sniffo</h1>
 
 <p align="center">
-  A free, cross-platform HTTP/HTTPS debugging proxy for macOS, Windows and Linux.<br>
+  A free, cross-platform HTTP/HTTPS debugging proxy for macOS (Windows and Linux coming later).<br>
   Every feature is included; nothing is behind a paid tier.
 </p>
 

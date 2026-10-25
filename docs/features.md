@@ -8,7 +8,7 @@ Every feature is free and unlimited.
 
 - HTTP/1.1, HTTP/2 and HTTPS (MITM), with SSL Proxying per host (include/exclude wildcards).
 - Streaming responses (SSE, downloads) keep working while they're recorded.
-- Local root CA, installed and trusted in one click on macOS, Windows or Linux (NSS included).
+- Local root CA, installed and trusted in one click on macOS.
 - System proxy on and off in one click; previous settings saved and restored on exit and after a crash.
 - Or capture a single app: open Chrome, Edge, Brave, Chromium or Firefox with its own profile already pointed at Sniffo, or paste the terminal setup (proxy and CA variables for curl, Node, Python, git, Go, Rust…).
 
