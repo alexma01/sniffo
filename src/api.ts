@@ -196,6 +196,12 @@ export function header(headers: Headers, name: string): string | undefined {
   return headers.find(([k]) => k.toLowerCase() === n)?.[1];
 }
 
+/** Default file name with local date and time: stamped("sniffo-session", "har") → sniffo-session-2026-10-25_14-32-07.har */
+export function stamped(name: string, ext: string): string {
+  const d = new Date(), p = (n: number) => String(n).padStart(2, "0");
+  return `${name}-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}.${ext}`;
+}
+
 export function formatBytes(n: number | null | undefined): string {
   if (n == null) return "";
   if (n < 1024) return `${n} B`;

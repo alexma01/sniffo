@@ -113,10 +113,15 @@ test("wildcards, excludes, and SSL Proxying switched off", async ({ sniffo }) =>
   // Edit the lists in Settings; "*" means every host.
   m = await open(page);
   const ssl = section(page, "SSL proxying");
-  await expect(ssl.locator("textarea").nth(0)).toHaveValue("*.example.test");
-  await expect(ssl.locator("textarea").nth(1)).toHaveValue("api.example.test");
-  await ssl.locator("textarea").nth(0).fill("*\n  \n");
-  await ssl.locator("textarea").nth(1).fill("*.apple.com\nbank.test");
+  const [inc, exc] = [ssl.locator(".hostlist").nth(0), ssl.locator(".hostlist").nth(1)];
+  await expect(inc.locator(".host")).toHaveText(["*.example.test"]);
+  await expect(exc.locator(".host")).toHaveText(["api.example.test"]);
+  await inc.locator(".host").click();
+  await inc.locator("li input").fill("*");
+  await inc.locator("li input").press("Enter");
+  await exc.getByLabel("Add").fill("*.apple.com bank.test");
+  await exc.getByLabel("Add").press("Enter");
+  await exc.locator("li", { hasText: "api.example.test" }).getByRole("button", { name: "Remove" }).click();
   await save(page);
   await expect.poll(async () => sniffo.call("get_ssl_proxying")).toEqual({ enabled: true, include: ["*"], exclude: ["*.apple.com", "bank.test"] });
   await expect(page.locator(".statusbar")).toContainText("SSL proxying All hosts (−2)");

@@ -3,7 +3,7 @@ import { onToast, toast as showToast, Toast, toastError } from "./toast";
 import { Icon } from "./icons";
 import { Logo } from "./Logo";
 import { Command, Palette } from "./Palette";
-import { api, BreakpointHit, FlowEvent, ScriptLog, FlowSummary, formatBytes, ProxyStatus, Rule, Rules, SslProxying } from "./api";
+import { api, BreakpointHit, FlowEvent, ScriptLog, FlowSummary, formatBytes, ProxyStatus, Rule, Rules, SslProxying, stamped } from "./api";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { BreakpointEditor } from "./BreakpointEditor";
 import { Compose } from "./Compose";
@@ -127,7 +127,7 @@ export default function App() {
     setTimeout(() => setToast((cur) => (cur?.id === t.id ? null : cur)), t.kind === "err" ? 7000 : 3000);
   }), []);
   const exportHar = async (ids: number[] = []) => {
-    const path = await save({ filters: har(), defaultPath: ids.length === 1 ? `flow-${ids[0]}.har` : "sniffo-session.har" });
+    const path = await save({ filters: har(), defaultPath: stamped(ids.length === 1 ? `flow-${ids[0]}` : "sniffo-session", "har") });
     if (path) api.exportHar(path, ids).then((n) => notify(t("app.savedFlows", { n, path })), fail);
   };
   const importHar = async (replace: boolean) => {

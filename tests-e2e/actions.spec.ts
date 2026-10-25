@@ -318,5 +318,5 @@ test("file menu: sessions and HAR", async ({ sniffo }) => {
   await menu(page, "Export as HAR…").click();
   await expect(page.locator(".toast")).toHaveText(`Saved 1 flows to ${file("one.har")}`);
   const dialogs = (await sniffo.uiCalls("plugin:dialog|save")).map((c) => (c.args.options as { defaultPath: string }).defaultPath);
-  expect(dialogs.at(-1)).toMatch(/^flow-\d+\.har$/);
+  expect(dialogs.at(-1)).toMatch(/^flow-\d+-\d{4}-\d\d-\d\d_\d\d-\d\d-\d\d\.har$/);
 });

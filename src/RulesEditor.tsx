@@ -3,7 +3,7 @@ import { toast, toastError } from "./toast";
 import { backdrop } from "./backdrop";
 import { CodeArea } from "./highlight";
 import { useEffect, useState } from "react";
-import { Action, api, Headers, Rewrite, Rule, Rules } from "./api";
+import { Action, api, Headers, Rewrite, Rule, Rules, stamped } from "./api";
 import { backendText, Key, rich, t, useLang } from "./i18n";
 
 const ACTIONS: Action["type"][] = ["breakpoint", "map_local", "map_local_dir", "map_remote", "block", "throttle", "script", "rewrite"];
@@ -281,7 +281,7 @@ export function RulesEditor(props: { draft?: Rule | null; onClose: () => void })
                 if (typeof path === "string") api.importRules(path).then((n) => { setMsg(t("rules.imported", { n })); api.getRules().then(setRules); }, (e) => setMsg(backendText(e)));
               }}>{t("rules.import")}</button>
               <button onClick={async () => {
-                const path = await save({ filters: [{ name: t("rules.fileType"), extensions: ["json"] }], defaultPath: "sniffo-rules.json" });
+                const path = await save({ filters: [{ name: t("rules.fileType"), extensions: ["json"] }], defaultPath: stamped("sniffo-rules", "json") });
                 if (path) api.exportRules(path).then((n) => setMsg(t("rules.exported", { n })), (e) => setMsg(backendText(e)));
               }}>{t("rules.export")}</button>
             </div>
