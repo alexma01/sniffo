@@ -90,7 +90,7 @@ mockIPC((cmd, args) => {
     case "get_network": return { upstream: null, dns: [["api.myapp.test", "127.0.0.1"]], ignore_upstream_tls_errors: false };
     case "get_reverse": return [{ enabled: true, port: 9300, target: "https://api.example.com" }];
     case "set_reverse": return a.reverse.map(() => null);
-    case "get_proto_schemas": return { files: ["/Users/me/protos/user.proto"], messages: ["demo.User", "demo.UserList"] };
+    case "get_proto_schemas": return { files: ["protos/user.proto"], messages: ["demo.User", "demo.UserList"] };
     case "decode_proto": return [{ id: 7, name: "Ada", status: "ACTIVE" }];
     case "send_ws_message": {
       const f = flows.find((f) => f.id === a.id)!;

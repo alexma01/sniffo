@@ -4,11 +4,6 @@ Free cross-platform HTTP/HTTPS debugging proxy. Tauri 2 desktop app: Rust proxy 
 
 `CLAUDE.md` is a symlink to this file: one file, two names. Editing either changes both. Never replace the symlink with a copy.
 
-## Mandatory rules
-
-1. **tokensave first.** The repo is indexed (`.tokensave/`). Explore code with the tokensave MCP tools (`tokensave_context`, `tokensave_search`, `tokensave_callers`, `tokensave_impact`, `tokensave_read`) before any grep/find/full-file read. No exploration sub-agents. Index stale or tools missing → say so, then fall back.
-2. **caveman style.** Every reply terse: no filler, no pleasantries, no hedging, fragments OK, technical terms exact. Normal prose only for code, commits, PRs, security warnings, destructive-action confirmations. Claude Code: `caveman` plugin. Other agents: follow the same rules by hand.
-
 ## Map
 
 | Path | What |
