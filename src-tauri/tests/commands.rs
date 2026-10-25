@@ -6,6 +6,11 @@ use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use support::*;
 
+/// A coded backend error as the UI receives it (see sniffo_core::Error).
+fn err(code: &str) -> String {
+    json!({ "code": code }).to_string()
+}
+
 /// Commands that `src/api.ts` calls, the app registers, and this file exercises must be the
 /// same set: a command added without a test (or renamed on one side only) fails here.
 #[test]
@@ -59,11 +64,27 @@ fn status_start_restart_and_stop() {
     let busy = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
     let busy_port = busy.local_addr().unwrap().port();
     let err = app.call("start_proxy", json!({ "port": busy_port })).unwrap_err();
-    assert!(err.contains(&format!("cannot listen on port {busy_port}")), "{err}");
+    assert!(err.contains("port_unavailable") && err.contains(&format!("\"port\":\"{busy_port}\"")), "{err}");
 
     app.ok("stop_proxy", json!({}));
     assert_eq!(app.ok("proxy_status", json!({}))["running"], json!(false));
     assert!(std::net::TcpStream::connect(("127.0.0.1", other)).is_err(), "port released");
+}
+
+#[test]
+fn browsers_and_terminal_env_use_the_running_proxy() {
+    let app = TestApp::new();
+    assert!(app.ok("list_browsers", json!({})).is_array());
+    assert_eq!(app.call("terminal_env", json!({})).unwrap_err(), err("proxy_stopped"));
+    assert_eq!(app.call("launch_browser", json!({ "id": "chrome" })).unwrap_err(), err("proxy_stopped"));
+    let port = app.start();
+    assert_eq!(app.call("launch_browser", json!({ "id": "netscape" })).unwrap_err(), json!({ "code": "browser_missing", "id": "netscape" }).to_string());
+    let env: Vec<(String, String)> = serde_json::from_value(app.ok("terminal_env", json!({}))).unwrap();
+    let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap();
+    assert_eq!(get("HTTPS_PROXY"), format!("http://127.0.0.1:{port}"));
+    assert_eq!(get("NODE_EXTRA_CA_CERTS"), app.dir.join("sniffo-ca.pem").display().to_string());
+    let bundle = std::fs::read_to_string(get("SSL_CERT_FILE")).unwrap();
+    assert!(bundle.ends_with(&std::fs::read_to_string(app.dir.join("sniffo-ca.pem")).unwrap()), "bundle ends with the Sniffo CA");
 }
 
 #[test]
@@ -157,6 +178,10 @@ fn flows_are_listed_read_pinned_searched_removed_and_cleared() {
 
     app.ok("pin_flow", json!({ "id": 1, "pinned": true }));
     app.wait_event("pin upsert", |e| e["type"] == "upsert" && e["data"]["id"] == 1 && e["data"]["pinned"] == true);
+    app.ok("mark_flow", json!({ "id": 2, "color": "red", "comment": "  slow  " }));
+    app.wait_event("mark upsert", |e| e["type"] == "upsert" && e["data"]["id"] == 2 && e["data"]["color"] == "red" && e["data"]["comment"] == "slow");
+    app.ok("mark_flow", json!({ "id": 2, "color": null, "comment": "" }));
+    app.wait_event("unmark upsert", |e| e["type"] == "upsert" && e["data"]["id"] == 2 && e["data"]["color"].is_null() && e["data"]["comment"].is_null());
     via(port, "GET", &up.url("/third"), &[], b"");
     app.settled(3);
     app.ok("remove_flows", json!({ "ids": [3] }));
@@ -175,11 +200,11 @@ fn flows_are_listed_read_pinned_searched_removed_and_cleared() {
 #[test]
 fn repeat_and_compose_go_through_the_proxy() {
     let app = TestApp::new();
-    assert_eq!(app.call("compose_request", json!({ "method": "GET", "url": "http://x/", "headers": [], "body": "" })).unwrap_err(), "start the proxy first");
-    assert_eq!(app.call("repeat_flow", json!({ "id": 1 })).unwrap_err(), "start the proxy first");
+    assert_eq!(app.call("compose_request", json!({ "method": "GET", "url": "http://x/", "headers": [], "body": "" })).unwrap_err(), err("proxy_stopped"));
+    assert_eq!(app.call("repeat_flow", json!({ "id": 1 })).unwrap_err(), err("proxy_stopped"));
     let port = app.start();
     let up = Upstream::start();
-    assert_eq!(app.call("repeat_flow", json!({ "id": 1 })).unwrap_err(), "flow not found");
+    assert_eq!(app.call("repeat_flow", json!({ "id": 1 })).unwrap_err(), err("flow_not_found"));
     via(port, "PUT", &up.url("/orig"), &[("x-a", "1")], b"payload");
     app.settled(1);
     assert_eq!(app.ok("repeat_flow", json!({ "id": 1 })), json!(200));
@@ -256,7 +281,7 @@ fn rules_apply_and_export_import() {
     for junk in ["[1,2]", "[]", "{}", r#"{"log":{"entries":[]}}"#, "not json"] {
         std::fs::write(dir.join("junk.json"), junk).unwrap();
         let err = app.call("import_rules", json!({ "path": dir.join("junk.json") })).unwrap_err();
-        assert!(err.starts_with("not a Sniffo rules file"), "{junk}: {err}");
+        assert!(err.contains("\"rules_file\""), "{junk}: {err}");
     }
     assert_eq!(app.ok("get_rules", json!({}))["rules"].as_array().unwrap().len(), 6, "nothing imported from junk");
     assert!(app.call("import_rules", json!({ "path": dir.join("nope.json") })).unwrap_err().contains("nope.json"));
@@ -337,7 +362,7 @@ fn network_options_and_reverse_proxies() {
     ]);
     let errors = app.ok("set_reverse", json!({ "reverse": reverse }));
     assert_eq!(errors[0], Value::Null);
-    assert!(errors[1].as_str().unwrap().starts_with("port "), "{errors}");
+    assert_eq!(errors[1]["code"], "reverse_port", "{errors}");
     assert_eq!(errors[2], Value::Null);
     assert_eq!(app.ok("get_reverse", json!({})), reverse);
     let r = http(([127, 0, 0, 1], rp).into(), "GET", "/via-reverse?q=1", &[], b"").unwrap();
@@ -345,7 +370,7 @@ fn network_options_and_reverse_proxies() {
     assert!(app.flows().iter().any(|f| f["path"] == "/via-reverse?q=1"), "reverse traffic is recorded");
     // The proxy's own port can't be shared (the OS would allow 127.0.0.1:P next to 0.0.0.0:P).
     let errors = app.ok("set_reverse", json!({ "reverse": [{ "enabled": true, "port": port, "target": format!("http://{}", up.addr) }] }));
-    assert_eq!(errors[0], json!(format!("port {port}: it's the proxy's own port")));
+    assert_eq!(errors[0], json!({ "code": "reverse_own_port", "port": port.to_string() }));
     assert_eq!(via(port, "GET", &up.url("/proxy-still-mine"), &[], b"").json()["path"], json!("/proxy-still-mine"));
     // That refused entry stays saved: restarting the proxy for other settings must still work.
     app.ok("set_network", json!({ "network": network }));
@@ -353,7 +378,7 @@ fn network_options_and_reverse_proxies() {
     assert_eq!(via(port, "GET", &up.url("/after-restart"), &[], b"").status, 200);
     app.ok("set_reverse", json!({ "reverse": [{ "enabled": true, "port": rp, "target": format!("http://{}", up.addr) }] }));
     let err = app.call("start_proxy", json!({ "port": rp })).unwrap_err();
-    assert!(err.contains("a reverse proxy uses it"), "{err}");
+    assert!(err.contains("port_reverse"), "{err}");
     app.ok("set_reverse", json!({ "reverse": [] }));
     assert!(std::net::TcpStream::connect(("127.0.0.1", rp)).is_err(), "reverse listener stopped");
 }
@@ -372,12 +397,12 @@ fn protobuf_schemas_decode_bodies() {
     let body = [0x08, 0x96, 0x01, 0x12, 0x03, b'A', b'd', b'a'];
     via(port, "POST", &up.url("/user"), &[("content-type", "application/x-protobuf")], &body);
     app.settled(1);
-    assert_eq!(app.call("decode_proto", json!({ "id": 1, "response": false, "messageType": "demo.User" })).unwrap_err(), "no protobuf schemas loaded");
+    assert_eq!(app.call("decode_proto", json!({ "id": 1, "response": false, "messageType": "demo.User" })).unwrap_err(), err("no_schemas"));
 
     assert_eq!(app.ok("set_proto_files", json!({ "files": [file] })), json!({ "files": [file], "messages": ["demo.User"] }));
     assert_eq!(app.ok("decode_proto", json!({ "id": 1, "response": false, "messageType": "demo.User" })), json!([{ "id": 150, "name": "Ada" }]));
-    assert!(app.call("decode_proto", json!({ "id": 1, "response": false, "messageType": "demo.Nope" })).unwrap_err().contains("unknown message type"));
-    assert_eq!(app.call("decode_proto", json!({ "id": 7, "response": false, "messageType": "demo.User" })).unwrap_err(), "flow not found");
+    assert!(app.call("decode_proto", json!({ "id": 1, "response": false, "messageType": "demo.Nope" })).unwrap_err().contains("proto_unknown_type"));
+    assert_eq!(app.call("decode_proto", json!({ "id": 7, "response": false, "messageType": "demo.User" })).unwrap_err(), err("flow_not_found"));
 
     // A broken file is reported and the loaded schemas stay as they were.
     let err = app.call("set_proto_files", json!({ "files": [file, dir.join("broken.proto")] })).unwrap_err();
@@ -389,8 +414,8 @@ fn protobuf_schemas_decode_bodies() {
 #[test]
 fn websocket_injection_needs_a_live_connection() {
     let app = TestApp::new();
-    assert_eq!(app.call("send_ws_message", json!({ "id": 1, "toServer": true, "data": "hi", "binary": false })).unwrap_err(), "WebSocket connection is closed");
-    assert!(app.call("send_ws_message", json!({ "id": 1, "toServer": false, "data": "%%%", "binary": true })).unwrap_err().starts_with("invalid base64"));
+    assert_eq!(app.call("send_ws_message", json!({ "id": 1, "toServer": true, "data": "hi", "binary": false })).unwrap_err(), err("ws_closed"));
+    assert!(app.call("send_ws_message", json!({ "id": 1, "toServer": false, "data": "%%%", "binary": true })).unwrap_err().contains("ws_base64"));
 }
 
 #[test]
@@ -424,7 +449,7 @@ fn app_icon_is_empty_for_clients_without_a_bundle() {
 fn system_proxy_ca_trust_and_vpn_helper_use_the_os_tools() {
     let fakes = fakes();
     let app = TestApp::new();
-    assert_eq!(app.call("set_system_proxy", json!({ "enabled": true })).unwrap_err(), "start the proxy first");
+    assert_eq!(app.call("set_system_proxy", json!({ "enabled": true })).unwrap_err(), err("proxy_stopped"));
     let port = app.start();
     fakes.set_effective_proxy(Some(("127.0.0.1", port)));
     app.ok("set_system_proxy", json!({ "enabled": true }));
@@ -517,7 +542,7 @@ fn system_proxy_ca_trust_and_vpn_helper_use_the_os_tools() {
         assert!(fakes.calls().contains("with administrator privileges"));
     }
     #[cfg(not(target_os = "macos"))]
-    assert_eq!(app.call("install_vpn_helper", json!({})).unwrap_err(), "only needed on macOS");
+    assert!(app.call("install_vpn_helper", json!({})).unwrap_err().contains("only needed on macOS"));
 }
 
 /// A crash with the system proxy on leaves the snapshot behind: the next start restores it.
@@ -560,14 +585,14 @@ fn devices_are_listed_and_driven_with_their_tools() {
 
     let run = |device: &str, command: Value| app.call("device_command", json!({ "device": device, "command": command }));
     let ca = app.dir.join("sniffo-ca.pem").display().to_string();
-    assert_eq!(run("emulator-5554", json!({ "type": "set_proxy" })).unwrap(), json!(format!("Proxy set to 127.0.0.1:{port} via adb reverse")));
+    assert_eq!(run("emulator-5554", json!({ "type": "set_proxy" })).unwrap(), json!({ "code": "android_proxy_set", "port": port.to_string() }));
     assert!(fakes.calls().contains(&format!("adb -s emulator-5554 reverse tcp:{port} tcp:{port}")));
     assert!(fakes.calls().contains(&format!("adb -s emulator-5554 shell settings put global http_proxy 127.0.0.1:{port}")));
     run("emulator-5554", json!({ "type": "clear_proxy" })).unwrap();
     assert!(fakes.calls().contains("adb -s emulator-5554 shell settings put global http_proxy :0"));
     run("emulator-5554", json!({ "type": "install_ca" })).unwrap();
     assert!(fakes.calls().contains(&format!("adb -s emulator-5554 push {ca} /sdcard/Download/sniffo-ca.crt")));
-    assert_eq!(run("emulator-5554", json!({ "type": "install_system_ca" })).unwrap(), json!("CA trusted system-wide (all apps) until the emulator restarts"));
+    assert_eq!(run("emulator-5554", json!({ "type": "install_system_ca" })).unwrap(), json!({ "code": "android_system_ca" }));
     assert!(fakes.calls().contains(&format!("adb -s emulator-5554 push {ca} /data/local/tmp/sniffo-ca.pem")));
     run("emulator-5554", json!({ "type": "open_url", "value": "https://example.com/x" })).unwrap();
     assert!(fakes.calls().contains("adb -s emulator-5554 shell am start -a android.intent.action.VIEW -d https://example.com/x"));
@@ -575,14 +600,14 @@ fn devices_are_listed_and_driven_with_their_tools() {
     assert!(fakes.calls().contains("adb -s emulator-5554 reboot"));
     run("emulator-5554", json!({ "type": "shutdown" })).unwrap();
     assert!(fakes.calls().contains("adb -s emulator-5554 emu kill"));
-    assert_eq!(run("emulator-5554", json!({ "type": "boot" })).unwrap_err(), "Device already running");
-    assert_eq!(run("Medium_Phone", json!({ "type": "boot" })).unwrap(), json!("Starting Medium Phone…"));
+    assert_eq!(run("emulator-5554", json!({ "type": "boot" })).unwrap_err(), err("device_running"));
+    assert_eq!(run("Medium_Phone", json!({ "type": "boot" })).unwrap(), json!({ "code": "emulator_starting", "name": "Medium Phone" }));
     wait("emulator launched", || fakes.calls().contains("emulator -avd Medium_Phone").then_some(()));
-    assert_eq!(run("Medium_Phone", json!({ "type": "install_ca" })).unwrap_err(), "Start the emulator first");
-    assert_eq!(run("gone", json!({ "type": "install_ca" })).unwrap_err(), "device not found (disconnected?)");
+    assert_eq!(run("Medium_Phone", json!({ "type": "install_ca" })).unwrap_err(), err("emulator_stopped"));
+    assert_eq!(run("gone", json!({ "type": "install_ca" })).unwrap_err(), err("device_not_found"));
 
     if cfg!(target_os = "macos") {
-        assert_eq!(run("SIM-BOOTED", json!({ "type": "install_ca" })).unwrap(), json!("CA installed and trusted in the simulator"));
+        assert_eq!(run("SIM-BOOTED", json!({ "type": "install_ca" })).unwrap(), json!({ "code": "sim_ca_installed" }));
         assert!(fakes.calls().contains(&format!("xcrun simctl keychain SIM-BOOTED add-root-cert {ca}")));
         run("SIM-BOOTED", json!({ "type": "restart" })).unwrap();
         assert!(fakes.calls().contains("xcrun simctl shutdown SIM-BOOTED") && fakes.calls().contains("xcrun simctl boot SIM-BOOTED"));
@@ -591,8 +616,8 @@ fn devices_are_listed_and_driven_with_their_tools() {
         run("SIM-OFF", json!({ "type": "boot" })).unwrap();
         assert!(fakes.calls().contains("xcrun simctl boot SIM-OFF") && fakes.calls().contains("open -a Simulator"));
         run("SIM-BOOTED", json!({ "type": "shutdown" })).unwrap();
-        assert!(run("SIM-BOOTED", json!({ "type": "set_proxy" })).unwrap().as_str().unwrap().contains("System proxy"));
-        assert!(run("PHONE-1", json!({ "type": "install_ca" })).unwrap_err().contains("QR"));
+        assert_eq!(run("SIM-BOOTED", json!({ "type": "set_proxy" })).unwrap(), json!({ "code": "sim_proxy_hint" }));
+        assert_eq!(run("PHONE-1", json!({ "type": "install_ca" })).unwrap_err(), err("ios_remote"));
     }
 }
 

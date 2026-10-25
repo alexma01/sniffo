@@ -5,6 +5,7 @@
 //! without being on the same Wi-Fi. Physical iPhones cannot be driven remotely: they are
 //! listed so the UI can show the manual (QR) setup.
 
+use crate::error::{Error, Message};
 use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
@@ -200,45 +201,45 @@ fn parse_adb(out: &str) -> Vec<Device> {
         .collect()
 }
 
-/// Runs a setup command; returns a human-readable result line.
-pub fn execute(device: &Device, cmd: &Command, ctx: &Context) -> Result<String, String> {
+/// Runs a setup command; returns the result line (translated by the UI, like errors).
+pub fn execute(device: &Device, cmd: &Command, ctx: &Context) -> Result<Message, Error> {
     match device.platform {
         Platform::IosSimulator => ios_sim(&device.id, cmd, ctx),
         Platform::Android => android(&device.id, device.emulator, cmd, ctx),
         Platform::AndroidAvd => match cmd {
             Command::Boot => {
-                let emulator = sdk_tool("emulator", "emulator").ok_or("Android emulator not found")?;
+                let emulator = sdk_tool("emulator", "emulator").ok_or(Error::new("emulator_missing"))?;
                 Cmd::new(emulator).args(["-avd", &device.id]).spawn().map_err(|e| e.to_string())?;
-                Ok(format!("Starting {}…", device.name))
+                Ok(Message::new("emulator_starting").arg("name", &device.name))
             }
-            _ => Err("Start the emulator first".into()),
+            _ => Err(Error::new("emulator_stopped")),
         },
-        Platform::IosDevice => Err("Physical iPhones can't be configured remotely; follow the QR steps on the device.".into()),
+        Platform::IosDevice => Err(Error::new("ios_remote")),
     }
 }
 
-fn ios_sim(udid: &str, cmd: &Command, ctx: &Context) -> Result<String, String> {
+fn ios_sim(udid: &str, cmd: &Command, ctx: &Context) -> Result<Message, Error> {
     let simctl = |args: &[&str]| run(xcrun(), &[&["simctl"], args].concat());
     match cmd {
         Command::InstallCa | Command::InstallSystemCa => {
             simctl(&["keychain", udid, "add-root-cert", &ctx.ca_pem.to_string_lossy()])?;
-            Ok("CA installed and trusted in the simulator".into())
+            Ok(Message::new("sim_ca_installed"))
         }
         Command::SetProxy | Command::ClearProxy => {
-            Ok("The simulator uses this Mac's network settings: toggle “System proxy” in the toolbar.".into())
+            Ok(Message::new("sim_proxy_hint"))
         }
         Command::Restart => {
             let _ = simctl(&["shutdown", udid]);
             simctl(&["boot", udid])?;
-            Ok("Simulator restarted".into())
+            Ok(Message::new("sim_restarted"))
         }
         Command::Boot => {
             simctl(&["boot", udid])?;
             let _ = run(Path::new("open"), &["-a", "Simulator"]);
-            Ok("Simulator booted".into())
+            Ok(Message::new("sim_booted"))
         }
-        Command::Shutdown => simctl(&["shutdown", udid]).map(|_| "Simulator shut down".into()),
-        Command::OpenUrl(url) => simctl(&["openurl", udid, url]).map(|_| format!("Opened {url}")),
+        Command::Shutdown => Ok(simctl(&["shutdown", udid]).map(|_| Message::new("sim_shutdown"))?),
+        Command::OpenUrl(url) => Ok(simctl(&["openurl", udid, url]).map(|_| Message::new("url_opened").arg("url", url))?),
     }
 }
 
@@ -273,14 +274,14 @@ echo SNIFFO_OK
 "#;
 
 /// Android trusts `subject_hash_old` named files in /system/etc/security/cacerts.
-fn subject_hash_old(pem: &Path) -> Result<String, String> {
+fn subject_hash_old(pem: &Path) -> Result<String, Error> {
     run(Path::new("openssl"), &["x509", "-inform", "PEM", "-subject_hash_old", "-noout", "-in", &pem.to_string_lossy()])
         .map(|h| h.trim().to_owned())
-        .map_err(|e| format!("openssl is required to compute the CA file name: {e}"))
+        .map_err(|e| Error::new("openssl_missing").arg("detail", e))
 }
 
-fn android(serial: &str, emulator: bool, cmd: &Command, ctx: &Context) -> Result<String, String> {
-    let adb_bin = adb_path().ok_or("adb not found (install Android SDK platform-tools)")?;
+fn android(serial: &str, emulator: bool, cmd: &Command, ctx: &Context) -> Result<Message, Error> {
+    let adb_bin = adb_path().ok_or(Error::new("adb_missing"))?;
     let adb = |args: &[&str]| run(&adb_bin, &[&["-s", serial], args].concat());
     let port = ctx.proxy_port.to_string();
     match cmd {
@@ -288,41 +289,41 @@ fn android(serial: &str, emulator: bool, cmd: &Command, ctx: &Context) -> Result
             // The device's localhost:PORT is tunnelled over adb to ours: no Wi-Fi/LAN needed.
             adb(&["reverse", &format!("tcp:{port}"), &format!("tcp:{port}")])?;
             adb(&["shell", "settings", "put", "global", "http_proxy", &format!("127.0.0.1:{port}")])?;
-            Ok(format!("Proxy set to 127.0.0.1:{port} via adb reverse"))
+            Ok(Message::new("android_proxy_set").arg("port", &port))
         }
         Command::ClearProxy => {
             adb(&["shell", "settings", "put", "global", "http_proxy", ":0"])?;
             let _ = adb(&["reverse", "--remove", &format!("tcp:{port}")]);
-            Ok("Proxy removed".into())
+            Ok(Message::new("android_proxy_removed"))
         }
         Command::InstallCa => {
             // Android 11+ only allows user CAs through Settings: push the file and open the installer.
             adb(&["push", &ctx.ca_pem.to_string_lossy(), "/sdcard/Download/sniffo-ca.crt"])?;
             let _ = adb(&["shell", "am", "start", "-a", "android.settings.SECURITY_SETTINGS"]);
-            Ok("Certificate copied to Downloads. On the device: Install a certificate → CA certificate → sniffo-ca.crt".into())
+            Ok(Message::new("android_ca_copied"))
         }
         Command::InstallSystemCa => {
             if !emulator {
-                return Err("System CA install is only supported on emulators".into());
+                return Err(Error::new("system_ca_emulator_only"));
             }
             let hash = subject_hash_old(ctx.ca_pem)?;
             // `adb root` exits 0 even on production (Google Play) images, so check the uid.
             let _ = adb(&["root"]);
             let _ = adb(&["wait-for-device"]);
             if adb(&["shell", "id", "-u"]).map(|u| u.trim() != "0").unwrap_or(true) {
-                return Err("This emulator runs a Google Play image, which can't be rooted. Create an AVD with a “Google APIs” system image to trust the CA system-wide, or use “Install CA (user)”.".into());
+                return Err(Error::new("system_ca_play_image"));
             }
             adb(&["push", &ctx.ca_pem.to_string_lossy(), "/data/local/tmp/sniffo-ca.pem"])?;
             let out = adb(&["shell", &SYSTEM_CA_SCRIPT.replace("{HASH}", &hash)])?;
             if !out.contains("SNIFFO_OK") {
-                return Err(format!("system CA install failed: {}", out.trim()));
+                return Err(Error::new("system_ca_failed").arg("detail", out.trim()));
             }
-            Ok("CA trusted system-wide (all apps) until the emulator restarts".into())
+            Ok(Message::new("android_system_ca"))
         }
-        Command::Restart => adb(&["reboot"]).map(|_| "Rebooting device".into()),
-        Command::Boot => Err("Device already running".into()),
-        Command::Shutdown => adb(&["emu", "kill"]).map(|_| "Emulator stopped".into()),
-        Command::OpenUrl(url) => adb(&["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", url]).map(|_| format!("Opened {url}")),
+        Command::Restart => Ok(adb(&["reboot"]).map(|_| Message::new("android_rebooting"))?),
+        Command::Boot => Err(Error::new("device_running")),
+        Command::Shutdown => Ok(adb(&["emu", "kill"]).map(|_| Message::new("android_emulator_stopped"))?),
+        Command::OpenUrl(url) => Ok(adb(&["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", url]).map(|_| Message::new("url_opened").arg("url", url))?),
     }
 }
 

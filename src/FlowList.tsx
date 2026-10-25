@@ -4,8 +4,15 @@ import { CSSProperties, memo, MutableRefObject, ReactNode, useEffect, useMemo, u
 import { FlowSummary, formatBytes } from "./api";
 import { AppIcon } from "./AppIcon";
 import { clientDisplay, clientIconName, useClientsVersion } from "./clients";
+import { Key, t, useLang } from "./i18n";
 
 const ROW = 28;
+
+/** Row highlight colours, by the name stored on the flow; labels are "highlight.<name>". */
+export const HIGHLIGHTS: Record<string, string> = {
+  red: "rgb(255 59 48 / 0.22)", orange: "rgb(255 149 0 / 0.22)", yellow: "rgb(255 204 0 / 0.25)",
+  green: "rgb(52 199 89 / 0.22)", blue: "rgb(0 122 255 / 0.20)", purple: "rgb(175 82 222 / 0.22)",
+};
 
 /** HTTPS tunnel passed through without decryption (SSL Proxying not enabled for its host). */
 export const isTunnel = (f: FlowSummary) => f.method === "CONNECT";
@@ -28,39 +35,42 @@ const ms = (v: number | null) => (v != null ? `${v} ms` : "");
 /** What a cell needs besides its flow. */
 interface CellContext { decrypts: (host: string) => boolean }
 
-interface Column { id: string; label: string; width: number | "flex"; align?: "right"; cell: (f: FlowSummary, ctx: CellContext) => ReactNode; title?: (f: FlowSummary) => string }
+interface Column { id: string; label: Key | "#" | "TLS" | "TTFB"; width: number | "flex"; align?: "right"; cell: (f: FlowSummary, ctx: CellContext) => ReactNode; title?: (f: FlowSummary) => string }
 
 export const COLUMNS: Column[] = [
-  { id: "id", label: "#", width: 52, cell: (f) => (f.pinned ? <Icon name="pin" label="Pinned" /> : f.id) },
-  { id: "time", label: "Time", width: 96, cell: (f) => time(f.started_ms) },
-  { id: "client", label: "Client", width: 140, cell: (f) => <><AppIcon name={clientIconName(f)} />{clientDisplay(f)}</>, title: (f) => `${clientDisplay(f)} — ${f.client_ip}` },
-  { id: "method", label: "Method", width: 72, cell: (f) => <span className={`method m-${f.method}`}>{f.method}</span> },
-  { id: "status", label: "Code", width: 46, cell: (f) => (f.state === "failed" ? "ERR" : f.state === "paused" ? <Icon name="pause" label="Paused" /> : isTunnel(f) ? "" : f.status ?? "…") },
+  { id: "id", label: "#", width: 52, cell: (f) => (f.pinned ? <Icon name="pin" label={t("list.pinned")} /> : f.id) },
+  { id: "time", label: "list.col.time", width: 96, cell: (f) => time(f.started_ms) },
+  { id: "client", label: "list.col.client", width: 140, cell: (f) => <><AppIcon name={clientIconName(f)} />{clientDisplay(f)}</>, title: (f) => `${clientDisplay(f)} — ${f.client_ip}` },
+  { id: "method", label: "list.col.method", width: 72, cell: (f) => <span className={`method m-${f.method}`}>{f.method}</span> },
+  { id: "status", label: "list.col.status", width: 46, cell: (f) => (f.state === "failed" ? "ERR" : f.state === "paused" ? <Icon name="pause" label={t("list.paused")} /> : isTunnel(f) ? "" : f.status ?? "…") },
   { id: "tls", label: "TLS", width: 30, cell: (f) => (f.scheme === "https" || f.scheme === "wss" ? <Icon name="lock" label="TLS" /> : ""), title: (f) => f.scheme },
-  { id: "host", label: "Host", width: 190, cell: (f) => f.host },
+  { id: "host", label: "list.col.host", width: 190, cell: (f) => f.host },
   {
-    id: "path", label: "Path", width: "flex", title: (f) => f.error ?? f.url,
+    id: "path", label: "list.col.path", width: "flex", title: (f) => f.error ?? f.url,
     cell: (f, ctx) => (
       <>
-        {f.state === "paused" && <span className="badge warn"><Icon name="pause" size={10} /> paused</span>}
-        {isTunnel(f) && ctx.decrypts(f.host) && <span className="badge" title={`SSL Proxying is on for ${f.host}: this row is the old tunnel, new connections are decrypted`}><Icon name="unlock" size={10} /> SSL on</span>}
-        {isTunnel(f) && !ctx.decrypts(f.host) && <button className="badge ssl-off" data-ssl-host={f.host} title={`Decrypt ${f.host}: Sniffo re-signs it with its own CA (the device must trust the Sniffo Root CA)`}><Icon name="lock" size={10} /> Enable SSL Proxying</button>}
+        {f.state === "paused" && <span className="badge warn"><Icon name="pause" size={10} /> {t("list.badge.paused")}</span>}
+        {isTunnel(f) && ctx.decrypts(f.host) && <span className="badge" title={t("list.badge.sslOnTitle", { host: f.host })}><Icon name="unlock" size={10} /> {t("list.badge.sslOn")}</span>}
+        {isTunnel(f) && !ctx.decrypts(f.host) && <button className="badge ssl-off" data-ssl-host={f.host} title={t("list.badge.enableSslTitle", { host: f.host })}><Icon name="lock" size={10} /> {t("list.badge.enableSsl")}</button>}
         {f.ws_count > 0 && <span className="badge">WS {f.ws_count}</span>}
         {f.graphql && <span className="badge gql">{f.graphql}</span>}
+        {f.comment && <span className="badge" title={f.comment}><Icon name="note" size={10} /> {f.comment.length > 24 ? f.comment.slice(0, 24) + "…" : f.comment}</span>}
         {f.tags.map((t) => <span key={t} className="badge">{t}</span>)}
         {f.path}
       </>
     ),
   },
-  { id: "version", label: "Protocol", width: 72, cell: (f) => f.http_version.replace("HTTP/", "h") },
-  { id: "reqtype", label: "Req type", width: 120, cell: (f) => f.request_type?.split(";")[0] ?? "" },
-  { id: "type", label: "Type", width: 130, cell: (f) => (f.status === 101 ? "websocket" : f.content_type?.split(";")[0] ?? "") },
-  { id: "reqsize", label: "Req", width: 64, align: "right", cell: (f) => (f.request_size ? formatBytes(f.request_size) : "") },
-  { id: "size", label: "Size", width: 68, align: "right", cell: (f) => formatBytes(f.response_size) },
+  { id: "version", label: "list.col.version", width: 72, cell: (f) => f.http_version.replace("HTTP/", "h") },
+  { id: "reqtype", label: "list.col.reqtype", width: 120, cell: (f) => f.request_type?.split(";")[0] ?? "" },
+  { id: "type", label: "list.col.type", width: 130, cell: (f) => (f.status === 101 ? "websocket" : f.content_type?.split(";")[0] ?? "") },
+  { id: "reqsize", label: "list.col.reqsize", width: 64, align: "right", cell: (f) => (f.request_size ? formatBytes(f.request_size) : "") },
+  { id: "size", label: "list.col.size", width: 68, align: "right", cell: (f) => formatBytes(f.response_size) },
   { id: "ttfb", label: "TTFB", width: 64, align: "right", cell: (f) => ms(f.ttfb_ms) },
-  { id: "duration", label: "Duration", width: 72, align: "right", cell: (f) => ms(f.duration_ms) },
-  { id: "timeline", label: "Timeline", width: 120, cell: (f) => <Timeline f={f} />, title: (f) => (f.duration_ms != null ? `TTFB ${f.ttfb_ms ?? "?"} ms · total ${f.duration_ms} ms` : "In progress") },
+  { id: "duration", label: "list.col.duration", width: 72, align: "right", cell: (f) => ms(f.duration_ms) },
+  { id: "timeline", label: "list.col.timeline", width: 120, cell: (f) => <Timeline f={f} />, title: (f) => (f.duration_ms != null ? t("list.timeline.title", { ttfb: f.ttfb_ms ?? "?", total: f.duration_ms }) : t("list.timeline.pending")) },
 ];
+
+const label = (c: Column) => (c.label.includes(".") ? t(c.label as Key) : c.label);
 
 // ponytail: per-row duration on a log scale up to 5 s, not a shared waterfall; enough to spot slow calls at a glance.
 const scale = (v: number) => Math.min(100, Math.max(3, (Math.log1p(v) / Math.log1p(5000)) * 100));
@@ -113,6 +123,7 @@ const Row = memo(function Row({ f, top, alt, selected, color, cells, decrypts, h
   /** Re-render when device names change. */
   clients: number;
 }) {
+  useLang();
   return (
     <div
       className={`flow-row ${alt ? "alt" : ""} ${selected ? "selected" : ""} ${statusClass(f)}`}
@@ -142,14 +153,13 @@ export function FlowList(props: {
   follow: boolean;
   /** Scrolling up pauses auto-scroll; scrolling back to the bottom resumes it. */
   onFollowChange: (follow: boolean) => void;
-  /** Row highlight colours set from the context menu. */
-  colors: Map<number, string>;
   /** Called by the inline "Enable SSL Proxying" badge on tunnel rows. */
   onEnableSsl: (host: string) => void;
   /** Whether SSL Proxying now covers a host (tunnel rows recorded before it was enabled). */
   decrypts: (host: string) => boolean;
 }) {
-  const { flows, selected, onSelect, onContextMenu, follow, onFollowChange, colors, onEnableSsl, decrypts } = props;
+  const { flows, selected, onSelect, onContextMenu, follow, onFollowChange, onEnableSsl, decrypts } = props;
+  const lang = useLang();
   const [widths, setWidths] = useState<Record<string, number>>(() => load("sniffo.columnWidths", {}));
   const clients = useClientsVersion(); // client labels change when a device is renamed
   const handlers = useRef<Handlers>({ onSelect, onContextMenu, onEnableSsl });
@@ -206,7 +216,7 @@ export function FlowList(props: {
     return w === "flex" ? { flex: 1, minWidth: 120 } : { width: w, flex: "none" as const, textAlign: c.align };
   };
 
-  const cells = useMemo(() => cols.map((c) => ({ c, style: style(c) })), [hidden, widths]);
+  const cells = useMemo(() => cols.map((c) => ({ c, style: style(c) })), [hidden, widths, lang]);
 
   // Row padding (2×12) + 10px gap between cells (.flow-row in App.css) + every fixed column + the flexible path column's minimum.
   const minWidth = 24 + 10 * (cols.length - 1) + cols.reduce((sum, c) => {
@@ -258,13 +268,13 @@ export function FlowList(props: {
         }}
       >
         {/* The header occupies the first ROW px of the scroller: hence scrollMargin/scrollPaddingStart above. */}
-        <div className="flow-row head" style={{ minWidth }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setPicker({ x: e.clientX, y: e.clientY }); }} title="Right-click to choose columns">
+        <div className="flow-row head" style={{ minWidth }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setPicker({ x: e.clientX, y: e.clientY }); }} title={t("list.head.title")}>
           {cols.map((c) => (
             <span key={c.id} style={style(c)} className={`th ${c.id === "id" ? "sortable" : ""}`}
               onClick={c.id === "id" ? (e) => { if (!(e.target as HTMLElement).classList.contains("resizer")) setNewestFirst(!newestFirst); } : undefined}
-              title={c.id === "id" ? (newestFirst ? "Newest first — click for oldest first" : "Oldest first — click for newest first") : undefined}>
-              {c.label}{c.id === "id" && <span className="sort">{newestFirst ? "↓" : "↑"}</span>}
-              <span className="resizer" onMouseDown={(e) => startResize(c, e)} onDoubleClick={() => { const { [c.id]: _, ...rest } = widths; setWidths(rest); save("sniffo.columnWidths", rest); }} title="Drag to resize, double-click to reset" />
+              title={c.id === "id" ? t(newestFirst ? "list.sort.newest" : "list.sort.oldest") : undefined}>
+              {label(c)}{c.id === "id" && <span className="sort">{newestFirst ? "↓" : "↑"}</span>}
+              <span className="resizer" onMouseDown={(e) => startResize(c, e)} onDoubleClick={() => { const { [c.id]: _, ...rest } = widths; setWidths(rest); save("sniffo.columnWidths", rest); }} title={t("list.resize")} />
             </span>
           ))}
         </div>
@@ -272,15 +282,15 @@ export function FlowList(props: {
           {v.getVirtualItems().map((row) => {
             const f = rows[row.index];
             return (
-              <Row key={f.id} f={f} top={row.start - ROW} alt={row.index % 2 === 1} selected={f.id === selected} color={colors.get(f.id)}
+              <Row key={f.id} f={f} top={row.start - ROW} alt={row.index % 2 === 1} selected={f.id === selected} color={f.color ? HIGHLIGHTS[f.color] : undefined}
                 cells={cells} decrypts={decrypts} handlers={handlers} clients={clients} />
             );
           })}
         </div>
       </div>
       <div className="list-jump">
-        {!edges.top && <button onClick={() => jump("top")} title="Top of the list (Home, ⌘↑)">↑ Top</button>}
-        {!edges.bottom && <button onClick={() => jump("bottom")} title="Bottom of the list (End, ⌘↓)">↓ Bottom</button>}
+        {!edges.top && <button onClick={() => jump("top")} title={t("list.topTitle")}>{t("list.top")}</button>}
+        {!edges.bottom && <button onClick={() => jump("bottom")} title={t("list.bottomTitle")}>{t("list.bottom")}</button>}
       </div>
       {picker && (
         <div className="menu" style={{ left: picker.x, top: picker.y }} onClick={(e) => e.stopPropagation()}>
@@ -290,7 +300,7 @@ export function FlowList(props: {
                 const next = new Set(hidden);
                 if (next.has(c.id)) next.delete(c.id); else next.add(c.id);
                 setHidden(next);
-              }} /> {c.label}
+              }} /> {label(c)}
             </label>
           ))}
         </div>

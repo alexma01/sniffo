@@ -1,9 +1,14 @@
 import { FlowSummary } from "./api";
+import { Key, t } from "./i18n";
 
 export const TYPES = ["JSON", "GraphQL", "XML", "HTML", "JS", "CSS", "Image", "Media", "Font", "Form", "Other"] as const;
 export type ContentKind = (typeof TYPES)[number];
 export const STATUSES = ["1xx", "2xx", "3xx", "4xx", "5xx", "Error"] as const;
 export type StatusKind = (typeof STATUSES)[number];
+
+// The rest are technical names, shown as they are.
+const LABELS: Partial<Record<ContentKind | StatusKind, Key>> = { Image: "filter.image", Media: "filter.media", Font: "filter.font", Form: "filter.form", Other: "filter.other", Error: "filter.error" };
+export const kindLabel = (k: ContentKind | StatusKind) => { const key = LABELS[k]; return key ? t(key) : k; };
 
 export function contentKind(ct: string | null): ContentKind {
   const t = (ct ?? "").toLowerCase();

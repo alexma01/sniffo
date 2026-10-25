@@ -10,12 +10,13 @@ Every feature is free and unlimited.
 - Streaming responses (SSE, downloads) keep working while they're recorded.
 - Local root CA, installed and trusted in one click on macOS, Windows or Linux (NSS included).
 - System proxy on and off in one click; previous settings saved and restored on exit and after a crash.
+- Or capture a single app: open Chrome, Edge, Brave, Chromium or Firefox with its own profile already pointed at Sniffo, or paste the terminal setup (proxy and CA variables for curl, Node, Python, git, Go, Rust…).
 
 ## Inspect
 
 - Virtualized list with configurable columns: client app, TLS, protocol, sizes, TTFB, duration.
 - Filters by content type and status, regex, full-text search in headers and bodies.
-- Sidebar by domain, app and device; pinning; status bar.
+- Sidebar by domain, app and device; pinning, color highlights and comments (saved in HAR); status bar.
 - Detail: headers, query, cookies, body (JSON tree, XML, form, multipart, images, hex), raw and timing.
 - Request/response diff.
 
@@ -24,7 +25,8 @@ Every feature is free and unlimited.
 ## Change traffic
 
 - Request and response breakpoints with editing.
-- Map Local (inline or from a file), Map Remote, Block, allow list.
+- Map Local (inline or from a file), Map Remote, Block, allow list, No Caching.
+- Rewrite without code: set, remove or regex-replace headers, query parameters, URL, status and body.
 - Throttling with latency and bandwidth presets.
 - JavaScript `onRequest` / `onResponse` rules (QuickJS) with `sharedState` and a console.
 
@@ -49,6 +51,10 @@ Every feature is free and unlimited.
 - Option to ignore upstream TLS errors (dev servers).
 
 ![Settings](images/settings.png)
+
+## Language
+
+- English and Italian, switched live in Settings → General. Defaults to the system language.
 
 ## Devices
 

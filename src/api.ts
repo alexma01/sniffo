@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { Coded } from "./i18n";
 import { listen } from "@tauri-apps/api/event";
 
 export type FlowState = "pending" | "paused" | "complete" | "failed";
@@ -25,6 +26,9 @@ export interface FlowSummary {
   response_size: number | null;
   error: string | null;
   pinned: boolean;
+  /** Highlight name (see HIGHLIGHTS in FlowList). */
+  color: string | null;
+  comment: string | null;
   tags: string[];
   ws_count: number;
   graphql: string | null;
@@ -99,7 +103,18 @@ export type Action =
   | { type: "block" }
   | { type: "breakpoint"; request: boolean; response: boolean }
   | { type: "throttle"; latency_ms: number; download_kbps: number; upload_kbps: number }
-  | { type: "script"; code: string };
+  | { type: "script"; code: string }
+  | { type: "rewrite"; items: Rewrite[] };
+
+export interface Rewrite {
+  response: boolean;
+  target: "header" | "query" | "url" | "status" | "body";
+  op: "set" | "remove" | "replace";
+  name: string;
+  /** Regex for replace; `$1` in value refers to groups. */
+  pattern: string;
+  value: string;
+}
 
 export interface Rule { id: string; name: string; enabled: boolean; matcher: Matcher; action: Action }
 export interface Rules { rules: Rule[]; allow_list: { enabled: boolean; patterns: string[] }; no_caching: boolean }
@@ -129,9 +144,14 @@ export const api = {
   getNetwork: () => invoke<NetworkOptions>("get_network"),
   setNetwork: (network: NetworkOptions) => invoke<void>("set_network", { network }),
   getReverse: () => invoke<ReverseProxy[]>("get_reverse"),
-  setReverse: (reverse: ReverseProxy[]) => invoke<(string | null)[]>("set_reverse", { reverse }),
+  setReverse: (reverse: ReverseProxy[]) => invoke<(Coded | null)[]>("set_reverse", { reverse }),
   listDevices: () => invoke<Device[]>("list_devices"),
-  deviceCommand: (device: string, command: DeviceCommand) => invoke<string>("device_command", { device, command }),
+  deviceCommand: (device: string, command: DeviceCommand) => invoke<Coded>("device_command", { device, command }),
+  listBrowsers: () => invoke<{ id: string; name: string }[]>("list_browsers"),
+  /** Opens the browser with its own Sniffo profile (proxy + CA preconfigured). */
+  launchBrowser: (id: string) => invoke<void>("launch_browser", { id }),
+  /** Variables that send CLI tools through the proxy and trust its CA. */
+  terminalEnv: () => invoke<[string, string][]>("terminal_env"),
   status: () => invoke<ProxyStatus>("proxy_status"),
   start: (port?: number) => invoke<string>("start_proxy", { port }),
   stop: () => invoke<void>("stop_proxy"),
@@ -153,6 +173,8 @@ export const api = {
   clear: () => invoke<void>("clear_flows"),
   remove: (ids: number[]) => invoke<void>("remove_flows", { ids }),
   pin: (id: number, pinned: boolean) => invoke<void>("pin_flow", { id, pinned }),
+  /** Sets both; null or "" clears. */
+  mark: (id: number, color: string | null, comment: string | null) => invoke<void>("mark_flow", { id, color, comment }),
   search: (query: string) => invoke<number[]>("search_flows", { query }),
   getRules: () => invoke<Rules>("get_rules"),
   setRules: (rules: Rules) => invoke<void>("set_rules", { rules }),

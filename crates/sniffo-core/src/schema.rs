@@ -49,14 +49,14 @@ pub fn grpc_frames(body: &[u8]) -> Option<Vec<&[u8]>> {
 }
 
 /// Decodes each message (one, or one per gRPC frame) as `message_type` into proto3 JSON.
-pub fn decode(pool: &DescriptorPool, message_type: &str, body: &[u8], grpc: bool) -> Result<Vec<serde_json::Value>, String> {
-    let desc = pool.get_message_by_name(message_type).ok_or_else(|| format!("unknown message type {message_type}"))?;
-    let frames = if grpc { grpc_frames(body).ok_or("not a gRPC-framed body")? } else { vec![body] };
+pub fn decode(pool: &DescriptorPool, message_type: &str, body: &[u8], grpc: bool) -> Result<Vec<serde_json::Value>, crate::Error> {
+    let desc = pool.get_message_by_name(message_type).ok_or_else(|| crate::Error::new("proto_unknown_type").arg("type", message_type))?;
+    let frames = if grpc { grpc_frames(body).ok_or(crate::Error::new("proto_not_grpc"))? } else { vec![body] };
     frames
         .into_iter()
         .map(|f| {
-            let msg = DynamicMessage::decode(desc.clone(), f).map_err(|e| format!("does not decode as {message_type}: {e}"))?;
-            serde_json::to_value(&msg).map_err(|e| e.to_string())
+            let msg = DynamicMessage::decode(desc.clone(), f).map_err(|e| crate::Error::new("proto_decode").arg("type", message_type).arg("detail", e))?;
+            serde_json::to_value(&msg).map_err(crate::Error::other)
         })
         .collect()
 }

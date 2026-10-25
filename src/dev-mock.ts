@@ -46,6 +46,7 @@ const flows: Flow[] = samples.map(([method, url, status, ct, body], i) => {
 });
 const bodies = new Map(samples.map((s, i) => [i + 1, enc.encode(s[4])]));
 const pinned = new Set<number>();
+const marks = new Map<number, { color: string | null; comment: string | null }>([[4, { color: "yellow", comment: "Slow on 3G" }]]);
 let ssl = { enabled: true, include: ["api.example.com", "www.example.org", "stream.example.com"], exclude: [] as string[] };
 let rules: unknown = { rules: [], allow_list: { enabled: false, patterns: [] }, no_caching: false };
 
@@ -54,7 +55,7 @@ const summary = (f: Flow): FlowSummary => ({
   scheme: f.scheme, http_version: f.id % 2 ? "HTTP/2.0" : "HTTP/1.1", client_ip: f.id === 6 ? "192.168.1.40" : "127.0.0.1",
   client_app: f.method === "CONNECT" ? "Google Drive" : f.id === 6 ? null : f.id % 3 ? "Google Chrome" : "curl", request_type: null,
   status: f.status, state: f.state, content_type: f.response?.headers[0][1] ?? null, request_size: f.request.body_size,
-  response_size: f.response?.body_size ?? null, error: f.error, pinned: pinned.has(f.id), tags: f.id === 2 ? ["Map Local /login"] : [], ws_count: f.ws_messages.length, graphql: f.graphql,
+  response_size: f.response?.body_size ?? null, error: f.error, pinned: pinned.has(f.id), color: marks.get(f.id)?.color ?? null, comment: marks.get(f.id)?.comment ?? null, tags: f.id === 2 ? ["Map Local /login"] : [], ws_count: f.ws_messages.length, graphql: f.graphql,
 });
 
 mockIPC((cmd, args) => {
@@ -69,6 +70,7 @@ mockIPC((cmd, args) => {
       : enc.encode("user=ada&remember=1").buffer;
     case "search_flows": return flows.filter((f) => new TextDecoder().decode(bodies.get(f.id)).toLowerCase().includes(String(a.query).toLowerCase())).map((f) => f.id);
     case "pin_flow": a.pinned ? pinned.add(a.id) : pinned.delete(a.id); emit("flows", [{ type: "upsert", data: summary(flows.find((f) => f.id === a.id)!) }]); return;
+    case "mark_flow": marks.set(a.id, { color: a.color || null, comment: a.comment?.trim() || null }); emit("flows", [{ type: "upsert", data: summary(flows.find((f) => f.id === a.id)!) }]); return;
     case "get_rules": return rules;
     case "set_rules": rules = a.rules; return;
     // Open http://localhost:1420/#ws-breakpoint to preview the WebSocket frame editor.
@@ -80,16 +82,19 @@ mockIPC((cmd, args) => {
       { id: "PHONE", name: "iPhone 14", platform: "ios_device", state: "connected", os: "iOS 26.6.1", emulator: false },
       { id: "Medium_Phone", name: "Medium Phone", platform: "android_avd", state: "Shutdown", os: "Android emulator", emulator: true },
     ];
-    case "device_command": return "done (mock)";
+    case "device_command": return { code: "other", detail: "done (mock)" };
+    case "list_browsers": return [{ id: "chrome", name: "Google Chrome" }, { id: "firefox", name: "Firefox" }];
+    case "launch_browser": return;
+    case "terminal_env": return [["HTTPS_PROXY", "http://127.0.0.1:9191"], ["NODE_EXTRA_CA_CERTS", "~/sniffo-ca.pem"], ["SSL_CERT_FILE", "~/sniffo-ca-bundle.pem"]];
     case "repeat_flow": case "compose_request": return 200;
     case "get_network": return { upstream: null, dns: [["api.myapp.test", "127.0.0.1"]], ignore_upstream_tls_errors: false };
     case "get_reverse": return [{ enabled: true, port: 9300, target: "https://api.example.com" }];
     case "set_reverse": return a.reverse.map(() => null);
-    case "get_proto_schemas": return { files: ["/Users/me/protos/user.proto"], messages: ["demo.User", "demo.UserList"] };
+    case "get_proto_schemas": return { files: ["protos/user.proto"], messages: ["demo.User", "demo.UserList"] };
     case "decode_proto": return [{ id: 7, name: "Ada", status: "ACTIVE" }];
     case "send_ws_message": {
       const f = flows.find((f) => f.id === a.id)!;
-      if (a.binary && !/^[A-Za-z0-9+/=\s]*$/.test(a.data)) throw "invalid base64";
+      if (a.binary && !/^[A-Za-z0-9+/=\s]*$/.test(a.data)) throw { code: "ws_base64", detail: "mock" };
       f.ws_messages.push({ outgoing: a.toServer, time_ms: Date.now() - f.started_ms, kind: a.binary ? "binary" : "text", size: a.data.length, data: a.data, injected: true });
       emit("flows", [{ type: "upsert", data: summary(f) }]);
       return;

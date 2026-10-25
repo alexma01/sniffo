@@ -71,7 +71,7 @@ async fn rejects_bad_dns_entry() {
     let ca = RootCa::generate().unwrap();
     let net = NetworkOptions { dns: vec![("x".into(), "not-an-ip".into())], ..Default::default() };
     let err = Engine::default().start(TcpListener::bind("127.0.0.1:0").await.unwrap(), &ca, StartOptions { network: net, ..Default::default() }).await.err().unwrap();
-    assert!(err.contains("not an IP"));
+    assert_eq!(err, sniffo_core::Error::new("dns_ip").arg("ip", "not-an-ip"));
 }
 
 /// Undecrypted HTTPS (a CONNECT tunnel) must honour DNS overrides and the upstream proxy too.

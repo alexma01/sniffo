@@ -4,11 +4,6 @@ Free cross-platform HTTP/HTTPS debugging proxy. Tauri 2 desktop app: Rust proxy 
 
 `CLAUDE.md` is a symlink to this file: one file, two names. Editing either changes both. Never replace the symlink with a copy.
 
-## Mandatory rules
-
-1. **tokensave first.** The repo is indexed (`.tokensave/`). Explore code with the tokensave MCP tools (`tokensave_context`, `tokensave_search`, `tokensave_callers`, `tokensave_impact`, `tokensave_read`) before any grep/find/full-file read. No exploration sub-agents. Index stale or tools missing → say so, then fall back.
-2. **caveman style.** Every reply terse: no filler, no pleasantries, no hedging, fragments OK, technical terms exact. Normal prose only for code, commits, PRs, security warnings, destructive-action confirmations. Claude Code: `caveman` plugin. Other agents: follow the same rules by hand.
-
 ## Map
 
 | Path | What |
@@ -37,6 +32,8 @@ pnpm test:e2e                    # Playwright, on demand only
 - Git-flow: work on `feature/<name>` from `develop`; `main` = releases only. Conventional Commits.
 - Match surrounding code: small, few comments, no new deps for what a few lines do.
 - New/changed Tauri command → update `src/api.ts`, `src/dev-mock.ts` and `src-tauri/tests/commands.rs`.
+- UI text goes through `t()` with keys in `src/locales/parts/*.ts`, English and Italian (see ui.md).
+- User-facing backend errors and device results: `sniffo_core::Error::new("code").arg("name", v)`, never prose strings; text in `src/locales/parts/backend.ts` (`backend.<code>`), shown via `backendText()`. OS/tool output goes as `Error::other(detail)`.
 
 ## Read when needed
 

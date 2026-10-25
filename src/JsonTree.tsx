@@ -1,4 +1,5 @@
 import { memo, useState } from "react";
+import { tn, useLang } from "./i18n";
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 
@@ -13,6 +14,7 @@ function Leaf({ v }: { v: Json }) {
 const PAGE = 200;
 
 const Node = memo(function Node({ name, v, depth }: { name?: string; v: Json; depth: number }) {
+  useLang();
   const [open, setOpen] = useState(depth < 2);
   const [shown, setShown] = useState(PAGE);
   const label = name !== undefined && <><span className="j-key">{name}</span><span className="j-punct">: </span></>;
@@ -27,11 +29,11 @@ const Node = memo(function Node({ name, v, depth }: { name?: string; v: Json; de
       <span className="j-toggle" onClick={() => setOpen(!open)}>{open ? "▾" : "▸"}</span>
       {label}
       <span className="j-punct">{l}</span>
-      {!open && <span className="muted" onClick={() => setOpen(true)}> {count} {Array.isArray(v) ? "items" : "keys"} </span>}
+      {!open && <span className="muted" onClick={() => setOpen(true)}> {tn(Array.isArray(v) ? "json.items" : "json.keys", count)} </span>}
       {open && (
         <div className="j-children">
           {entries.map(([k, x]) => <Node key={k} name={k} v={x} depth={depth + 1} />)}
-          {count > shown && <div className="j-row muted j-more" onClick={() => setShown(shown + PAGE * 5)}>… {count - shown} more</div>}
+          {count > shown && <div className="j-row muted j-more" onClick={() => setShown(shown + PAGE * 5)}>{tn("json.more", count - shown)}</div>}
         </div>
       )}
       <span className="j-punct">{r}</span>

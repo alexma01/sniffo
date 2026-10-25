@@ -1,5 +1,6 @@
 // Stroke icons drawn in currentColor, sized to the text around them.
 const PATHS = {
+  note: "M4 5h16v11H10l-4 4v-4H4z",
   pin: "M9 4h6l-1 6 3 3H7l3-3-1-6zM12 13v7",
   lock: "M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3",
   unlock: "M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 6.8-1.2",
