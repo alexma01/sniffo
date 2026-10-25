@@ -95,9 +95,9 @@ fn without_encoding(h: Headers) -> Headers {
 }
 
 /// Flows from a HAR document (ids are assigned by the engine on import).
-pub fn import(data: &str) -> Result<Vec<Flow>, String> {
-    let doc: Value = serde_json::from_str(data).map_err(|e| format!("not a HAR file: {e}"))?;
-    let entries = doc["log"]["entries"].as_array().ok_or("not a HAR file: missing log.entries")?;
+pub fn import(data: &str) -> Result<Vec<Flow>, crate::Error> {
+    let doc: Value = serde_json::from_str(data).map_err(|e| crate::Error::new("har_invalid").arg("detail", e))?;
+    let entries = doc["log"]["entries"].as_array().ok_or_else(|| crate::Error::new("har_invalid").arg("detail", "missing log.entries"))?;
     Ok(entries
         .iter()
         .filter_map(|e| {

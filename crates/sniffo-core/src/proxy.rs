@@ -397,18 +397,18 @@ impl Engine {
 
     /// Sends a message on a live WebSocket as if `to_server` ? the client : the server sent it.
     /// `binary` messages are given base64-encoded.
-    pub fn send_ws(&self, id: FlowId, to_server: bool, data: String, binary: bool) -> Result<(), String> {
+    pub fn send_ws(&self, id: FlowId, to_server: bool, data: String, binary: bool) -> Result<(), crate::Error> {
         let msg = if binary {
             use base64::Engine as _;
-            WsMsg::binary(base64::engine::general_purpose::STANDARD.decode(data.trim()).map_err(|e| format!("invalid base64: {e}"))?)
+            WsMsg::binary(base64::engine::general_purpose::STANDARD.decode(data.trim()).map_err(|e| crate::Error::new("ws_base64").arg("detail", e))?)
         } else {
             WsMsg::text(data)
         };
         let tx = self.inner.ws_inject.lock().unwrap().get(&(id, to_server)).cloned();
-        tx.ok_or("WebSocket connection is closed")?.send(msg).map_err(|_| "WebSocket connection is closed".into())
+        tx.ok_or(crate::Error::new("ws_closed"))?.send(msg).map_err(|_| crate::Error::new("ws_closed"))
     }
 
-    pub async fn start(&self, listener: TcpListener, ca: &RootCa, opts: StartOptions) -> Result<ProxyHandle, String> {
+    pub async fn start(&self, listener: TcpListener, ca: &RootCa, opts: StartOptions) -> Result<ProxyHandle, crate::Error> {
         let provider = Arc::new(aws_lc_rs::default_provider());
         let builder = ClientConfig::builder_with_provider(provider.clone()).with_safe_default_protocol_versions().map_err(|e| e.to_string())?;
         let tls = if opts.network.ignore_upstream_tls_errors {
@@ -461,14 +461,14 @@ impl Engine {
         }
     }
 
-    async fn launch<C>(&self, listener: TcpListener, ca: &RootCa, opts: &StartOptions, tls: ClientConfig, connector: C, tunnel: Option<Arc<TunnelVia>>) -> Result<ProxyHandle, String>
+    async fn launch<C>(&self, listener: TcpListener, ca: &RootCa, opts: &StartOptions, tls: ClientConfig, connector: C, tunnel: Option<Arc<TunnelVia>>) -> Result<ProxyHandle, crate::Error>
     where
         C: hudsucker::hyper_util::client::legacy::connect::Connect + Clone + Send + Sync + 'static,
     {
         let addr = listener.local_addr().map_err(|e| e.to_string())?;
         let authority = RcgenAuthority::new(ca.issuer().map_err(|e| e.to_string())?, 1_000, aws_lc_rs::default_provider());
         let reverse = match &opts.reverse_target {
-            Some(t) => Some(Arc::new(t.parse::<Uri>().map_err(|e| format!("reverse proxy target: {e}"))?)),
+            Some(t) => Some(Arc::new(t.parse::<Uri>().map_err(|e| crate::Error::new("reverse_target").arg("detail", e))?)),
             None => None,
         };
         let (tx, rx) = oneshot::channel::<()>();

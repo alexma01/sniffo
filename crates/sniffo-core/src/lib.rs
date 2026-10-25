@@ -4,6 +4,7 @@ pub mod ca;
 pub mod client;
 pub mod compose;
 pub mod devices;
+pub mod error;
 pub mod flow;
 pub mod har;
 pub mod intercept;
@@ -15,6 +16,7 @@ pub mod script;
 pub mod system;
 
 pub use ca::RootCa;
+pub use error::Error;
 pub use flow::{Flow, FlowId, FlowState, FlowSummary, Message, WsMessage};
 pub use proxy::{BreakpointHit, ScriptLog, Decision, Editable, Engine, FlowEvent, ProxyHandle, SslProxying, StartOptions};
 pub use rules::{Action, AllowList, Matcher, Rule, Rules};

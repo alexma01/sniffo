@@ -3,7 +3,7 @@ import { toast, toastError } from "./toast";
 import { backdrop } from "./backdrop";
 import { Icon } from "./icons";
 import { useEffect, useState } from "react";
-import { getLang, Key, Lang, LANGS, rich, setLang, t, useLang } from "./i18n";
+import { backendText, Coded, getLang, Key, Lang, LANGS, rich, setLang, t, useLang } from "./i18n";
 import { api, NetworkOptions, ProtoSchemas, ProxyStatus, ReverseProxy, SslProxying } from "./api";
 
 export const SCHEMAS_CHANGED = "sniffo:schemas";
@@ -25,12 +25,12 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
   const [net, setNet] = useState<NetworkOptions | null>(null);
   const [dns, setDns] = useState("");
   const [reverse, setReverse] = useState<ReverseProxy[]>([]);
-  const [reverseErrors, setReverseErrors] = useState<(string | null)[]>([]);
+  const [reverseErrors, setReverseErrors] = useState<(Coded | null)[]>([]);
   const [proto, setProto] = useState<ProtoSchemas | null>(null);
   const setProtoFiles = (files: string[]) => api.setProtoFiles(files).then((p) => {
     setProto(p); setMsg(null);
     window.dispatchEvent(new Event(SCHEMAS_CHANGED)); // open protobuf bodies reload their types
-  }, (e) => setMsg(String(e)));
+  }, (e) => setMsg(backendText(e)));
 
   useEffect(() => {
     api.getSsl().then((s) => { setSsl(s); setInclude(s.include.join("\n")); setExclude(s.exclude.join("\n")); });
@@ -57,12 +57,12 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
       toast(t("settings.saved"));
       onClose();
     } catch (e) {
-      setMsg(String(e));
+      setMsg(backendText(e));
     }
   };
 
   const trust = () =>
-    api.trustCa().then(() => { setMsg(t("settings.caInstalled")); toast(t("settings.caInstalledTrusted")); onChanged(); }, (e) => { setMsg(String(e)); toastError(e); });
+    api.trustCa().then(() => { setMsg(t("settings.caInstalled")); toast(t("settings.caInstalledTrusted")); onChanged(); }, (e) => { setMsg(backendText(e)); toastError(e); });
 
   return (
     <div className="modal-back" {...backdrop(onClose)}>
@@ -182,7 +182,7 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
               localhost:<input className="input" value={r.port} onChange={(e) => setReverse(reverse.map((x, j) => (j === i ? { ...x, port: Number(e.target.value.replace(/\D/g, "")) || 0 } : x)))} />
               →<input className="input wide grow" value={r.target} placeholder="https://api.example.com" onChange={(e) => setReverse(reverse.map((x, j) => (j === i ? { ...x, target: e.target.value.trim() } : x)))} />
               <button onClick={() => setReverse(reverse.filter((_, j) => j !== i))} aria-label={t("common.remove")}><Icon name="x" size={12} /></button>
-              {reverseErrors[i] && <span className="err small">{reverseErrors[i]}</span>}
+              {reverseErrors[i] && <span className="err small">{backendText(reverseErrors[i])}</span>}
             </div>
           ))}
           <button onClick={() => setReverse([...reverse, { enabled: true, port: 9300 + reverse.length, target: "http://localhost:3000" }])}>{t("settings.reverseAdd")}</button>

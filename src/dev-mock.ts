@@ -82,7 +82,7 @@ mockIPC((cmd, args) => {
       { id: "PHONE", name: "iPhone 14", platform: "ios_device", state: "connected", os: "iOS 26.6.1", emulator: false },
       { id: "Medium_Phone", name: "Medium Phone", platform: "android_avd", state: "Shutdown", os: "Android emulator", emulator: true },
     ];
-    case "device_command": return "done (mock)";
+    case "device_command": return { code: "other", detail: "done (mock)" };
     case "list_browsers": return [{ id: "chrome", name: "Google Chrome" }, { id: "firefox", name: "Firefox" }];
     case "launch_browser": return;
     case "terminal_env": return [["HTTPS_PROXY", "http://127.0.0.1:9191"], ["NODE_EXTRA_CA_CERTS", "~/sniffo-ca.pem"], ["SSL_CERT_FILE", "~/sniffo-ca-bundle.pem"]];
@@ -94,7 +94,7 @@ mockIPC((cmd, args) => {
     case "decode_proto": return [{ id: 7, name: "Ada", status: "ACTIVE" }];
     case "send_ws_message": {
       const f = flows.find((f) => f.id === a.id)!;
-      if (a.binary && !/^[A-Za-z0-9+/=\s]*$/.test(a.data)) throw "invalid base64";
+      if (a.binary && !/^[A-Za-z0-9+/=\s]*$/.test(a.data)) throw { code: "ws_base64", detail: "mock" };
       f.ws_messages.push({ outgoing: a.toServer, time_ms: Date.now() - f.started_ms, kind: a.binary ? "binary" : "text", size: a.data.length, data: a.data, injected: true });
       emit("flows", [{ type: "upsert", data: summary(f) }]);
       return;

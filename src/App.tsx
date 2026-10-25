@@ -17,7 +17,7 @@ import { FlowList, HIGHLIGHTS, isTunnel, listCommand } from "./FlowList";
 import { Settings } from "./Settings";
 import { Sidebar } from "./Sidebar";
 import { setLocalIps } from "./clients";
-import { Key, t, tn, useLang } from "./i18n";
+import { backendText, Key, t, tn, useLang } from "./i18n";
 import "./App.css";
 
 function useFlows() {
@@ -184,7 +184,7 @@ export default function App() {
         const s = await api.status();
         if (s.auto_system_proxy && !s.system_proxy) await api.setSystemProxy(true);
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(backendText(e)))
       .finally(() => refresh().finally(() => setPhase(null)));
   };
   // Restoring the OS proxy settings takes a few seconds (networksetup per network service).
@@ -194,7 +194,7 @@ export default function App() {
   };
   const setSystemProxy = (on: boolean) => {
     setPhase("proxy");
-    api.setSystemProxy(on).then(() => setError(null), (err) => setError(String(err))).finally(() => refresh().finally(() => setPhase(null)));
+    api.setSystemProxy(on).then(() => setError(null), (err) => setError(backendText(err))).finally(() => refresh().finally(() => setPhase(null)));
   };
   /** What the UI shows: a transition in flight wins over the last known status. */
   const proxyState = phase === "starting" || phase === "stopping" ? phase : status?.running ? "running" : status ? "stopped" : "starting";

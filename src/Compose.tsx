@@ -2,7 +2,7 @@ import { useState } from "react";
 import { backdrop } from "./backdrop";
 import { CodeArea } from "./highlight";
 import { api } from "./api";
-import { t, useLang } from "./i18n";
+import { backendText, t, useLang } from "./i18n";
 import { headersToText, textToHeaders } from "./RulesEditor";
 import { parseCurl, Req } from "./snippets";
 
@@ -25,7 +25,7 @@ export function Compose({ initial, onClose }: { initial?: Req; onClose: () => vo
       setMethod(r.method); setUrl(r.url); setHeaders(headersToText(r.headers)); setBody(r.body); setCurl("");
       setMsg(null);
     } catch (e) {
-      setMsg({ ok: false, text: String(e) });
+      setMsg({ ok: false, text: backendText(e) });
     }
   };
 
@@ -35,7 +35,7 @@ export function Compose({ initial, onClose }: { initial?: Req; onClose: () => vo
       const status = await api.compose(method, url, textToHeaders(headers), body);
       setMsg({ ok: true, text: t("compose.sent", { status }) });
     } catch (e) {
-      setMsg({ ok: false, text: String(e) });
+      setMsg({ ok: false, text: backendText(e) });
     } finally {
       setBusy(false);
     }

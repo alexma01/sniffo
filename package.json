@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test:ui": "node tests-ui/snippets.test.ts && node tests-ui/protobuf.test.ts",
+    "test:ui": "node tests-ui/snippets.test.ts && node tests-ui/protobuf.test.ts && node tests-ui/backend-codes.test.ts",
     "test:e2e": "playwright test",
     "test": "pnpm test:ui && cargo test -p sniffo-core && cargo test -p sniffo"
   },

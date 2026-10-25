@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { Coded } from "./i18n";
 import { listen } from "@tauri-apps/api/event";
 
 export type FlowState = "pending" | "paused" | "complete" | "failed";
@@ -143,9 +144,9 @@ export const api = {
   getNetwork: () => invoke<NetworkOptions>("get_network"),
   setNetwork: (network: NetworkOptions) => invoke<void>("set_network", { network }),
   getReverse: () => invoke<ReverseProxy[]>("get_reverse"),
-  setReverse: (reverse: ReverseProxy[]) => invoke<(string | null)[]>("set_reverse", { reverse }),
+  setReverse: (reverse: ReverseProxy[]) => invoke<(Coded | null)[]>("set_reverse", { reverse }),
   listDevices: () => invoke<Device[]>("list_devices"),
-  deviceCommand: (device: string, command: DeviceCommand) => invoke<string>("device_command", { device, command }),
+  deviceCommand: (device: string, command: DeviceCommand) => invoke<Coded>("device_command", { device, command }),
   listBrowsers: () => invoke<{ id: string; name: string }[]>("list_browsers"),
   /** Opens the browser with its own Sniffo profile (proxy + CA preconfigured). */
   launchBrowser: (id: string) => invoke<void>("launch_browser", { id }),

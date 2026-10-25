@@ -38,6 +38,7 @@ pnpm test:e2e                    # Playwright, on demand only
 - Match surrounding code: small, few comments, no new deps for what a few lines do.
 - New/changed Tauri command → update `src/api.ts`, `src/dev-mock.ts` and `src-tauri/tests/commands.rs`.
 - UI text goes through `t()` with keys in `src/locales/parts/*.ts`, English and Italian (see ui.md).
+- User-facing backend errors and device results: `sniffo_core::Error::new("code").arg("name", v)`, never prose strings; text in `src/locales/parts/backend.ts` (`backend.<code>`), shown via `backendText()`. OS/tool output goes as `Error::other(detail)`.
 
 ## Read when needed
 

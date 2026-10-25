@@ -54,8 +54,8 @@ pub fn spki_hash(ca: &RootCa) -> Result<String, String> {
 }
 
 /// Starts `id` with its own profile under `profiles` (kept between launches) using the proxy.
-pub fn launch(id: &str, port: u16, ca: &RootCa, ca_path: &Path, profiles: &Path) -> Result<(), String> {
-    let b = browsers().into_iter().find(|b| b.id == id).ok_or(format!("{id} is not installed"))?;
+pub fn launch(id: &str, port: u16, ca: &RootCa, ca_path: &Path, profiles: &Path) -> Result<(), crate::Error> {
+    let b = browsers().into_iter().find(|b| b.id == id).ok_or_else(|| crate::Error::new("browser_missing").arg("id", id))?;
     let profile = profiles.join(id);
     fs::create_dir_all(&profile).map_err(|e| e.to_string())?;
     let mut cmd = Command::new(&b.path);
@@ -70,7 +70,7 @@ pub fn launch(id: &str, port: u16, ca: &RootCa, ca_path: &Path, profiles: &Path)
             .arg(format!("--ignore-certificate-errors-spki-list={}", spki_hash(ca)?))
             .args(["--no-first-run", "--no-default-browser-check"]);
     }
-    let mut child = cmd.spawn().map_err(|e| format!("starting {}: {e}", b.name))?;
+    let mut child = cmd.spawn().map_err(|e| crate::Error::new("browser_start").arg("name", b.name).arg("detail", e))?;
     std::thread::spawn(move || child.wait());
     Ok(())
 }

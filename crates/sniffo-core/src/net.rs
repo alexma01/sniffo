@@ -7,6 +7,7 @@ use hudsucker::rustls::{
     pki_types::{CertificateDer, ServerName, UnixTime},
 };
 use hyper_util::client::legacy::connect::dns::{GaiResolver, Name};
+use crate::Error;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -50,17 +51,17 @@ pub struct NetworkOptions {
 }
 
 impl Upstream {
-    pub fn uri(&self) -> Result<hudsucker::hyper::Uri, String> {
+    pub fn uri(&self) -> Result<hudsucker::hyper::Uri, Error> {
         if self.host.trim().is_empty() {
-            return Err("upstream proxy: enter its host".into());
+            return Err(Error::new("upstream_host"));
         }
-        format!("http://{}:{}", self.host.trim(), self.port).parse().map_err(|e| format!("upstream proxy address: {e}"))
+        format!("http://{}:{}", self.host.trim(), self.port).parse().map_err(|e| Error::new("upstream_address").arg("detail", e))
     }
 }
 
 impl NetworkOptions {
     /// Errors a proxy started with these options would fail with: checked before saving them.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), Error> {
         OverrideResolver::new(&self.dns)?;
         self.upstream.as_ref().map(Upstream::uri).transpose().map(drop)
     }
@@ -74,10 +75,10 @@ pub struct OverrideResolver {
 }
 
 impl OverrideResolver {
-    pub fn new(entries: &[(String, String)]) -> Result<Self, String> {
+    pub fn new(entries: &[(String, String)]) -> Result<Self, Error> {
         let map = entries
             .iter()
-            .map(|(h, ip)| ip.trim().parse().map(|ip| (h.trim().to_ascii_lowercase(), ip)).map_err(|_| format!("DNS override: '{ip}' is not an IP address")))
+            .map(|(h, ip)| ip.trim().parse().map(|ip| (h.trim().to_ascii_lowercase(), ip)).map_err(|_| Error::new("dns_ip").arg("ip", ip)))
             .collect::<Result<_, _>>()?;
         Ok(Self { map: Arc::new(map), gai: GaiResolver::new() })
     }

@@ -4,7 +4,7 @@ import { toast, toastError } from "./toast";
 import { Icon, IconName } from "./icons";
 import { useEffect, useRef, useState } from "react";
 import { api, Device, DeviceCommand, ProxyStatus } from "./api";
-import { Key, rich, t, useLang } from "./i18n";
+import { backendText, Key, rich, t, useLang } from "./i18n";
 
 const ICON: Record<Device["platform"], IconName> = { ios_simulator: "phone", ios_device: "phone", android: "android", android_avd: "android" };
 const kind = (p: Device["platform"]) => t(`devices.kind.${p}`);
@@ -152,9 +152,9 @@ function Connected({ show, empty, port, compact }: { show: (d: Device) => boolea
     setBusy(true);
     try {
       const out = await api.deviceCommand(device.id, cmd);
-      setLog((l) => [{ ok: true, text: `${device.name}: ${out}` }, ...l]);
+      setLog((l) => [{ ok: true, text: `${device.name}: ${backendText(out)}` }, ...l]);
     } catch (e) {
-      setLog((l) => [{ ok: false, text: `${device.name} — ${t(label)}: ${e}` }, ...l]);
+      setLog((l) => [{ ok: false, text: `${device.name} — ${t(label)}: ${backendText(e)}` }, ...l]);
     } finally {
       setBusy(false);
       reload();

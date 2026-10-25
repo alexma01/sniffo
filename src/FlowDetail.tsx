@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 
 import { Icon } from "./icons";
-import { rich, t, useLang } from "./i18n";
+import { backendText, rich, t, useLang } from "./i18n";
 import { api, Flow, FlowSummary, formatBytes, header, Headers, WsMessage } from "./api";
 import { CodeArea, highlightHttp, highlightJson, highlightMaybeJson } from "./highlight";
 import { JsonTree } from "./JsonTree";
@@ -105,7 +105,7 @@ function ProtoBody({ flow, response, bytes, contentType }: { flow: Flow; respons
   useEffect(() => {
     setDecoded(null); setError(null);
     if (!type) return;
-    api.decodeProto(flow.id, response, type).then(setDecoded, (e) => setError(String(e)));
+    api.decodeProto(flow.id, response, type).then(setDecoded, (e) => setError(backendText(e)));
   }, [flow.id, response, type, flow.state]);
 
   const choose = (v: string) => {
@@ -314,7 +314,7 @@ function Messages({ flowId, messages, dropped }: { flowId: number; messages: WsM
   const [draft, setDraft] = useState({ toServer: true, binary: false, data: "" });
   const [error, setError] = useState<string | null>(null);
   const closed = messages.some((m) => m.kind === "close");
-  const send = () => api.sendWs(flowId, draft.toServer, draft.data, draft.binary).then(() => setError(null), (e) => setError(String(e)));
+  const send = () => api.sendWs(flowId, draft.toServer, draft.data, draft.binary).then(() => setError(null), (e) => setError(backendText(e)));
   const format = () => { try { setDraft({ ...draft, data: JSON.stringify(JSON.parse(draft.data), null, 2) }); setError(null); } catch (e) { setError(String(e)); } };
   const onToggle = useCallback((n: number) => setOpen((o) => (o === n ? null : n)), []);
   const onEdit = useCallback((m: WsMessage) => setDraft({ toServer: m.outgoing, binary: m.kind === "binary", data: m.data }), []);

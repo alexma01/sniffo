@@ -38,3 +38,12 @@ export const tn = (key: string, n: number) =>
 /** Translations with inline <b>, <i>, <code> (no attributes, no nesting) rendered as elements. */
 export const rich = (s: string): ReactNode[] =>
   s.split(/<(b|i|code)>(.*?)<\/\1>/).map((p, i, a) => (i % 3 === 1 ? createElement(p, { key: i }, a[i + 1]) : i % 3 === 2 ? null : p));
+
+/** Backend errors and device results arrive as `{ code, ...args }` (sniffo_core::Error): shown as "backend.<code>". */
+export interface Coded { code: string; [arg: string]: string }
+export function backendText(e: unknown) {
+  if (!e || typeof e !== "object" || !("code" in e)) return String(e);
+  const { code, ...args } = e as Coded;
+  const key = `backend.${code}`;
+  return key in en ? t(key as Key, args) : args.detail ?? code;
+}

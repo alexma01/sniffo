@@ -4,7 +4,7 @@ import { backdrop } from "./backdrop";
 import { CodeArea } from "./highlight";
 import { useEffect, useState } from "react";
 import { Action, api, Headers, Rewrite, Rule, Rules } from "./api";
-import { Key, rich, t, useLang } from "./i18n";
+import { backendText, Key, rich, t, useLang } from "./i18n";
 
 const ACTIONS: Action["type"][] = ["breakpoint", "map_local", "map_local_dir", "map_remote", "block", "throttle", "script", "rewrite"];
 export const actionLabel = (type: Action["type"]) => t(`rules.action.${type}`);
@@ -204,7 +204,7 @@ export function RulesEditor(props: { draft?: Rule | null; onClose: () => void })
   // Local state first, so the next edit (e.g. blur then click) builds on this one.
   const persist = (next: Rules) => {
     setRules(next);
-    return api.setRules(next).then(() => { setMsg(null); return true; }, (e) => { setMsg(String(e)); toastError(e); api.getRules().then(setRules); return false; });
+    return api.setRules(next).then(() => { setMsg(null); return true; }, (e) => { setMsg(backendText(e)); toastError(e); api.getRules().then(setRules); return false; });
   };
 
   if (!rules) return null;
@@ -278,11 +278,11 @@ export function RulesEditor(props: { draft?: Rule | null; onClose: () => void })
             <div className="row">
               <button onClick={async () => {
                 const path = await open({ filters: [{ name: t("rules.fileType"), extensions: ["json"] }] });
-                if (typeof path === "string") api.importRules(path).then((n) => { setMsg(t("rules.imported", { n })); api.getRules().then(setRules); }, (e) => setMsg(String(e)));
+                if (typeof path === "string") api.importRules(path).then((n) => { setMsg(t("rules.imported", { n })); api.getRules().then(setRules); }, (e) => setMsg(backendText(e)));
               }}>{t("rules.import")}</button>
               <button onClick={async () => {
                 const path = await save({ filters: [{ name: t("rules.fileType"), extensions: ["json"] }], defaultPath: "sniffo-rules.json" });
-                if (path) api.exportRules(path).then((n) => setMsg(t("rules.exported", { n })), (e) => setMsg(String(e)));
+                if (path) api.exportRules(path).then((n) => setMsg(t("rules.exported", { n })), (e) => setMsg(backendText(e)));
               }}>{t("rules.export")}</button>
             </div>
             <h4>{t("rules.noCaching")}</h4>
