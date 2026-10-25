@@ -187,6 +187,8 @@ export const api = {
   setSsl: (ssl: SslProxying) => invoke<void>("set_ssl_proxying", { ssl }),
   onFlows: (cb: (events: FlowEvent[]) => void) => listen<FlowEvent[]>("flows", (e) => cb(e.payload)),
   onResync: (cb: () => void) => listen("flows:resync", () => cb()),
+  onQuitRequested: (cb: () => void) => listen("quit:requested", () => cb()),
+  quit: () => invoke<void>("quit_app"),
 };
 
 export function header(headers: Headers, name: string): string | undefined {

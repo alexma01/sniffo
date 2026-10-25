@@ -4,7 +4,7 @@ import { Icon } from "./icons";
 import { Logo } from "./Logo";
 import { Command, Palette } from "./Palette";
 import { api, BreakpointHit, FlowEvent, ScriptLog, FlowSummary, formatBytes, ProxyStatus, Rule, Rules, SslProxying } from "./api";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { BreakpointEditor } from "./BreakpointEditor";
 import { Compose } from "./Compose";
 import { Diff } from "./Diff";
@@ -206,6 +206,19 @@ export default function App() {
     // LAN addresses change when Wi-Fi/VPN changes.
     const t = setInterval(() => api.status().then(setStatus), 10_000);
     return () => clearInterval(t);
+  }, []);
+
+  // Flows live in memory only: the backend holds back a quit (window close, ⌘Q) until we confirm.
+  useEffect(() => {
+    let asking = false;
+    const un = api.onQuitRequested(async () => {
+      if (asking) return;
+      asking = true;
+      const ok = await ask(t("app.quitConfirm"), { title: t("app.quitTitle"), kind: "warning", okLabel: t("app.quitOk"), cancelLabel: t("app.quitCancel") });
+      asking = false;
+      if (ok) api.quit();
+    });
+    return () => { un.then((f) => f()); };
   }, []);
 
   // Body search runs in the backend: debounced while typing, then re-run at most every 2 s while
