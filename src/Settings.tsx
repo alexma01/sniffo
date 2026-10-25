@@ -2,7 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { toast, toastError } from "./toast";
 import { backdrop } from "./backdrop";
 import { Icon } from "./icons";
-import { useEffect, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { backendText, Coded, getLang, Key, Lang, LANGS, rich, setLang, t, useLang } from "./i18n";
 import { api, NetworkOptions, ProtoSchemas, ProxyStatus, ReverseProxy, SslProxying } from "./api";
 
@@ -12,13 +12,50 @@ const SECTIONS = ["general", "ssl", "network", "protobuf", "reverse"] as const;
 type Section = (typeof SECTIONS)[number];
 
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
+const hostTokens = (s: string) => s.split(/[\s,]+/).filter(Boolean);
+
+/** Host patterns as rows: click one to edit in place (empty = remove), × removes, the bottom field adds. */
+function HostList({ label, hosts, onChange, placeholder }: { label: ReactNode; hosts: string[]; onChange: (h: string[]) => void; placeholder?: string }) {
+  const [editing, setEditing] = useState<number | null>(null);
+  const [draft, setDraft] = useState("");
+  const [add, setAdd] = useState("");
+  const set = (list: string[]) => onChange([...new Set(list)]);
+  const commit = (i: number) => {
+    const v = draft.trim();
+    set(v ? hosts.map((h, j) => (j === i ? v : h)) : hosts.filter((_, j) => j !== i));
+    setEditing(null);
+  };
+  const append = () => { if (add.trim()) { set([...hosts, ...hostTokens(add)]); setAdd(""); } };
+  return (
+    <div className="hostlist">
+      <span>{label}</span>
+      <ul>
+        {hosts.map((h, i) => (
+          <li key={h}>
+            {editing === i
+              ? <input className="input wide grow" autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={() => commit(i)}
+                  onKeyDown={(e) => { if (e.key === "Enter") commit(i); if (e.key === "Escape") setEditing(null); }} />
+              : <button className="host grow ellipsis" title={t("settings.hostEdit")} onClick={() => { setEditing(i); setDraft(h); }}>{h}</button>}
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => set(hosts.filter((_, j) => j !== i))} aria-label={t("common.remove")}><Icon name="x" size={12} /></button>
+          </li>
+        ))}
+        {hosts.length === 0 && <li className="muted">{t("settings.hostEmpty")}</li>}
+      </ul>
+      <div className="row tight">
+        <input className="input wide grow" value={add} placeholder={placeholder ?? t("settings.hostNew")} aria-label={t("settings.hostAdd")}
+          onChange={(e) => setAdd(e.target.value)} onKeyDown={(e) => e.key === "Enter" && append()} />
+        <button onClick={append} disabled={!add.trim()}>{t("settings.hostAdd")}</button>
+      </div>
+    </div>
+  );
+}
 
 export function Settings(props: { status: ProxyStatus | null; onClose: () => void; onChanged: () => void }) {
   const { status, onClose, onChanged } = props;
   useLang();
   const [ssl, setSsl] = useState<SslProxying | null>(null);
-  const [include, setInclude] = useState("");
-  const [exclude, setExclude] = useState("");
+  const [include, setInclude] = useState<string[]>([]);
+  const [exclude, setExclude] = useState<string[]>([]);
   const [port, setPort] = useState(status?.address?.split(":").pop() ?? "9191");
   const [msg, setMsg] = useState<string | null>(null);
   const [tab, setTab] = useState<Section>("general");
@@ -33,7 +70,7 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
   }, (e) => setMsg(backendText(e)));
 
   useEffect(() => {
-    api.getSsl().then((s) => { setSsl(s); setInclude(s.include.join("\n")); setExclude(s.exclude.join("\n")); });
+    api.getSsl().then((s) => { setSsl(s); setInclude(s.include); setExclude(s.exclude); });
     api.getNetwork().then((n) => { setNet(n); setDns(n.dns.map(([h, ip]) => `${ip} ${h}`).join("\n")); });
     api.getReverse().then(setReverse);
     api.getProtoSchemas().then(setProto);
@@ -42,7 +79,7 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
   const save = async () => {
     if (!ssl) return;
     try {
-      await api.setSsl({ enabled: ssl.enabled, include: lines(include), exclude: lines(exclude) });
+      await api.setSsl({ enabled: ssl.enabled, include, exclude });
       if (net) {
         // hosts-file style: "IP host"
         const entries = lines(dns).map((l) => l.split(/\s+/)).filter((p) => p.length >= 2).map(([ip, h]) => [h, ip] as [string, string]);
@@ -107,12 +144,8 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
             <label className="row"><input type="checkbox" checked={ssl.enabled} onChange={(e) => setSsl({ ...ssl, enabled: e.target.checked })} /> {t("settings.decrypt")}</label>
           )}
           <div className="cols">
-            <label><span>{rich(t("settings.include"))}</span>
-              <textarea value={include} onChange={(e) => setInclude(e.target.value)} rows={6} />
-            </label>
-            <label>{t("settings.exclude")}
-              <textarea value={exclude} onChange={(e) => setExclude(e.target.value)} rows={6} placeholder="*.apple.com" />
-            </label>
+            <HostList label={rich(t("settings.include"))} hosts={include} onChange={setInclude} placeholder="*.example.com" />
+            <HostList label={t("settings.exclude")} hosts={exclude} onChange={setExclude} placeholder="*.apple.com" />
           </div>
         </section>
         </>}

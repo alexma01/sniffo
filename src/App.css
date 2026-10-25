@@ -171,6 +171,12 @@ button.warn { border-color: var(--warn); color: var(--warn); background: color-m
 .row.end button { height: 30px; padding: 0 14px; border-radius: 8px; }
 .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .cols label { display: flex; flex-direction: column; gap: 4px; }
+.hostlist { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.hostlist ul { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-3); min-height: 120px; max-height: 240px; overflow: auto; }
+.hostlist li { display: flex; align-items: center; gap: 4px; padding: 1px 2px; border-radius: 5px; }
+.hostlist li:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.hostlist li.muted { padding: 6px; }
+.hostlist .host { text-align: left; border: 0; background: none; font: 12px/1.6 var(--font-mono); padding: 2px 6px; cursor: text; }
 .input, textarea { padding: 5px 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-3); color: inherit; font: 12px/1.6 var(--font-mono); outline: none; }
 .input:focus, textarea:focus, select:focus { border-color: var(--accent-text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
 .input { width: 90px; }
