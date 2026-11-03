@@ -160,7 +160,7 @@ async fn resolves_local_client_app() {
     let up = upstream_http().await;
     let s = start(vec![]).await;
     let status = tokio::process::Command::new("curl")
-        .args(["-s", "--noproxy", "", "-o", "/dev/null", "-x", &format!("http://{}", s.proxy.addr), &format!("http://{up}/who")])
+        .args(["-s", "--noproxy", "", "-o", "/dev/null", "-x", &format!("http://{}", s.proxy.addr), &format!("http://{up}/slow")])
         .status()
         .await
         .unwrap();
@@ -211,6 +211,14 @@ async fn stop_is_quick_with_open_tunnels() {
     let t = std::time::Instant::now();
     s.proxy.stop().await;
     assert!(t.elapsed() < std::time::Duration::from_secs(2), "stop took {:?}", t.elapsed());
-    tokio::net::TcpListener::bind(addr).await.expect("port is free again");
+    // The OS may hold the port for a moment after the listener is gone (the app retries too).
+    let mut bound = None;
+    for _ in 0..20 {
+        match tokio::net::TcpListener::bind(addr).await {
+            Ok(l) => { bound = Some(l); break; }
+            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(50)).await,
+        }
+    }
+    assert!(bound.is_some(), "port is free again");
     drop(tcp);
 }
