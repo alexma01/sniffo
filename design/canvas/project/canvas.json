@@ -1,0 +1,53 @@
+{
+  "v": 3,
+  "createdOnFiles": { "at": "2026-10-20T14:33:00.214Z", "v": 1 },
+  "attachments": {},
+  "title": "Sniffo UI",
+  "launch": { "view": "canvas", "page": "dark" },
+  "pages": [
+    { "id": "dark", "name": "Scuro" },
+    { "id": "light", "name": "Chiaro" },
+    { "id": "icon", "name": "Icona" }
+  ],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1280, "h": 800, "title": "1 · Finestra principale", "radius": 12, "page": "dark" },
+    "ScrEmpty.dc.html": { "x": 1360, "y": 0, "w": 1280, "h": 800, "title": "2 · Stato vuoto", "radius": 12, "page": "dark" },
+    "ScrWs.dc.html": { "x": 2720, "y": 0, "w": 1280, "h": 800, "title": "3 · WebSocket + console", "radius": 12, "page": "dark" },
+    "ScrSsl.dc.html": { "x": 0, "y": 920, "w": 1280, "h": 800, "title": "4 · Tunnel HTTPS (SSL non attivo)", "radius": 12, "page": "dark" },
+    "ScrMenu.dc.html": { "x": 1360, "y": 920, "w": 1280, "h": 800, "title": "5 · Menu contestuale + toast", "radius": 12, "page": "dark" },
+    "ScrPalette.dc.html": { "x": 2720, "y": 920, "w": 1280, "h": 800, "title": "6 · Command palette ⌘P", "radius": 12, "page": "dark" },
+    "ScrSettings.dc.html": { "x": 0, "y": 1840, "w": 1280, "h": 800, "title": "7 · Settings", "radius": 12, "page": "dark" },
+    "ScrDevices.dc.html": { "x": 1360, "y": 1840, "w": 1280, "h": 800, "title": "8 · Devices", "radius": 12, "page": "dark" },
+    "ScrRules.dc.html": { "x": 2720, "y": 1840, "w": 1280, "h": 800, "title": "9 · Rules", "radius": 12, "page": "dark" },
+    "ScrCompose.dc.html": { "x": 0, "y": 2760, "w": 1280, "h": 800, "title": "10 · Compose request", "radius": 12, "page": "dark" },
+    "ScrBreakpoint.dc.html": { "x": 1360, "y": 2760, "w": 1280, "h": 800, "title": "11 · Breakpoint", "radius": 12, "page": "dark" },
+    "ScrDiff.dc.html": { "x": 2720, "y": 2760, "w": 1280, "h": 800, "title": "12 · Diff", "radius": 12, "page": "dark" },
+
+    "SignalLight.dc.html": { "x": 0, "y": 0, "w": 1280, "h": 800, "title": "1 · Finestra principale", "radius": 12, "page": "light" },
+    "ScrEmptyLight.dc.html": { "x": 1360, "y": 0, "w": 1280, "h": 800, "title": "2 · Stato vuoto", "radius": 12, "page": "light" },
+    "ScrWsLight.dc.html": { "x": 2720, "y": 0, "w": 1280, "h": 800, "title": "3 · WebSocket + console", "radius": 12, "page": "light" },
+    "ScrSslLight.dc.html": { "x": 0, "y": 920, "w": 1280, "h": 800, "title": "4 · Tunnel HTTPS (SSL non attivo)", "radius": 12, "page": "light" },
+    "ScrMenuLight.dc.html": { "x": 1360, "y": 920, "w": 1280, "h": 800, "title": "5 · Menu contestuale + toast", "radius": 12, "page": "light" },
+    "ScrPaletteLight.dc.html": { "x": 2720, "y": 920, "w": 1280, "h": 800, "title": "6 · Command palette ⌘P", "radius": 12, "page": "light" },
+    "ScrSettingsLight.dc.html": { "x": 0, "y": 1840, "w": 1280, "h": 800, "title": "7 · Settings", "radius": 12, "page": "light" },
+    "ScrDevicesLight.dc.html": { "x": 1360, "y": 1840, "w": 1280, "h": 800, "title": "8 · Devices", "radius": 12, "page": "light" },
+    "ScrRulesLight.dc.html": { "x": 2720, "y": 1840, "w": 1280, "h": 800, "title": "9 · Rules", "radius": 12, "page": "light" },
+    "ScrComposeLight.dc.html": { "x": 0, "y": 2760, "w": 1280, "h": 800, "title": "10 · Compose request", "radius": 12, "page": "light" },
+    "ScrBreakpointLight.dc.html": { "x": 1360, "y": 2760, "w": 1280, "h": 800, "title": "11 · Breakpoint", "radius": 12, "page": "light" },
+    "ScrDiffLight.dc.html": { "x": 2720, "y": 2760, "w": 1280, "h": 800, "title": "12 · Diff", "radius": 12, "page": "light" },
+
+    "AppIcon.dc.html": { "x": 0, "y": 0, "w": 1280, "h": 560, "title": "Icona app — Mascotte", "page": "icon" }
+  },
+  "order": [
+    "Main.dc.html", "ScrEmpty.dc.html", "ScrWs.dc.html", "ScrSsl.dc.html", "ScrMenu.dc.html", "ScrPalette.dc.html",
+    "ScrSettings.dc.html", "ScrDevices.dc.html", "ScrRules.dc.html", "ScrCompose.dc.html", "ScrBreakpoint.dc.html", "ScrDiff.dc.html",
+    "SignalLight.dc.html", "ScrEmptyLight.dc.html", "ScrWsLight.dc.html", "ScrSslLight.dc.html", "ScrMenuLight.dc.html", "ScrPaletteLight.dc.html",
+    "ScrSettingsLight.dc.html", "ScrDevicesLight.dc.html", "ScrRulesLight.dc.html", "ScrComposeLight.dc.html", "ScrBreakpointLight.dc.html", "ScrDiffLight.dc.html",
+    "AppIcon.dc.html"
+  ],
+  "notes": {
+    "titleDark": { "x": 0, "y": -300, "text": "Sniffo · Signal — Scuro", "kind": "title1", "maxW": 4000, "page": "dark" },
+    "titleLight": { "x": 0, "y": -300, "text": "Sniffo · Signal — Chiaro", "kind": "title1", "maxW": 4000, "page": "light" }
+  },
+  "designSystems": []
+}

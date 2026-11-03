@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sniffo settings</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position: relative; width: 1280px; height: 800px; overflow: hidden; font-family: Inter, -apple-system, system-ui, sans-serif; font-size: 13px; line-height: 1.4; color: {{c.fg}};">
+  <dc-import name="Main" direction="signal" dark="{{dark}}" hint-size="1280px,800px"></dc-import>
+  <div style="position: absolute; inset: 0; background: {{c.scrim}}; display: flex; align-items: center; justify-content: center;">
+    <div role="dialog" aria-label="Settings" style="width: 860px; height: 600px; display: flex; border-radius: 14px; overflow: hidden; background: {{c.modal}}; box-shadow: {{c.shadow}};">
+
+      <nav aria-label="Settings sections" style="width: 210px; flex: none; padding: 18px 10px; display: flex; flex-direction: column; gap: 2px; background: {{c.chrome}}; border-right: 1px solid {{c.border}};">
+        <div style="padding: 0 10px 12px; font-size: 15px; font-weight: 700;">Settings</div>
+        <sc-for list="{{nav}}" as="n" hint-placeholder-count="6">
+          <a href="#" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 10px; border-radius: 7px; text-decoration: none; color: {{c.fg}}; background: {{n.bg}}; font-weight: {{n.weight}};">
+            <span style="width: 7px; height: 7px; border-radius: 2px; background: {{n.dot}};"></span>{{n.label}}
+          </a>
+        </sc-for>
+      </nav>
+
+      <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+        <div style="flex: 1; min-height: 0; overflow: hidden; padding: 22px 26px; display: flex; flex-direction: column; gap: 18px;">
+          <div>
+            <div style="font-size: 17px; font-weight: 600;">SSL Proxying</div>
+            <div style="color: {{c.muted}}; margin-top: 2px;">Decrypt HTTPS for the hosts you choose. Everything else stays an untouched tunnel.</div>
+          </div>
+
+          <label style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-radius: 10px; background: {{c.chrome}}; border: 1px solid {{c.border}};">
+            <span><span style="font-weight: 600;">Decrypt HTTPS traffic</span><br><span style="font-size: 12px; color: {{c.muted}};">Uses the Sniffo Root CA · trusted by this Mac</span></span>
+            <span style="width: 34px; height: 20px; padding: 2px; box-sizing: border-box; border-radius: 999px; background: {{c.accent}}; display: flex; justify-content: flex-end;"><span style="width: 16px; height: 16px; border-radius: 50%; background: {{c.onAccent}};"></span></span>
+          </label>
+
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{c.muted}};">Include hosts</div>
+              <div style="border: 1px solid {{c.border}}; border-radius: 10px; overflow: hidden;">
+                <sc-for list="{{include}}" as="h" hint-placeholder-count="4">
+                  <div style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-bottom: 1px solid {{c.border}}; font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                    <span style="flex: 1;">{{h}}</span><span style="color: {{c.muted}};">✕</span>
+                  </div>
+                </sc-for>
+                <div style="display: flex; align-items: center; height: 32px; padding: 0 12px; color: {{c.muted}}; font-size: 12px;">+ Add host  <span style="margin-left: 6px; font-family: 'JetBrains Mono', monospace;">*.example.com</span></div>
+              </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{c.muted}};">Exclude hosts</div>
+              <div style="border: 1px solid {{c.border}}; border-radius: 10px; overflow: hidden;">
+                <sc-for list="{{exclude}}" as="h" hint-placeholder-count="2">
+                  <div style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-bottom: 1px solid {{c.border}}; font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                    <span style="flex: 1;">{{h}}</span><span style="color: {{c.muted}};">✕</span>
+                  </div>
+                </sc-for>
+                <div style="display: flex; align-items: center; height: 32px; padding: 0 12px; color: {{c.muted}}; font-size: 12px;">+ Add host</div>
+              </div>
+              <div style="font-size: 12px; color: {{c.muted}};">Excluded hosts win over includes. Pinned apps (banking, Apple services) belong here.</div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 10px; border: 1px solid {{c.border}};">
+            <div style="flex: 1;"><div style="font-weight: 600;">Root certificate</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: {{c.muted}};">~/Library/Application Support/dev.sniffo.app/sniffo-ca.pem</div></div>
+            <span style="padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 500; color: {{c.ok}}; background: {{c.okTint}};">Trusted</span>
+            <button type="button" style="height: 28px; padding: 0 12px; border-radius: 8px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.fg}}; font: inherit; font-size: 12px; font-weight: 500;">Show in Finder</button>
+          </div>
+        </div>
+        <div style="flex: none; display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid {{c.border}};">
+          <button type="button" style="height: 30px; padding: 0 14px; border-radius: 8px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.fg}}; font: inherit; font-weight: 500;">Cancel</button>
+          <button type="button" style="height: 30px; padding: 0 16px; border-radius: 8px; border: none; background: {{c.accent}}; color: {{c.onAccent}}; font: inherit; font-weight: 600;">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":true},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? true;
+    const c = dark
+      ? { chrome: '#17181b', field: '#1d1e22', raised: '#25262b', border: '#2a2b30', fg: '#ececef', muted: '#8d8f98', accent: '#c6f24e', onAccent: '#111214', accentText: '#c6f24e', ok: '#34d399', okTint: 'rgba(52,211,153,0.15)', sel: 'rgba(198,242,78,0.14)', scrim: 'rgba(0,0,0,0.5)', modal: '#1a1b1e', shadow: '0 24px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06)' }
+      : { chrome: '#f3f3f1', field: '#e9e9e5', raised: '#ffffff', border: '#e1e1dc', fg: '#18181b', muted: '#686870', accent: '#c6f24e', onAccent: '#18181b', accentText: '#4d7c0f', ok: '#047857', okTint: 'rgba(4,120,87,0.11)', sel: 'rgba(198,242,78,0.35)', scrim: 'rgba(20,20,22,0.28)', modal: '#ffffff', shadow: '0 24px 60px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)' };
+    const nav = ['General', 'SSL Proxying', 'Network', 'Protobuf', 'Reverse proxy', 'Shortcuts'].map((label) => {
+      const on = label === 'SSL Proxying';
+      return { label, bg: on ? c.sel : 'transparent', weight: on ? 600 : 400, dot: on ? c.accentText : c.border };
+    });
+    return {
+      c, dark, nav,
+      include: ['app.acme.test', '*.acme.test', 'api.github.com', 'api.stripe.com'],
+      exclude: ['*.apple.com', '*.icloud.com']
+    };
+  }
+}
+</script>
+</body>
+</html>

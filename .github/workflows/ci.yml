@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@v5
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Frontend type-check and build
+        run: pnpm build
+
+      - name: Core tests
+        run: cargo test -p sniffo-core
+
+      # UI unit tests (pnpm test:ui) are off for now; UI end-to-end tests (pnpm test:e2e) run on demand only.
+      - name: IPC command tests (every command the UI calls)
+        # One thread: the tests share fake OS tools and ports, and race when run in parallel.
+        run: cargo test -p sniffo -- --test-threads=1

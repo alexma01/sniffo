@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sniffo diff</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position: relative; width: 1280px; height: 800px; overflow: hidden; font-family: Inter, -apple-system, system-ui, sans-serif; font-size: 13px; line-height: 1.4; color: {{c.fg}};">
+  <dc-import name="Main" direction="signal" dark="{{dark}}" hint-size="1280px,800px"></dc-import>
+  <div style="position: absolute; inset: 0; background: {{c.scrim}}; display: flex; align-items: center; justify-content: center;">
+    <div role="dialog" aria-label="Diff" style="width: 900px; height: 660px; display: flex; flex-direction: column; border-radius: 14px; overflow: hidden; background: {{c.modal}}; box-shadow: {{c.shadow}};">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 16px 22px; border-bottom: 1px solid {{c.border}};">
+        <div style="font-size: 17px; font-weight: 600;">Diff <span style="font-family: 'JetBrains Mono', monospace;">#4207 → #4211</span></div>
+        <div style="display: flex; padding: 2px; border-radius: 8px; background: {{c.field}};">
+          <button type="button" style="height: 26px; padding: 0 12px; border: none; border-radius: 6px; font: inherit; font-size: 12px; background: transparent; color: {{c.muted}};">Request</button>
+          <button type="button" style="height: 26px; padding: 0 12px; border: none; border-radius: 6px; font: inherit; font-size: 12px; font-weight: 500; background: {{c.raised}}; color: {{c.fg}}; box-shadow: {{c.segShadow}};">Response</button>
+        </div>
+        <span style="flex: 1;"></span>
+        <span style="font-size: 12px; color: {{c.ok}};">+5</span><span style="font-size: 12px; color: {{c.err}};">−4</span>
+      </div>
+      <div style="flex: 1; min-height: 0; overflow: hidden; margin: 14px 22px; border-radius: 10px; border: 1px solid {{c.border}}; padding: 8px 0; font: 12px/1.65 'JetBrains Mono', monospace;">
+        <sc-for list="{{lines}}" as="l" hint-placeholder-count="20">
+          <div style="display: flex; padding: 0 14px; white-space: pre; background: {{l.bg}};">
+            <span style="width: 18px; flex: none; color: {{l.signFg}};">{{l.sign}}</span><span style="opacity: {{l.op}};"><sc-for list="{{l.parts}}" as="p" hint-placeholder-count="3"><span style="color: {{p.color}};">{{p.t}}</span></sc-for></span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display: flex; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid {{c.border}};">
+        <button type="button" style="height: 30px; padding: 0 14px; border-radius: 8px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.fg}}; font: inherit; font-weight: 500;">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":true},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? true;
+    const c = dark
+      ? { field: '#1d1e22', raised: '#25262b', border: '#2a2b30', fg: '#ececef', muted: '#8d8f98', ok: '#4ade80', err: '#f87171', addBg: 'rgba(74,222,128,0.12)', delBg: 'rgba(248,113,113,0.12)', scrim: 'rgba(0,0,0,0.5)', modal: '#1a1b1e', segShadow: '0 1px 2px rgba(0,0,0,0.4)', shadow: '0 24px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06)' }
+      : { field: '#e9e9e5', raised: '#ffffff', border: '#e1e1dc', fg: '#18181b', muted: '#686870', ok: '#15803d', err: '#dc2626', addBg: 'rgba(21,128,61,0.09)', delBg: 'rgba(220,38,38,0.08)', scrim: 'rgba(20,20,22,0.28)', modal: '#ffffff', segShadow: '0 1px 2px rgba(0,0,0,0.08)', shadow: '0 24px 60px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)' };
+    const RAW = [
+      [' ', 'HTTP/2 200'],
+      [' ', 'cache-control: private, max-age=60'],
+      ['-', 'content-length: 4291'],
+      ['+', 'content-length: 18733'],
+      [' ', 'content-type: application/json; charset=utf-8'],
+      ['-', 'etag: W/"a41f-2c9b"'],
+      ['+', 'etag: W/"8f2c-11d0"'],
+      [' ', ''],
+      [' ', '{'],
+      ['-', '  "session": "7a1e",'],
+      ['+', '  "session": "8f2c",'],
+      ['-', '  "total": 128,'],
+      ['+', '  "total": 540,'],
+      ['+', '  "next": "c_9ad1",'],
+      [' ', '  "flows": ['],
+      [' ', '    {'],
+      [' ', '      "method": "GET",'],
+      [' ', '      "cached": false,'],
+      [' ', '      …'],
+      [' ', '  ]'],
+      [' ', '}']
+    ];
+    Object.assign(c, dark
+      ? { synKey: '#93c5fd', synStr: '#c6f24e', synNum: '#fdba74', synBool: '#f0abfc', synPunct: '#6b6d76' }
+      : { synKey: '#1d4ed8', synStr: '#4d7c0f', synNum: '#c2410c', synBool: '#a21caf', synPunct: '#8a8a92' });
+    const tok = (s) => {
+      const out = []; let last = 0; let m;
+      const re = /("(?:\\.|[^"\\])*")(\s*:)?|(-?\d+(?:\.\d+)?)|\b(true|false|null)\b|([{}\[\],:])/g;
+      while ((m = re.exec(s))) {
+        if (m.index > last) out.push({ t: s.slice(last, m.index), color: c.fg });
+        if (m[1]) { out.push({ t: m[1], color: m[2] ? c.synKey : c.synStr }); if (m[2]) out.push({ t: m[2], color: c.synPunct }); }
+        else if (m[3]) out.push({ t: m[3], color: c.synNum });
+        else if (m[4]) out.push({ t: m[4], color: c.synBool });
+        else out.push({ t: m[5], color: c.synPunct });
+        last = re.lastIndex;
+      }
+      if (last < s.length) out.push({ t: s.slice(last), color: c.fg });
+      return out;
+    };
+    const hdr = (s) => { const i = s.indexOf(':'); return [{ t: s.slice(0, i), color: c.synKey }, { t: ':', color: c.synPunct }, { t: s.slice(i + 1), color: c.fg }]; };
+    const blank = RAW.findIndex(([, t]) => t === '');
+    const lines = RAW.map(([s, text], i) => ({
+      sign: s === ' ' ? '' : s === '-' ? '−' : '+',
+      parts: i === 0 ? [{ t: text, color: c.synNum }] : i < blank ? hdr(text) : tok(text),
+      op: s === ' ' ? 0.6 : 1,
+      bg: s === '+' ? c.addBg : s === '-' ? c.delBg : 'transparent',
+      signFg: s === '+' ? c.ok : c.err
+    }));
+    return { c, dark, lines };
+  }
+}
+</script>
+</body>
+</html>
