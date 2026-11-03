@@ -14,7 +14,7 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Tag the version if it is new
         id: tag
         run: |
@@ -45,11 +45,11 @@ jobs:
           # Linux (ubuntu-22.04) and Windows (windows-latest) disabled: no way to test them yet.
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.tag.outputs.tag }}
 
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v5
 
       - name: Rust targets for macOS universal builds
         if: runner.os == 'macOS'
