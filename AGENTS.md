@@ -23,7 +23,7 @@ Toolchain via mise (`mise install`, then `pnpm install`).
 pnpm tauri dev                   # full app
 pnpm dev                         # UI only, mocked data, http://localhost:1420
 pnpm build                       # tsc + vite build
-pnpm test                        # UI unit + core + IPC command tests (same as CI)
+pnpm test                        # UI unit + core + IPC command tests (CI skips UI unit for now)
 pnpm test:e2e                    # Playwright, on demand only
 ```
 
