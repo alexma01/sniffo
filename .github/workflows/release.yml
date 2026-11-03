@@ -1,12 +1,35 @@
 name: Release
 
+# Merging develop into main releases the version written in package.json (see `pnpm release`).
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
 
 jobs:
+  tag:
+    name: Tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag the version if it is new
+        id: tag
+        run: |
+          v=$(node scripts/version.mjs)
+          if git ls-remote --exit-code --tags origin "refs/tags/v$v" >/dev/null; then
+            echo "v$v already released"
+          else
+            git tag "v$v" && git push origin "v$v"
+            echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     name: Bundle (${{ matrix.name }})
+    needs: tag
+    if: needs.tag.outputs.tag != ''
     permissions:
       contents: write
     strategy:
@@ -23,6 +46,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
 
       - uses: jdx/mise-action@v2
 
@@ -39,8 +64,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Sniffo ${{ github.ref_name }}
+          tagName: ${{ needs.tag.outputs.tag }}
+          releaseName: Sniffo ${{ needs.tag.outputs.tag }}
           releaseBody: See the commits since the previous release.
           releaseDraft: true
           args: ${{ matrix.args }}
