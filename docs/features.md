@@ -9,7 +9,7 @@ Every feature is free and unlimited.
 - HTTP/1.1, HTTP/2 and HTTPS (MITM), with SSL Proxying per host (include/exclude wildcards).
 - Streaming responses (SSE, downloads) keep working while they're recorded.
 - Local root CA, installed and trusted in one click on macOS.
-- System proxy on and off in one click; previous settings saved and restored on exit and after a crash.
+- System proxy on and off in one click; previous settings saved and restored on exit and after a crash. On macOS an optional helper also takes over the proxy that corporate VPN clients (Cato, GlobalProtect…) publish.
 - Or capture a single app: open Chrome, Edge, Brave, Chromium or Firefox with its own profile already pointed at Sniffo, or paste the terminal setup (proxy and CA variables for curl, Node, Python, git, Go, Rust…).
 
 ## Inspect
@@ -25,7 +25,7 @@ Every feature is free and unlimited.
 ## Change traffic
 
 - Request and response breakpoints with editing.
-- Map Local (inline or from a file), Map Remote, Block, allow list, No Caching.
+- Map Local (inline, from a file or from a local folder), Map Remote, Block, allow list, No Caching.
 - Rewrite without code: set, remove or regex-replace headers, query parameters, URL, status and body.
 - Throttling with latency and bandwidth presets.
 - JavaScript `onRequest` / `onResponse` rules (QuickJS) with `sharedState` and a console.
@@ -58,7 +58,7 @@ Every feature is free and unlimited.
 
 ## Devices
 
-- LAN mode with a QR code and a certificate page at `http://sniffo.cert`.
+- LAN mode with a QR code, the `sniffo.local` name (mDNS) and a certificate page at `http://sniffo.cert`.
 - iOS Simulator: CA install, boot and restart.
 - Android emulators and USB devices: proxy via `adb reverse`, user or system CA, reboot.
 
