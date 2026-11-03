@@ -6,6 +6,17 @@ use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use support::*;
 
+/// A stopped listener may linger for a moment on macOS: wait briefly for connections to be refused.
+fn port_closes(port: u16) -> bool {
+    (0..20).any(|_| {
+        let closed = std::net::TcpStream::connect(("127.0.0.1", port)).is_err();
+        if !closed {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        closed
+    })
+}
+
 /// A coded backend error as the UI receives it (see sniffo_core::Error).
 fn err(code: &str) -> String {
     json!({ "code": code }).to_string()
@@ -68,7 +79,7 @@ fn status_start_restart_and_stop() {
 
     app.ok("stop_proxy", json!({}));
     assert_eq!(app.ok("proxy_status", json!({}))["running"], json!(false));
-    assert!(std::net::TcpStream::connect(("127.0.0.1", other)).is_err(), "port released");
+    assert!(port_closes(other), "port released");
 }
 
 #[test]
@@ -380,7 +391,7 @@ fn network_options_and_reverse_proxies() {
     let err = app.call("start_proxy", json!({ "port": rp })).unwrap_err();
     assert!(err.contains("port_reverse"), "{err}");
     app.ok("set_reverse", json!({ "reverse": [] }));
-    assert!(std::net::TcpStream::connect(("127.0.0.1", rp)).is_err(), "reverse listener stopped");
+    assert!(port_closes(rp), "reverse listener stopped");
 }
 
 #[test]
