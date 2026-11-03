@@ -8,6 +8,10 @@ use tokio::net::TcpListener;
 use tokio_rustls::{TlsAcceptor, rustls::{ServerConfig, pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer}}};
 
 pub async fn hello(req: Request<Incoming>) -> Result<Response<String>, Infallible> {
+    // Keeps the connection open long enough for the proxy to look up the client process.
+    if req.uri().path() == "/slow" {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
     Ok(Response::builder()
         .header("content-type", "application/json")
         .body(format!(r#"{{"path":"{}"}}"#, req.uri().path()))
