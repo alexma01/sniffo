@@ -39,14 +39,14 @@ The app renders in WebKit on macOS.
 | `pnpm test` | UI unit, core and IPC command tests (CI skips the UI ones for now) |
 | `pnpm test:ui` | UI unit tests (`tests-ui/`) |
 | `cargo test -p sniffo-core` | Proxy core: proxy, rules, WebSocket, network, stress |
-| `cargo test -p sniffo` | Every IPC command the UI calls, on Tauri's mock runtime |
+| `cargo test -p sniffo -- --test-threads=1` | Every IPC command the UI calls, on Tauri's mock runtime. One thread: the tests share fake OS tools and ports |
 | `pnpm test:e2e` | Playwright on Chromium and WebKit vs the real app. On demand only |
 
 OS tools (keychain, `networksetup`, `adb`, `xcrun`) are faked in tests: nothing on your machine changes.
 
 ## CI and releases
 
-- **CI** (`.github/workflows/ci.yml`) runs `pnpm build`, `cargo test -p sniffo-core` and `cargo test -p sniffo` on macOS for every pull request to `develop`/`main` (not on plain pushes). UI unit tests (`pnpm test:ui`) are not run in CI for now.
+- **CI** (`.github/workflows/ci.yml`) runs `pnpm build`, `cargo test -p sniffo-core` and `cargo test -p sniffo -- --test-threads=1` on macOS for every pull request to `develop`/`main` (not on plain pushes). UI unit tests (`pnpm test:ui`) are not run in CI for now.
 - **Release**: on `develop` run `pnpm release patch|minor|major` (or an explicit `X.Y.Z`): it bumps the version files, commits `chore: release X.Y.Z` and pushes. Open the `develop` → `main` PR; once merged, the *Release* workflow tags `vX.Y.Z` (skipped if that tag exists) and builds unsigned bundles (macOS Apple Silicon and Intel `.dmg`; Windows and Linux bundles are disabled until they can be tested) and attaches them to a draft GitHub release. Add Apple / Tauri signing secrets to the workflow to sign and notarize.
 
 Ready to send a change? See [Contributing](../CONTRIBUTING.md).

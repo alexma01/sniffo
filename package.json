@@ -12,7 +12,7 @@
     "release": "node scripts/release.mjs",
     "test:ui": "node tests-ui/snippets.test.ts && node tests-ui/protobuf.test.ts && node tests-ui/backend-codes.test.ts",
     "test:e2e": "playwright test",
-    "test": "pnpm test:ui && cargo test -p sniffo-core && cargo test -p sniffo"
+    "test": "pnpm test:ui && cargo test -p sniffo-core && cargo test -p sniffo -- --test-threads=1"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.21",

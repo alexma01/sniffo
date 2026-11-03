@@ -34,4 +34,5 @@ jobs:
 
       # UI unit tests (pnpm test:ui) are off for now; UI end-to-end tests (pnpm test:e2e) run on demand only.
       - name: IPC command tests (every command the UI calls)
-        run: cargo test -p sniffo
+        # One thread: the tests share fake OS tools and ports, and race when run in parallel.
+        run: cargo test -p sniffo -- --test-threads=1
