@@ -1,0 +1,70 @@
+name: Homebrew
+
+# Publishing the GitHub release updates the cask in alexma01/homebrew-tap.
+# Needs the TAP_TOKEN secret: a PAT with contents:write on that repo.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, e.g. v0.1.1
+        required: true
+
+jobs:
+  cask:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Write the cask
+        run: |
+          v=${TAG#v}
+          for a in aarch64 x64; do
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "Sniffo_${v}_${a}.dmg"
+          done
+          arm=$(sha256sum "Sniffo_${v}_aarch64.dmg" | cut -d' ' -f1)
+          intel=$(sha256sum "Sniffo_${v}_x64.dmg" | cut -d' ' -f1)
+          mkdir -p tap/Casks
+          cat > tap/Casks/sniffo.rb <<RB
+          cask "sniffo" do
+            arch arm: "aarch64", intel: "x64"
+
+            version "$v"
+            sha256 arm:   "$arm",
+                   intel: "$intel"
+
+            url "https://github.com/$GITHUB_REPOSITORY/releases/download/v#{version}/Sniffo_#{version}_#{arch}.dmg"
+            name "Sniffo"
+            desc "Free HTTP/HTTPS debugging proxy"
+            homepage "https://github.com/$GITHUB_REPOSITORY"
+
+            depends_on macos: ">= :big_sur"
+
+            app "Sniffo.app"
+
+            # Builds are not signed or notarized yet.
+            postflight do
+              system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{appdir}/Sniffo.app"]
+            end
+
+            zap trash: [
+              "~/Library/Application Support/dev.sniffo.app",
+              "~/Library/Caches/dev.sniffo.app",
+              "~/Library/WebKit/dev.sniffo.app",
+            ]
+          end
+          RB
+
+      - name: Push to the tap
+        run: |
+          git clone "https://x-access-token:${{ secrets.TAP_TOKEN }}@github.com/alexma01/homebrew-tap.git" repo
+          mkdir -p repo/Casks && cp tap/Casks/sniffo.rb repo/Casks/
+          cd repo
+          git config user.name "Alessandro Marra"
+          git config user.email "alessandromarra001@gmail.com"
+          git add Casks/sniffo.rb
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: sniffo ${TAG#v}"
+          git push
