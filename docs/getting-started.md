@@ -4,7 +4,13 @@
 
 ## Install
 
-Download the bundle for your system from the [GitHub releases](https://github.com/alexma01/sniffo/releases):
+macOS with Homebrew (also handles updates with `brew upgrade --cask sniffo`):
+
+```bash
+brew install --cask alexma01/tap/sniffo
+```
+
+Or download the bundle for your system from the [GitHub releases](https://github.com/alexma01/sniffo/releases):
 
 | System | File |
 |---|---|
