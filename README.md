@@ -18,6 +18,14 @@
 
 ![Sniffo main window, dark theme](docs/images/main-dark.png)
 
+## Install
+
+```bash
+brew install --cask alexma01/tap/sniffo
+```
+
+Or download the `.dmg` from the [releases](https://github.com/alexma01/sniffo/releases). Details in [Getting started](docs/getting-started.md).
+
 ## Why Sniffo
 
 - **See everything**: HTTP/1.1, HTTP/2, HTTPS, WebSocket, GraphQL and gRPC traffic, from this machine, LAN devices, iOS Simulator and Android.
