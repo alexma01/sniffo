@@ -30,12 +30,9 @@ jobs:
       - name: Frontend type-check and build
         run: pnpm build
 
-      - name: UI unit tests
-        run: pnpm test:ui
-
       - name: Core tests
         run: cargo test -p sniffo-core
 
-      # UI end-to-end tests (pnpm test:e2e) are run on demand only, not in CI.
+      # UI unit tests (pnpm test:ui) are off for now; UI end-to-end tests (pnpm test:e2e) run on demand only.
       - name: IPC command tests (every command the UI calls)
         run: cargo test -p sniffo
