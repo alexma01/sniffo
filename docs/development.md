@@ -47,6 +47,6 @@ OS tools (keychain, `networksetup`, `adb`, `xcrun`) are faked in tests: nothing 
 ## CI and releases
 
 - **CI** (`.github/workflows/ci.yml`) runs `pnpm build`, `pnpm test:ui`, `cargo test -p sniffo-core` and `cargo test -p sniffo` on macOS for every PR and push to `develop`/`main`.
-- **Release**: push a tag `vX.Y.Z` from `main`. The *Release* workflow builds unsigned bundles (macOS Apple Silicon and Intel `.dmg`; Windows and Linux bundles are disabled until they can be tested) and attaches them to a draft GitHub release. Add Apple / Tauri signing secrets to the workflow to sign and notarize.
+- **Release**: on `develop` run `pnpm release patch|minor|major` (or an explicit `X.Y.Z`): it bumps the version files, commits `chore: release X.Y.Z` and pushes. Open the `develop` → `main` PR; once merged, the *Release* workflow tags `vX.Y.Z` (skipped if that tag exists) and builds unsigned bundles (macOS Apple Silicon and Intel `.dmg`; Windows and Linux bundles are disabled until they can be tested) and attaches them to a draft GitHub release. Add Apple / Tauri signing secrets to the workflow to sign and notarize.
 
 Ready to send a change? See [Contributing](../CONTRIBUTING.md).
