@@ -108,7 +108,7 @@ export function Sidebar(props: {
   const [editing, setEditing] = useState<string | null>(null);
   const rename = (ip: string) => setEditing(ip);
   const clientRow = (a: string, n: number) => (
-    <div key={a} className={`side-item ${filter.client === a ? "active" : ""}`} onClick={() => set({ client: filter.client === a ? null : a })} title={isDevice(a) ? t("sidebar.renameTitle", { ip: a }) : a}
+    <div key={a} className={`side-item ${filter.client === a ? "active" : ""}`} onClick={() => set(filter.client === a ? { client: null } : { client: a, host: null, pinnedOnly: false })} title={isDevice(a) ? t("sidebar.renameTitle", { ip: a }) : a}
       onContextMenu={isDevice(a) ? (e) => { e.preventDefault(); e.stopPropagation(); setDeviceMenu({ ip: a, x: e.clientX, y: e.clientY }); } : undefined}
       onDoubleClick={isDevice(a) ? () => rename(a) : undefined}>
       <AppIcon name={isLocal(a) ? "This Mac" : a} />
@@ -191,7 +191,7 @@ export function Sidebar(props: {
         <div className="menu" style={{ left: deviceMenu.x, top: deviceMenu.y }}>
           <div className="menu-label">{deviceMenu.ip}</div>
           <div onClick={() => rename(deviceMenu.ip)}>{t("sidebar.rename")}</div>
-          <div onClick={() => set({ client: deviceMenu.ip })}>{t("sidebar.onlyDevice")}</div>
+          <div onClick={() => set({ client: deviceMenu.ip, host: null, pinnedOnly: false })}>{t("sidebar.onlyDevice")}</div>
           <div onClick={() => onExport([...flows.values()].filter((f) => f.client_ip === deviceMenu.ip).map((f) => f.id))}>{t("sidebar.exportHar")}</div>
           <div className="danger" onClick={() => onRemove([...flows.values()].filter((f) => f.client_ip === deviceMenu.ip).map((f) => f.id))}>{t("sidebar.deleteDevice")}</div>
         </div>
