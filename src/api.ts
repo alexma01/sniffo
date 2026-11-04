@@ -70,6 +70,9 @@ export interface SslProxying {
   exclude: string[];
 }
 
+/** A published release newer than the running build. */
+export interface UpdateInfo { current: string; version: string; url: string; notes: string }
+
 export interface ProxyStatus {
   running: boolean;
   address: string | null;
@@ -159,6 +162,7 @@ export const api = {
   setAutoSystemProxy: (enabled: boolean) => invoke<void>("set_auto_system_proxy", { enabled }),
   installVpnHelper: () => invoke<void>("install_vpn_helper"),
   setSystemProxy: (enabled: boolean) => invoke<void>("set_system_proxy", { enabled }),
+  checkUpdate: () => invoke<UpdateInfo | null>("check_update"),
   trustCa: () => invoke<void>("trust_ca"),
   revealCa: () => invoke<void>("reveal_ca"),
   repeat: (id: number) => invoke<number>("repeat_flow", { id }),

@@ -4,6 +4,7 @@ import { backdrop } from "./backdrop";
 import { Icon } from "./icons";
 import { ReactNode, useEffect, useState } from "react";
 import { backendText, Coded, getLang, Key, Lang, LANGS, rich, setLang, t, useLang } from "./i18n";
+import { setUpdateCheck, updateCheckEnabled } from "./updates";
 import { api, NetworkOptions, ProtoSchemas, ProxyStatus, ReverseProxy, SslProxying } from "./api";
 
 export const SCHEMAS_CHANGED = "sniffo:schemas";
@@ -125,6 +126,13 @@ export function Settings(props: { status: ProxyStatus | null; onClose: () => voi
           <label className="check">
             <input type="checkbox" defaultChecked={status?.auto_system_proxy} onChange={(e) => api.setAutoSystemProxy(e.target.checked).then(onChanged)} />
             {t("settings.autoSystemProxy")}
+          </label>
+        </section>
+        <section>
+          <h4>{t("settings.updates")}</h4>
+          <label className="check">
+            <input type="checkbox" defaultChecked={updateCheckEnabled()} onChange={(e) => setUpdateCheck(e.target.checked)} />
+            {t("settings.updateCheck")}
           </label>
         </section>
         <section>
