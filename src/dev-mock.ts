@@ -62,6 +62,7 @@ mockIPC((cmd, args) => {
   const a = (args ?? {}) as Record<string, any>;
   switch (cmd) {
     case "proxy_status": return { running: true, address: "127.0.0.1:9191", port: 9191, allow_lan: true, auto_system_proxy: true, vpn: { state: "helper_missing" }, lan: [{ interface: "en0", ip: "192.168.1.12" }, { interface: "utun4", ip: "10.8.0.2" }], lan_name: "sniffo.local", ca_path: "~/sniffo-ca.pem", ca_trusted: false, system_proxy: false };
+    case "check_update": return { current: "0.1.2", version: "0.1.3", url: "https://github.com/alexma01/sniffo/releases/latest", notes: "- fix: raise the open files limit at startup\n- feat: copy buttons for server, IP and port" };
     case "list_flows": return flows.map(summary);
     case "get_flow": return flows.find((f) => f.id === a.id) ?? null;
     case "get_ws_messages": { const f = flows.find((x) => x.id === a.id); return f ? [a.from, f.ws_messages.slice(a.from)] : null; }

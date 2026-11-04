@@ -270,6 +270,14 @@ async fn install_vpn_helper(state: State<'_, AppState>) -> Result<(), Error> {
     Ok(())
 }
 
+/// The latest published release when it is newer than this build. `SNIFFO_UPDATE_URL` points the
+/// check at a stand-in server (tests).
+#[tauri::command]
+async fn check_update() -> Result<Option<sniffo_core::update::Update>, Error> {
+    let url = std::env::var("SNIFFO_UPDATE_URL").unwrap_or_else(|_| sniffo_core::update::LATEST_URL.into());
+    sniffo_core::update::check(&url, env!("CARGO_PKG_VERSION")).await
+}
+
 #[tauri::command]
 async fn trust_ca(state: State<'_, AppState>) -> Result<(), Error> {
     let path = state.ca_path.clone();
@@ -735,7 +743,7 @@ pub fn setup<R: Runtime>(builder: tauri::Builder<R>, data_dir: Option<PathBuf>) 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, install_vpn_helper, list_devices, device_command, list_browsers, launch_browser, terminal_env, app_icon, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, trust_ca, reveal_ca, list_flows, get_flow, get_ws_messages, get_body, clear_flows, remove_flows, quit_app, pin_flow, mark_flow, search_flows,
+            proxy_status, start_proxy, stop_proxy, set_allow_lan, set_auto_system_proxy, install_vpn_helper, list_devices, device_command, list_browsers, launch_browser, terminal_env, app_icon, get_network, set_network, get_reverse, set_reverse, repeat_flow, compose_request, export_har, import_har, set_system_proxy, check_update, trust_ca, reveal_ca, list_flows, get_flow, get_ws_messages, get_body, clear_flows, remove_flows, quit_app, pin_flow, mark_flow, search_flows,
             get_ssl_proxying, set_ssl_proxying, get_rules, set_rules, export_rules, import_rules, get_proto_schemas, set_proto_files, decode_proto, list_breakpoints, resume_breakpoint, send_ws_message
         ])
 }

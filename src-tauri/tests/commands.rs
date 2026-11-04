@@ -209,6 +209,21 @@ fn flows_are_listed_read_pinned_searched_removed_and_cleared() {
 }
 
 #[test]
+fn check_update_reports_only_newer_releases() {
+    let app = TestApp::new();
+    let up = Upstream::start();
+    // SAFETY: only this test reads SNIFFO_UPDATE_URL, and it sets it before any command runs.
+    unsafe { std::env::set_var("SNIFFO_UPDATE_URL", up.url("/release/v99.0.0")) };
+    let found = app.ok("check_update", json!({}));
+    assert_eq!((found["version"].clone(), found["url"].clone(), found["notes"].clone()), (json!("99.0.0"), json!("https://example.com/release"), json!("notes")));
+    assert_eq!(found["current"], json!(env!("CARGO_PKG_VERSION")));
+    unsafe { std::env::set_var("SNIFFO_UPDATE_URL", up.url("/release/v0.0.1")) };
+    assert_eq!(app.ok("check_update", json!({})), json!(null));
+    unsafe { std::env::set_var("SNIFFO_UPDATE_URL", up.url("/status/500")) };
+    assert!(app.call("check_update", json!({})).is_err());
+}
+
+#[test]
 fn repeat_and_compose_go_through_the_proxy() {
     let app = TestApp::new();
     assert_eq!(app.call("compose_request", json!({ "method": "GET", "url": "http://x/", "headers": [], "body": "" })).unwrap_err(), err("proxy_stopped"));

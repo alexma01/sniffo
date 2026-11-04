@@ -9,6 +9,8 @@ import { BreakpointEditor } from "./BreakpointEditor";
 import { Compose } from "./Compose";
 import { Diff } from "./Diff";
 import { Req, toCurl, toFetch, toPython } from "./snippets";
+import { UpdateDialog } from "./UpdateDialog";
+import { useUpdate } from "./updates";
 import { Devices } from "./Devices";
 import { defaultAction, newRule, RulesEditor } from "./RulesEditor";
 import { clientLabel, compile, emptyFilter, Filter, kindLabel, STATUSES, toggle, TYPES } from "./filters";
@@ -91,6 +93,8 @@ export default function App() {
   const [filter, setFilter] = useState<Filter>(emptyFilter);
   const [searchBodies, setSearchBodies] = useState(false);
   const [follow, setFollow] = useState(true);
+  const update = useUpdate();
+  const [showUpdate, setShowUpdate] = useState(OPEN === "update");
   const [showSettings, setShowSettings] = useState(OPEN === "settings");
   /** A proxy transition in flight. Starts as "starting": the app launches the proxy on its own. */
   const [phase, setPhase] = useState<"starting" | "stopping" | "proxy" | null>("starting");
@@ -409,6 +413,7 @@ export default function App() {
           onFlow={(id) => { setSelected(id); setFollow(false); }} />
       )}
       {showDevices && <Devices status={status} onClose={() => setShowDevices(false)} onChanged={refresh} />}
+      {showUpdate && update && <UpdateDialog update={update} onClose={() => setShowUpdate(false)} />}
       {showSettings && <Settings status={status} onClose={() => setShowSettings(false)} onChanged={refresh} />}
       {error && <div className="banner">{error}</div>}
       <div className="main">
@@ -495,6 +500,7 @@ export default function App() {
         {rules?.allow_list.enabled && <span className="item warn">{t("app.allowListOn")}</span>}
         {rules?.no_caching && <span className="item warn">{t("app.noCaching")}</span>}
         <span className="spacer" />
+        {update && <button className="linkish ok" onClick={() => setShowUpdate(true)}>{t("app.updateAvailable", { version: update.version })}</button>}
         {stats.paused > 0 && <span className="item warn"><Icon name="pause" size={11} /> {t("app.paused", { n: stats.paused })}</span>}
         <button className={`linkish ${logs.some((l) => l.error) ? "err" : ""}`} onClick={() => setShowConsole(!showConsole)}>{t("app.console")} ({logs.length})</button>
         <span className="item"><span className="label">{t("app.errors")}</span> {stats.errors}</span>

@@ -14,6 +14,7 @@ pub mod rules;
 pub mod schema;
 pub mod script;
 pub mod system;
+pub mod update;
 
 pub use ca::RootCa;
 pub use error::Error;
