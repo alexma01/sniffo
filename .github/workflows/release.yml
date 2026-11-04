@@ -66,6 +66,16 @@ jobs:
         with:
           tagName: ${{ needs.tag.outputs.tag }}
           releaseName: Sniffo ${{ needs.tag.outputs.tag }}
-          releaseBody: See the commits since the previous release.
           releaseDraft: true
           args: ${{ matrix.args }}
+
+  notes:
+    name: Release notes
+    needs: [tag, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - run: gh release edit "${{ needs.tag.outputs.tag }}" --generate-notes --repo "${{ github.repository }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
