@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sniffo: free HTTP/HTTPS debugging proxy for macOS</title>
+<meta name="description" content="Sniffo captures, inspects and rewrites HTTP, HTTPS and WebSocket traffic from your Mac, simulators, emulators and phones. Free, open source, no paid tier.">
+<meta property="og:title" content="Sniffo: free HTTP/HTTPS debugging proxy">
+<meta property="og:description" content="Capture, inspect and rewrite HTTP, HTTPS and WebSocket traffic. Every feature free and unlimited.">
+<meta property="og:image" content="https://alexma01.github.io/sniffo/images/main-dark.png">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<style>
+:root {
+  --bg: #fbfbfa; --bg-2: #f1f1ee; --fg: #18181b; --muted: #62646c; --border: #e2e2dd;
+  --accent: #c6f24e; --accent-fg: #18181b; --link: #4d7c0f;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111214; --bg-2: #17181b; --fg: #ececef; --muted: #8d8f98; --border: #2a2b30; --link: #c6f24e; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color: var(--link); }
+.wrap { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+header { padding: 20px 0; display: flex; align-items: center; gap: 10px; }
+header img { width: 32px; height: 32px; }
+header strong { font-size: 18px; }
+header nav { margin-left: auto; display: flex; gap: 16px; font-size: 14px; }
+header nav a { color: var(--muted); text-decoration: none; }
+header nav a:hover { color: var(--fg); }
+.hero { text-align: center; padding: 48px 0 32px; }
+h1 { font-size: clamp(32px, 6vw, 52px); line-height: 1.1; margin: 0 0 16px; letter-spacing: -.02em; }
+.hero p { color: var(--muted); font-size: 18px; max-width: 620px; margin: 0 auto 28px; }
+.cta { display: inline-flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+.btn { padding: 10px 20px; border-radius: 8px; border: 1px solid var(--border); color: var(--fg); text-decoration: none; font-weight: 600; }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+pre { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; display: table; margin: 20px auto 0; font-size: 14px; overflow-x: auto; max-width: 100%; }
+.shot { margin: 32px 0; }
+.shot img { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--border); display: block; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; padding: 16px 0 40px; }
+.card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; }
+.card h3 { margin: 0 0 6px; font-size: 16px; }
+.card p { margin: 0; color: var(--muted); font-size: 14px; }
+h2 { font-size: 26px; margin: 24px 0 8px; }
+footer { border-top: 1px solid var(--border); padding: 24px 0 40px; color: var(--muted); font-size: 14px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="assets/icon.svg" alt="">
+    <strong>Sniffo</strong>
+    <nav>
+      <a href="https://github.com/alexma01/sniffo/blob/main/docs/getting-started.md">Docs</a>
+      <a href="https://github.com/alexma01/sniffo/releases">Releases</a>
+      <a href="https://github.com/alexma01/sniffo">GitHub</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <h1>See and change your network traffic.<br>For free.</h1>
+    <p>Sniffo is an open-source HTTP/HTTPS debugging proxy for macOS. Every feature is included, nothing is behind a paid tier.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/alexma01/sniffo/releases/latest">Download for macOS</a>
+      <a class="btn" href="https://github.com/alexma01/sniffo">View on GitHub</a>
+    </div>
+    <pre>brew install --cask alexma01/tap/sniffo</pre>
+  </section>
+
+  <div class="shot"><img src="images/main-dark.png" alt="Sniffo main window"></div>
+
+  <h2>What it does</h2>
+  <div class="grid">
+    <div class="card"><h3>Capture everything</h3><p>HTTP/1.1, HTTP/2, HTTPS, WebSocket, GraphQL and gRPC from this Mac, LAN devices, iOS Simulator and Android.</p></div>
+    <div class="card"><h3>One-click setup</h3><p>Local root CA and system proxy, restored on exit and after a crash.</p></div>
+    <div class="card"><h3>Change traffic on the fly</h3><p>Breakpoints, Map Local, Map Remote, Block, throttling and JavaScript rules. Unlimited.</p></div>
+    <div class="card"><h3>Inspect and replay</h3><p>JSON, XML, form and hex viewers, diff, Compose, copy as cURL, HAR import and export.</p></div>
+    <div class="card"><h3>Phones and emulators</h3><p>QR code and a certificate page for devices on Wi-Fi, <code>adb reverse</code> for Android.</p></div>
+    <div class="card"><h3>Native and light</h3><p>Built with Tauri 2: a Rust proxy core and a React UI.</p></div>
+  </div>
+
+  <div class="shot"><img src="images/rules.png" alt="Sniffo rules editor"></div>
+</div>
+
+<footer>
+  <div class="wrap">Apache-2.0 · <a href="https://github.com/alexma01/sniffo">alexma01/sniffo</a> · Currently macOS only; builds are not signed yet.</div>
+</footer>
+</body>
+</html>
