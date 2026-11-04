@@ -352,7 +352,7 @@ pub fn via(port: u16, method: &str, url: &str, headers: &[(&str, &str)], body: &
 pub const GZIP_JSON: [u8; 35] = [31, 139, 8, 0, 0, 0, 0, 0, 2, 255, 171, 86, 170, 202, 44, 40, 72, 77, 81, 178, 42, 41, 42, 77, 173, 5, 0, 132, 40, 188, 8, 15, 0, 0, 0];
 
 /// Upstream server: `/gzip` answers gzip-encoded JSON, `/status/N` that status, `/slow` after
-/// 300 ms; anything else echoes the request as JSON. Every request is recorded.
+/// 300 ms, `/release/<tag>` a GitHub-style release; anything else echoes the request as JSON. Every request is recorded.
 pub struct Upstream {
     pub addr: SocketAddr,
     pub seen: Arc<Mutex<Vec<(String, String, Vec<u8>)>>>,
@@ -375,6 +375,9 @@ impl Upstream {
                     log.lock().unwrap().push((method.clone(), path.clone(), body.clone()));
                     let (status, extra, out): (u16, &str, Vec<u8>) = if path == "/gzip" {
                         (200, "content-type: application/json\r\ncontent-encoding: gzip\r\n", GZIP_JSON.to_vec())
+                    } else if let Some(tag) = path.strip_prefix("/release/") {
+                        let release = json!({ "tag_name": tag, "html_url": "https://example.com/release", "body": "notes", "prerelease": false });
+                        (200, "content-type: application/json\r\n", serde_json::to_vec(&release).unwrap())
                     } else if let Some(code) = path.strip_prefix("/status/") {
                         (code.parse().unwrap_or(500), "content-type: text/plain\r\n", b"status page".to_vec())
                     } else {

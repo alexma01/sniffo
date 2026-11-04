@@ -52,6 +52,10 @@ Every feature is free and unlimited.
 
 ![Settings](images/settings.png)
 
+## Updates
+
+- Status bar notice when a newer release is published, with the notes and the `brew upgrade` command. One GitHub request a day, can be turned off; nothing is downloaded.
+
 ## Language
 
 - English and Italian, switched live in Settings → General. Defaults to the system language.

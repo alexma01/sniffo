@@ -22,7 +22,7 @@ Builds are not signed yet:
 
 ## Update and uninstall
 
-Sniffo does not update itself. With Homebrew:
+Sniffo does not install updates by itself, but it tells you when a new version is out: an *Update … available* item appears in the status bar, with the release notes and the Homebrew command. It asks GitHub once a day and downloads nothing; turn it off in Settings → General → Updates. With Homebrew:
 
 ```bash
 brew update && brew upgrade --cask sniffo   # update

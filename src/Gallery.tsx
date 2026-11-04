@@ -7,6 +7,7 @@ const SCREENS: [string, string][] = [
   ["console", "Script console"],
   ["settings", "Settings"],
   ["devices", "Devices"],
+  ["update", "Update available"],
   ["rules", "Rules"],
   ["compose", "Compose request"],
 ];

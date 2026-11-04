@@ -213,6 +213,7 @@ button.warn { border-color: var(--warn); color: var(--warn); background: color-m
 .j-bool, .j-null { color: var(--syn-bool); }
 .j-punct { color: var(--syn-punct); }
 
+.update-notes { max-height: 220px; overflow: auto; background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; }
 .modal.wide { width: min(860px, 94vw); }
 .form { display: flex; flex-direction: column; gap: 10px; }
 .form label { display: flex; flex-direction: column; gap: 4px; }
