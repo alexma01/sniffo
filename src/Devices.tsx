@@ -38,6 +38,11 @@ function actions(d: Device): [Key, DeviceCommand, Key?][] {
 
 type Os = "ios" | "android";
 
+/** A value with a one-click copy button, for typing into a phone's proxy settings. */
+function Copyable({ value, children }: { value: string; children?: React.ReactNode }) {
+  return <>{children ?? value} <button className="chip" onClick={() => navigator.clipboard.writeText(value).then(() => toast(t("devices.copied", { value })), toastError)}>{t("common.copy")}</button></>;
+}
+
 function WifiSetup({ os, status, onChanged }: { os: Os; status: ProxyStatus | null; onChanged: () => void }) {
   useLang();
   const [ip, setIp] = useState(status?.lan[0]?.ip ?? "");
@@ -66,7 +71,7 @@ function WifiSetup({ os, status, onChanged }: { os: Os; status: ProxyStatus | nu
             <h4>{t("devices.step1")}</h4>
             <table className="kv big">
               <tbody>
-                {status.lan_name && <tr><td className="k">{t("devices.server")}</td><td className="v">{status.lan_name}</td></tr>}
+                {status.lan_name && <tr><td className="k">{t("devices.server")}</td><td className="v"><Copyable value={status.lan_name} /></td></tr>}
                 <tr>
                   <td className="k">{t(status.lan_name ? "devices.orIp" : "devices.server")}</td>
                   <td className="v">
@@ -74,10 +79,11 @@ function WifiSetup({ os, status, onChanged }: { os: Os; status: ProxyStatus | nu
                       <select value={ip} onChange={(e) => setIp(e.target.value)}>
                         {status.lan.map((a) => <option key={a.ip + a.interface} value={a.ip}>{a.ip} ({a.interface})</option>)}
                       </select>
-                    ) : ip}
+                    ) : null}
+                    {ip && <Copyable value={ip}>{status.lan.length > 1 ? <></> : ip}</Copyable>}
                   </td>
                 </tr>
-                <tr><td className="k">{t("common.port")}</td><td className="v">{port ?? "—"}</td></tr>
+                <tr><td className="k">{t("common.port")}</td><td className="v">{port ? <Copyable value={String(port)} /> : "—"}</td></tr>
               </tbody>
             </table>
             <p className="muted">{t("devices.sameWifi")}{status.lan_name && <> {rich(t("devices.lanName", { name: status.lan_name }))}</>}</p>
