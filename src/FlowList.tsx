@@ -40,7 +40,7 @@ interface Column { id: string; label: Key | "#" | "TLS" | "TTFB"; width: number 
 export const COLUMNS: Column[] = [
   { id: "id", label: "#", width: 52, cell: (f) => (f.pinned ? <Icon name="pin" label={t("list.pinned")} /> : f.id) },
   { id: "time", label: "list.col.time", width: 96, cell: (f) => time(f.started_ms) },
-  { id: "client", label: "list.col.client", width: 140, cell: (f) => <><AppIcon name={clientIconName(f)} />{clientDisplay(f)}</>, title: (f) => `${clientDisplay(f)} — ${f.client_ip}` },
+  { id: "client", label: "list.col.client", width: 140, cell: (f) => <><AppIcon name={clientIconName(f)} /><span className="ellipsis">{clientDisplay(f)}</span></>, title: (f) => `${clientDisplay(f)} — ${f.client_ip}` },
   { id: "method", label: "list.col.method", width: 72, cell: (f) => <span className={`method m-${f.method}`}>{f.method}</span> },
   { id: "status", label: "list.col.status", width: 46, cell: (f) => (f.state === "failed" ? "ERR" : f.state === "paused" ? <Icon name="pause" label={t("list.paused")} /> : isTunnel(f) ? "" : f.status ?? "…") },
   { id: "tls", label: "TLS", width: 30, cell: (f) => (f.scheme === "https" || f.scheme === "wss" ? <Icon name="lock" label="TLS" /> : ""), title: (f) => f.scheme },
