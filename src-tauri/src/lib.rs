@@ -786,9 +786,27 @@ fn ask_before_quit<R: Runtime>(app: &AppHandle<R>) -> bool {
     has_flows && app.emit("quit:requested", ()).is_ok()
 }
 
+/// macOS starts GUI apps with a soft limit of 256 open files; a busy proxy needs more, and at the limit
+/// every spawned helper (`security`, `scutil`, `sudo`) fails with "Too many open files".
+#[cfg(unix)]
+fn raise_fd_limit() {
+    let mut lim = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    // SAFETY: plain getrlimit/setrlimit calls on a local struct.
+    unsafe {
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) == 0 {
+            lim.rlim_cur = lim.rlim_max.min(10_240); // macOS rejects more than OPEN_MAX
+            if libc::setrlimit(libc::RLIMIT_NOFILE, &lim) != 0 {
+                tracing::warn!("could not raise the open files limit");
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into())).init();
+    #[cfg(unix)]
+    raise_fd_limit();
     let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init()).plugin(tauri_plugin_dialog::init()).on_window_event(|window, event| {
         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
             if ask_before_quit(window.app_handle()) {

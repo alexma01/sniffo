@@ -31,6 +31,8 @@ tauri-plugin-dialog = "2"
 prost-reflect = "0.16"
 
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
