@@ -4,7 +4,7 @@
 
 ## Install
 
-macOS with Homebrew (also handles updates with `brew upgrade --cask sniffo`):
+macOS with Homebrew:
 
 ```bash
 brew install --cask alexma01/tap/sniffo
@@ -18,7 +18,19 @@ Or download the bundle for your system from the [GitHub releases](https://github
 
 Builds are not signed yet:
 
-- **macOS**: if Gatekeeper blocks the app, right-click it → *Open*, or run `xattr -dr com.apple.quarantine /Applications/Sniffo.app`.
+- **macOS**: Homebrew removes the quarantine flag for you. With a manual download, if Gatekeeper blocks the app, right-click it → *Open*, or run `xattr -dr com.apple.quarantine /Applications/Sniffo.app`.
+
+## Update and uninstall
+
+Sniffo does not update itself. With Homebrew:
+
+```bash
+brew update && brew upgrade --cask sniffo   # update
+brew uninstall --cask sniffo                # remove
+brew uninstall --zap --cask sniffo          # remove and delete app data
+```
+
+With a manual install, download the new `.dmg` from the releases page.
 
 Prefer building from source? See [Development](development.md).
 
