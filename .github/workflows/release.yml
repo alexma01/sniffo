@@ -76,6 +76,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - run: gh release edit "${{ needs.tag.outputs.tag }}" --generate-notes --repo "${{ github.repository }}"
+      - run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" --jq .body \
+            | gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" -F -
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.tag.outputs.tag }}
